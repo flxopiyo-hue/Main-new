@@ -28,15 +28,25 @@ A mobile marketplace where shoppers see clothes on **their own body** before buy
 - `POST /api/auth/{register,login}`, `GET /api/auth/me`
 - `GET|PUT /api/profile`, `POST /api/profile/estimate`
 - `GET|POST /api/items`, `GET /api/items/{id}`, `GET /api/items/mine`, `DELETE /api/items/{id}`
-- `POST /api/tryon`, `GET /api/tryon/history`
+- `POST /api/tryon` (accepts `angles: ["front","three_quarter","side","back"]`), `GET /api/tryon/history`, `GET /api/tryon/{id}/share?fmt=square|story&angle=…`
 - `POST /api/payments/checkout`, `GET /api/payments/status/{session_id}`, `GET /api/orders`
 - `POST /api/payments/webhook` (Stripe → server)
+- `PATCH /api/auth/preferences` (update `preferred_currency`)
+- `GET /api/collections`, `GET /api/collections/{id}`, `POST /api/collections` (seller)
+- `GET /api/seller/analytics`, `POST /api/seller/connect/setup` (mocked Stripe Connect)
+- `GET|POST|DELETE /api/wishlist*`
 
 ## Design Direction
 Editorial Swiss / High-Contrast: Cormorant Garamond display + Manrope body text, off-white `#FAFAFA` background, sharp 0-radius corners, generous spacing, photos dominate.
 
+## Currency & Region
+12 supported currencies (KES default for new accounts — product originates in Kenya): KES, USD, EUR, GBP, NGN, ZAR, INR, UGX, TZS, RWF, GHS, EGP. Sellers list items in their own currency; buyers see the listed price plus an "≈ KSh …" indicative conversion when their preferred currency differs. Stripe checkout uses the item's listed currency directly.
+
+## Multi-angle Virtual Try-On
+`/api/tryon` accepts up to 4 angles (front, three_quarter, side, back) and renders them in parallel via Gemini Nano Banana with angle-specific prompts. The UI shows a thumb strip below the hero; share works per-angle.
+
 ## Seeded Data
-`/app/backend/seed.py` creates one seller (Maison Lumière) with six garments spanning every category, each with real dimensions per size and 2 colors. Re-running is idempotent.
+`/app/backend/seed.py` creates one seller (Maison Lumière) with six garments spanning every category, each with real dimensions per size and 2 colors. Re-running is idempotent. Legacy seeded items default to `currency="USD"`.
 
 ## Smart Business Hook (next iteration)
 **Designer royalty payouts:** Stripe Connect for sellers + monthly auto-payout — turns the platform into a marketplace SaaS.

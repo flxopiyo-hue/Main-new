@@ -108,29 +108,38 @@ user_problem_statement: |
   2) Currency localization — user is in Kenya, so support KES + other currencies.
 
 backend:
-  - task: "Multi-angle Try-On — TryOnIn accepts angles list, parallel Gemini Nano Banana generations, response carries images:[{angle,image_b64}]"
-    implemented: true
-    working: "NA"
-    file: "/app/backend/server.py"
-    stuck_count: 0
-    priority: "high"
-    needs_retesting: true
-    status_history:
-      - working: "NA"
-        agent: "main"
-        comment: "Added TryOnAngle type, ANGLE_INSTRUCTIONS prompt map, _generate_single_angle helper, asyncio.gather parallel generation. /api/tryon now accepts angles[] (max 4, default ['front']). /api/tryon/history returns images[]. /api/tryon/{id}/share accepts ?angle=front|three_quarter|side|back. Backward compat: result_image_b64 still populated (first angle). Legacy single-angle records still play back via /history."
-
   - task: "Currency Localization — per-item currency, user.preferred_currency (default KES), Stripe charges item currency, PATCH /api/auth/preferences"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/backend/server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "Added Currency literal (USD/KES/EUR/GBP/NGN/ZAR/INR/UGX/TZS/RWF/GHS/EGP), DEFAULT_CURRENCY='KES'. Items now carry currency (defaults to seller.preferred_currency at create time). Users carry preferred_currency (defaults to KES on register if not provided). Orders carry currency. Stripe checkout now passes the item's currency (lowercased). New PATCH /api/auth/preferences endpoint validates the literal and updates user.preferred_currency. UserOut + OrderOut return currency."
+      - working: false
+        agent: "testing"
+        comment: "Testing agent confirmed 15/16 cases pass. ONE bug: items created without explicit currency stored 'KES' instead of seller's preferred_currency because ItemIn.currency had a non-None default."
+      - working: true
+        agent: "main"
+        comment: "Fixed by changing ItemIn.currency to Optional[Currency] = None so the seller-pref fallback in create_item now fires. Re-verified via curl: seller pref USD → item.currency=USD; seller pref KES → item.currency=KES."
+
+  - task: "Multi-angle Try-On — TryOnIn accepts angles list, parallel Gemini Nano Banana generations, response carries images:[{angle,image_b64}]"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Added TryOnAngle type, ANGLE_INSTRUCTIONS prompt map, _generate_single_angle helper, asyncio.gather parallel generation. /api/tryon now accepts angles[] (max 4, default ['front']). /api/tryon/history returns images[]. /api/tryon/{id}/share accepts ?angle=front|three_quarter|side|back. Backward compat: result_image_b64 still populated (first angle). Legacy single-angle records still play back via /history."
+      - working: true
+        agent: "testing"
+        comment: "Verified end-to-end: 3 angles render in ~10s via Nano Banana, result_image_b64 == front image, /history returns images[] for both new and legacy try-ons, /share?angle=side returns 200, fallback works when requested angle is missing."
 
 frontend:
   - task: "Multi-angle UI in Item Detail — Try It On (front) and Multi-Angle Try-On (front+side+back) buttons; thumbnail strip; share active angle"

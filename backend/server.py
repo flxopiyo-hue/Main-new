@@ -178,7 +178,8 @@ class ItemIn(BaseModel):
     description: str = ""
     category: Literal["shirts", "dresses", "pants", "outerwear", "shoes", "accessories"]
     price_cents: int = Field(ge=0)
-    currency: Currency = DEFAULT_CURRENCY  # type: ignore[assignment]
+    # When omitted, server falls back to the seller's preferred_currency.
+    currency: Optional[Currency] = None
     image_b64: str  # primary garment image
     sizes: List[SizeOption]
     colors: List[ColorOption] = []
