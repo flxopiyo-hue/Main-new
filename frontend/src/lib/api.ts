@@ -7,12 +7,15 @@ const BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL as string;
 const TOKEN_KEY = "aurafit.token";
 
 export type Role = "buyer" | "seller";
+export type Gender = "male" | "female" | "other" | "prefer_not_to_say";
 
 export interface User {
   id: string;
   email: string;
   full_name: string;
   role: Role;
+  gender?: Gender | null;
+  age?: number | null;
   created_at: string;
 }
 
@@ -134,6 +137,8 @@ export const api = {
     password: string;
     full_name: string;
     role: Role;
+    gender: Gender;
+    age: number;
   }) => request<{ token: string; user: User }>("/auth/register", { method: "POST", body, auth: false }),
   login: (body: { email: string; password: string }) =>
     request<{ token: string; user: User }>("/auth/login", { method: "POST", body, auth: false }),

@@ -2,7 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
-import { api, Role, setToken as setTokenStorage, User } from "@/src/lib/api";
+import { api, Gender, Role, setToken as setTokenStorage, User } from "@/src/lib/api";
 import { storage } from "@/src/utils/storage";
 
 const TOKEN_KEY = "aurafit.token";
@@ -11,7 +11,14 @@ interface AuthValue {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<User>;
-  register: (email: string, password: string, fullName: string, role: Role) => Promise<User>;
+  register: (
+    email: string,
+    password: string,
+    fullName: string,
+    role: Role,
+    gender: Gender,
+    age: number,
+  ) => Promise<User>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -50,12 +57,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const register = useCallback(
-    async (email: string, password: string, fullName: string, role: Role) => {
+    async (
+      email: string,
+      password: string,
+      fullName: string,
+      role: Role,
+      gender: Gender,
+      age: number,
+    ) => {
       const { token, user: u } = await api.register({
         email,
         password,
         full_name: fullName,
         role,
+        gender,
+        age,
       });
       await setTokenStorage(token);
       setUser(u);

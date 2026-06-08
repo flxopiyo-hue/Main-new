@@ -66,6 +66,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 # Models
 # -------------------------------------------------------------------------
 Role = Literal["buyer", "seller"]
+Gender = Literal["male", "female", "other", "prefer_not_to_say"]
 
 
 class RegisterIn(BaseModel):
@@ -73,6 +74,8 @@ class RegisterIn(BaseModel):
     password: str = Field(min_length=6)
     full_name: str = Field(min_length=1)
     role: Role
+    gender: Gender
+    age: int = Field(ge=13, le=120)
 
 
 class LoginIn(BaseModel):
@@ -85,6 +88,8 @@ class UserOut(BaseModel):
     email: EmailStr
     full_name: str
     role: Role
+    gender: Optional[Gender] = None
+    age: Optional[int] = None
     created_at: datetime
 
 
@@ -252,6 +257,8 @@ def user_to_out(doc: Dict[str, Any]) -> UserOut:
         email=doc["email"],
         full_name=doc["full_name"],
         role=doc["role"],
+        gender=doc.get("gender"),
+        age=doc.get("age"),
         created_at=doc["created_at"],
     )
 
@@ -300,6 +307,8 @@ async def register(body: RegisterIn) -> AuthOut:
         "email": body.email.lower(),
         "full_name": body.full_name.strip(),
         "role": body.role,
+        "gender": body.gender,
+        "age": body.age,
         "hashed_password": hash_password(body.password),
         "created_at": now,
     }

@@ -8,9 +8,16 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { AppButton } from "@/src/components/AppButton";
 import { AppInput } from "@/src/components/AppInput";
 import { useToast } from "@/src/components/Toast";
-import { Role } from "@/src/lib/api";
+import { Gender, Role } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
+
+const GENDERS: { key: Gender; label: string }[] = [
+  { key: "female", label: "Female" },
+  { key: "male", label: "Male" },
+  { key: "other", label: "Other" },
+  { key: "prefer_not_to_say", label: "Prefer not to say" },
+];
 
 export default function Register() {
   const { register } = useAuth();
@@ -19,6 +26,8 @@ export default function Register() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<Role>("buyer");
+  const [gender, setGender] = useState<Gender | null>(null);
+  const [age, setAge] = useState("");
   const [loading, setLoading] = useState(false);
 
   const submit = async () => {
@@ -30,9 +39,18 @@ export default function Register() {
       toast.show("Password must be at least 6 characters", "error");
       return;
     }
+    if (!gender) {
+      toast.show("Please select your gender", "error");
+      return;
+    }
+    const ageNum = parseInt(age, 10);
+    if (!ageNum || ageNum < 13 || ageNum > 120) {
+      toast.show("Please enter a valid age (13–120)", "error");
+      return;
+    }
     setLoading(true);
     try {
-      const user = await register(email.trim(), password, fullName.trim(), role);
+      const user = await register(email.trim(), password, fullName.trim(), role, gender, ageNum);
       if (user.role === "buyer") {
         router.replace("/onboarding/measurements");
       } else {
@@ -114,6 +132,45 @@ export default function Register() {
           secureTextEntry
           placeholder="At least 6 characters"
         />
+
+        <Text style={[tp.caption, styles.label]}>Gender</Text>
+        <View style={styles.genderRow}>
+          {GENDERS.map((g) => {
+            const selected = gender === g.key;
+            return (
+              <TouchableOpacity
+                key={g.key}
+                testID={`register-gender-${g.key}`}
+                onPress={() => setGender(g.key)}
+                style={[
+                  styles.genderChip,
+                  selected ? styles.genderChipActive : styles.genderChipInactive,
+                ]}
+                activeOpacity={0.85}
+              >
+                <Text
+                  style={[
+                    styles.genderLabel,
+                    selected ? styles.genderLabelActive : styles.genderLabelInactive,
+                  ]}
+                >
+                  {g.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        <View style={{ height: spacing.lg }} />
+        <AppInput
+          testID="register-age-input"
+          label="Age"
+          value={age}
+          onChangeText={(t) => setAge(t.replace(/[^0-9]/g, ""))}
+          keyboardType="number-pad"
+          placeholder="e.g. 28"
+          maxLength={3}
+        />
       </KeyboardAwareScrollView>
       <View style={styles.footer}>
         <AppButton
@@ -187,6 +244,25 @@ const styles = StyleSheet.create({
   roleLabelActive: { color: colors.primaryFg },
   roleSub: { fontFamily: fonts.body, fontSize: 13, color: colors.mutedFg, marginTop: 4 },
   roleSubActive: { color: "#D4D4D4" },
+  genderRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  genderChip: {
+    paddingHorizontal: 14,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    flexShrink: 0,
+  },
+  genderChipInactive: { borderColor: colors.border, backgroundColor: colors.surface },
+  genderChipActive: { borderColor: colors.primary, backgroundColor: colors.primary },
+  genderLabel: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 12,
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+  },
+  genderLabelInactive: { color: colors.primary },
+  genderLabelActive: { color: colors.primaryFg },
   footer: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,

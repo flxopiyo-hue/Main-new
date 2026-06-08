@@ -66,6 +66,13 @@ export default function Profile() {
           <Text style={tp.caption}>{user?.role.toUpperCase()} ACCOUNT</Text>
           <Text style={[tp.h1, styles.name]}>{user?.full_name}</Text>
           <Text style={[tp.bodyMuted, { marginTop: 4 }]}>{user?.email}</Text>
+          {user?.gender || user?.age ? (
+            <Text style={[tp.bodyMuted, { marginTop: 4 }]} testID="profile-demographics">
+              {user.gender ? user.gender.replace(/_/g, " ") : ""}
+              {user.gender && user.age ? " · " : ""}
+              {user.age ? `${user.age} yrs` : ""}
+            </Text>
+          ) : null}
         </View>
 
         <View style={styles.section}>
