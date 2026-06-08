@@ -51,7 +51,8 @@
           "photosPermission": "Pick photos for try-on and listings.",
           "cameraPermission": "Capture body and clothing photos for try-on."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true

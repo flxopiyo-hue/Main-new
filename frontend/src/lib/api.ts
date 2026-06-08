@@ -8,6 +8,7 @@ const TOKEN_KEY = "aurafit.token";
 
 export type Role = "buyer" | "seller";
 export type Gender = "male" | "female" | "other" | "prefer_not_to_say";
+export type Audience = "men" | "women" | "unisex";
 
 export interface User {
   id: string;
@@ -16,6 +17,7 @@ export interface User {
   role: Role;
   gender?: Gender | null;
   age?: number | null;
+  dob?: string | null;
   created_at: string;
 }
 
@@ -62,6 +64,7 @@ export interface Item {
   image_b64: string;
   sizes: SizeOption[];
   colors: ColorOption[];
+  audience: Audience;
   created_at: string;
 }
 
@@ -138,7 +141,8 @@ export const api = {
     full_name: string;
     role: Role;
     gender: Gender;
-    age: number;
+    age?: number;
+    dob?: string;
   }) => request<{ token: string; user: User }>("/auth/register", { method: "POST", body, auth: false }),
   login: (body: { email: string; password: string }) =>
     request<{ token: string; user: User }>("/auth/login", { method: "POST", body, auth: false }),
@@ -163,6 +167,7 @@ export const api = {
     category?: string;
     size?: string;
     color?: string;
+    audience?: string;
     q?: string;
   } = {}) => {
     const qs = new URLSearchParams();
@@ -182,6 +187,7 @@ export const api = {
     image_b64: string;
     sizes: SizeOption[];
     colors: ColorOption[];
+    audience: Audience;
   }) => request<Item>("/items", { method: "POST", body }),
   deleteItem: (id: string) => request<{ ok: boolean }>(`/items/${id}`, { method: "DELETE" }),
 

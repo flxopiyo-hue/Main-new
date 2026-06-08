@@ -10,6 +10,7 @@ import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Dict
 
 import bcrypt
 import httpx
@@ -33,6 +34,7 @@ ITEMS = [
         "name": "Cropped Linen Shirt",
         "description": "Tailored linen blend with a relaxed cropped silhouette. Hand-finished hem.",
         "category": "shirts",
+        "audience": "women",
         "price_cents": 12900,
         "image_url": "https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?auto=format&fit=crop&w=800&q=80",
         "sizes": [
@@ -50,6 +52,7 @@ ITEMS = [
         "name": "Wide-Leg Trousers",
         "description": "High-rise wide-leg trousers in lightweight Italian wool.",
         "category": "pants",
+        "audience": "unisex",
         "price_cents": 18900,
         "image_url": "https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?auto=format&fit=crop&w=800&q=80",
         "sizes": [
@@ -66,6 +69,7 @@ ITEMS = [
         "name": "Editorial Slip Dress",
         "description": "Bias-cut slip dress in fluid silk. A modern staple for evening or layering.",
         "category": "dresses",
+        "audience": "women",
         "price_cents": 24900,
         "image_url": "https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&w=800&q=80",
         "sizes": [
@@ -82,6 +86,7 @@ ITEMS = [
         "name": "Belted Trench Coat",
         "description": "Classic belted trench in water-resistant cotton gabardine.",
         "category": "outerwear",
+        "audience": "unisex",
         "price_cents": 34900,
         "image_url": "https://images.unsplash.com/photo-1591047139829-d91aecb6caea?auto=format&fit=crop&w=800&q=80",
         "sizes": [
@@ -98,6 +103,7 @@ ITEMS = [
         "name": "Pointed Leather Mule",
         "description": "Pointed-toe square heel mule, hand-crafted in Italian calfskin.",
         "category": "shoes",
+        "audience": "women",
         "price_cents": 19900,
         "image_url": "https://images.unsplash.com/photo-1543163521-1bf539c55dd2?auto=format&fit=crop&w=800&q=80",
         "sizes": [
@@ -114,6 +120,7 @@ ITEMS = [
         "name": "Oversized Knit Pullover",
         "description": "Chunky merino-cashmere pullover with dropped shoulders.",
         "category": "shirts",
+        "audience": "unisex",
         "price_cents": 22900,
         "image_url": "https://images.unsplash.com/photo-1485518882345-15568b007407?auto=format&fit=crop&w=800&q=80",
         "sizes": [
@@ -124,6 +131,41 @@ ITEMS = [
         "colors": [
             {"name": "White", "hex": "#FFFFFF"},
             {"name": "Olive", "hex": "#5C6F44"},
+        ],
+    },
+    {
+        "name": "Tailored Linen Shirt",
+        "description": "Crisp straight-cut linen shirt with mother-of-pearl buttons.",
+        "category": "shirts",
+        "audience": "men",
+        "price_cents": 14900,
+        "image_url": "https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?auto=format&fit=crop&w=800&q=80",
+        "sizes": [
+            {"label": "S", "chest_cm": 102, "length_cm": 70, "available_qty": 4},
+            {"label": "M", "chest_cm": 108, "length_cm": 72, "available_qty": 6},
+            {"label": "L", "chest_cm": 114, "length_cm": 74, "available_qty": 5},
+            {"label": "XL", "chest_cm": 120, "length_cm": 76, "available_qty": 3},
+        ],
+        "colors": [
+            {"name": "White", "hex": "#FFFFFF"},
+            {"name": "Navy", "hex": "#1B2A4E"},
+        ],
+    },
+    {
+        "name": "Selvedge Denim",
+        "description": "Raw indigo selvedge denim with a tapered straight leg.",
+        "category": "pants",
+        "audience": "men",
+        "price_cents": 16900,
+        "image_url": "https://images.unsplash.com/photo-1542272604-787c3835535d?auto=format&fit=crop&w=800&q=80",
+        "sizes": [
+            {"label": "S", "waist_cm": 76, "hips_cm": 96, "length_cm": 108, "available_qty": 5},
+            {"label": "M", "waist_cm": 82, "hips_cm": 102, "length_cm": 110, "available_qty": 7},
+            {"label": "L", "waist_cm": 88, "hips_cm": 108, "length_cm": 112, "available_qty": 4},
+        ],
+        "colors": [
+            {"name": "Navy", "hex": "#1B2A4E"},
+            {"name": "Black", "hex": "#0A0A0A"},
         ],
     },
 ]
@@ -184,6 +226,7 @@ async def main() -> None:
                 "image_b64": image_b64,
                 "sizes": spec["sizes"],
                 "colors": spec["colors"],
+                "audience": spec.get("audience", "unisex"),
                 "created_at": now,
             }
         )

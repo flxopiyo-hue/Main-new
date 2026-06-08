@@ -1,7 +1,8 @@
 import { Feather } from "@expo/vector-icons";
+import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { router } from "expo-router";
-import React, { useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import React, { useMemo, useState } from "react";
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -19,6 +20,24 @@ const GENDERS: { key: Gender; label: string }[] = [
   { key: "prefer_not_to_say", label: "Prefer not to say" },
 ];
 
+const computeAge = (dob: Date): number => {
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const m = today.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age -= 1;
+  return age;
+};
+
+const formatDob = (d: Date): string => {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const formatDobDisplay = (d: Date): string =>
+  d.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+
 export default function Register() {
   const { register } = useAuth();
   const toast = useToast();
@@ -27,8 +46,27 @@ export default function Register() {
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<Role>("buyer");
   const [gender, setGender] = useState<Gender | null>(null);
-  const [age, setAge] = useState("");
+  const [dob, setDob] = useState<Date | null>(null);
+  const [showPicker, setShowPicker] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const maxDob = useMemo(() => {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() - 13);
+    return d;
+  }, []);
+  const minDob = useMemo(() => {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() - 120);
+    return d;
+  }, []);
+
+  const derivedAge = dob ? computeAge(dob) : null;
+
+  const onDobChange = (_e: DateTimePickerEvent, selected?: Date) => {
+    if (Platform.OS !== "ios") setShowPicker(false);
+    if (selected) setDob(selected);
+  };
 
   const submit = async () => {
     if (!fullName.trim() || !email.trim() || !password) {
@@ -43,14 +81,19 @@ export default function Register() {
       toast.show("Please select your gender", "error");
       return;
     }
-    const ageNum = parseInt(age, 10);
-    if (!ageNum || ageNum < 13 || ageNum > 120) {
-      toast.show("Please enter a valid age (13–120)", "error");
+    if (!dob) {
+      toast.show("Please pick your date of birth", "error");
+      return;
+    }
+    if (derivedAge !== null && derivedAge < 13) {
+      toast.show("You must be at least 13 years old to use AuraFit", "error");
       return;
     }
     setLoading(true);
     try {
-      const user = await register(email.trim(), password, fullName.trim(), role, gender, ageNum);
+      const user = await register(email.trim(), password, fullName.trim(), role, gender, {
+        dob: formatDob(dob),
+      });
       if (user.role === "buyer") {
         router.replace("/onboarding/measurements");
       } else {
@@ -162,15 +205,45 @@ export default function Register() {
         </View>
 
         <View style={{ height: spacing.lg }} />
-        <AppInput
-          testID="register-age-input"
-          label="Age"
-          value={age}
-          onChangeText={(t) => setAge(t.replace(/[^0-9]/g, ""))}
-          keyboardType="number-pad"
-          placeholder="e.g. 28"
-          maxLength={3}
-        />
+        <Text style={[tp.caption, styles.label]}>Date of birth</Text>
+        <TouchableOpacity
+          testID="register-dob-trigger"
+          onPress={() => setShowPicker(true)}
+          activeOpacity={0.85}
+          style={styles.dobField}
+        >
+          <Feather name="calendar" size={16} color={colors.primary} />
+          <Text style={styles.dobValue}>
+            {dob ? formatDobDisplay(dob) : "Pick a date"}
+          </Text>
+        </TouchableOpacity>
+        {derivedAge !== null ? (
+          <Text style={styles.dobAge} testID="register-derived-age">
+            {derivedAge} years old
+          </Text>
+        ) : (
+          <Text style={styles.dobHint}>You must be at least 13 to join AuraFit</Text>
+        )}
+        {showPicker ? (
+          <DateTimePicker
+            testID="register-dob-picker"
+            value={dob ?? maxDob}
+            mode="date"
+            display={Platform.OS === "ios" ? "spinner" : "default"}
+            maximumDate={maxDob}
+            minimumDate={minDob}
+            onChange={onDobChange}
+          />
+        ) : null}
+        {Platform.OS === "ios" && showPicker ? (
+          <TouchableOpacity
+            testID="register-dob-done"
+            onPress={() => setShowPicker(false)}
+            style={styles.dobDoneBtn}
+          >
+            <Text style={styles.dobDoneLabel}>Done</Text>
+          </TouchableOpacity>
+        ) : null}
       </KeyboardAwareScrollView>
       <View style={styles.footer}>
         <AppButton
@@ -263,6 +336,39 @@ const styles = StyleSheet.create({
   },
   genderLabelInactive: { color: colors.primary },
   genderLabelActive: { color: colors.primaryFg },
+  dobField: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  dobValue: { fontFamily: fonts.body, fontSize: 17, color: colors.primary },
+  dobAge: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 13,
+    color: colors.primary,
+    marginTop: spacing.xs,
+  },
+  dobHint: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: colors.mutedFg,
+    marginTop: spacing.xs,
+  },
+  dobDoneBtn: {
+    alignSelf: "flex-end",
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  dobDoneLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 13,
+    letterSpacing: 1,
+    color: colors.primary,
+    textTransform: "uppercase",
+  },
   footer: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,

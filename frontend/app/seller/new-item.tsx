@@ -15,11 +15,16 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { AppButton } from "@/src/components/AppButton";
 import { AppInput } from "@/src/components/AppInput";
 import { useToast } from "@/src/components/Toast";
-import { api, ColorOption, SizeOption } from "@/src/lib/api";
+import { api, Audience, ColorOption, SizeOption } from "@/src/lib/api";
 import { dataUriFromBase64, pickImageFromCamera, pickImageFromLibrary } from "@/src/lib/images";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
 const CATEGORIES = ["shirts", "dresses", "pants", "outerwear", "shoes", "accessories"] as const;
+const AUDIENCES: { key: Audience; label: string }[] = [
+  { key: "women", label: "Women" },
+  { key: "men", label: "Men" },
+  { key: "unisex", label: "Unisex" },
+];
 const SIZE_LABELS = ["XS", "S", "M", "L", "XL", "XXL"];
 const PRESET_COLORS: ColorOption[] = [
   { name: "Black", hex: "#0A0A0A" },
@@ -41,6 +46,7 @@ export default function NewItem() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("shirts");
+  const [audience, setAudience] = useState<Audience>("unisex");
   const [priceUsd, setPriceUsd] = useState("");
   const [image, setImage] = useState<{ base64: string } | null>(null);
   const [sizes, setSizes] = useState<Record<string, SizeOption>>({});
@@ -96,6 +102,7 @@ export default function NewItem() {
         image_b64: image.base64,
         sizes: sizesArr,
         colors: pickedColors,
+        audience,
       });
       toast.show("Item published", "success");
       router.replace("/(tabs)/atelier");
@@ -199,6 +206,27 @@ export default function NewItem() {
                 ]}
               >
                 {c}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text style={[tp.caption, styles.label]}>Audience</Text>
+        <View style={styles.catRow}>
+          {AUDIENCES.map((a) => (
+            <TouchableOpacity
+              key={a.key}
+              testID={`new-item-audience-${a.key}`}
+              onPress={() => setAudience(a.key)}
+              style={[styles.cat, audience === a.key ? styles.catActive : styles.catInactive]}
+            >
+              <Text
+                style={[
+                  styles.catLabel,
+                  audience === a.key ? styles.catLabelActive : styles.catLabelInactive,
+                ]}
+              >
+                {a.label}
               </Text>
             </TouchableOpacity>
           ))}

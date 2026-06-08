@@ -38,14 +38,19 @@ export default function Discover() {
   const [items, setItems] = useState<Item[]>([]);
   const [category, setCategory] = useState<string | null>(null);
   const [sizeFilter, setSizeFilter] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  const audienceLabel =
+    user?.gender === "male" ? "men" : user?.gender === "female" ? "women" : null;
 
   const load = useCallback(async () => {
     try {
       const data = await api.listItems({
         category: category ?? undefined,
         size: sizeFilter ?? undefined,
+        audience: showAll ? "all" : undefined,
       });
       setItems(data);
     } catch (e: any) {
@@ -54,7 +59,7 @@ export default function Discover() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [category, sizeFilter, toast]);
+  }, [category, sizeFilter, showAll, toast]);
 
   useFocusEffect(
     useCallback(() => {
@@ -121,6 +126,22 @@ export default function Discover() {
         </TouchableOpacity>
       </View>
       <ChipsRow chips={CATEGORIES} active={category} onPress={setCategory} testIDPrefix="cat" />
+      {audienceLabel ? (
+        <View style={styles.audienceBanner} testID="discover-audience-banner">
+          <Feather name="user" size={14} color={colors.primary} />
+          <Text style={styles.audienceText}>
+            {showAll
+              ? "Showing pieces for everyone"
+              : `Showing pieces for ${audienceLabel}`}
+          </Text>
+          <TouchableOpacity
+            testID="discover-toggle-audience"
+            onPress={() => setShowAll((v) => !v)}
+          >
+            <Text style={styles.audienceLink}>{showAll ? "Filter" : "Show all"}</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
       {sizeFilter ? (
         <View style={styles.sizeBanner} testID="discover-size-filter">
           <Feather name="filter" size={14} color={colors.primaryFg} />
@@ -196,6 +217,32 @@ const styles = StyleSheet.create({
     fontSize: 12,
     letterSpacing: 1.2,
     textTransform: "uppercase",
+  },
+  audienceBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 10,
+    backgroundColor: colors.muted,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  audienceText: {
+    flex: 1,
+    fontFamily: fonts.bodyMedium,
+    color: colors.primary,
+    fontSize: 12,
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+  },
+  audienceLink: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 11,
+    letterSpacing: 1,
+    color: colors.primary,
+    textTransform: "uppercase",
+    textDecorationLine: "underline",
   },
   listContent: { paddingBottom: spacing.xxl, paddingTop: spacing.md },
   card: {

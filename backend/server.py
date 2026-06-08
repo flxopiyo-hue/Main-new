@@ -67,6 +67,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 # -------------------------------------------------------------------------
 Role = Literal["buyer", "seller"]
 Gender = Literal["male", "female", "other", "prefer_not_to_say"]
+Audience = Literal["men", "women", "unisex"]
 
 
 class RegisterIn(BaseModel):
@@ -75,7 +76,8 @@ class RegisterIn(BaseModel):
     full_name: str = Field(min_length=1)
     role: Role
     gender: Gender
-    age: int = Field(ge=13, le=120)
+    age: Optional[int] = Field(default=None, ge=13, le=120)
+    dob: Optional[str] = None  # ISO date "YYYY-MM-DD"; if set, server derives age
 
 
 class LoginIn(BaseModel):
@@ -90,6 +92,7 @@ class UserOut(BaseModel):
     role: Role
     gender: Optional[Gender] = None
     age: Optional[int] = None
+    dob: Optional[str] = None
     created_at: datetime
 
 
@@ -151,6 +154,7 @@ class ItemIn(BaseModel):
     image_b64: str  # primary garment image
     sizes: List[SizeOption]
     colors: List[ColorOption] = []
+    audience: Audience = "unisex"
 
 
 class ItemOut(BaseModel):
@@ -164,6 +168,7 @@ class ItemOut(BaseModel):
     image_b64: str
     sizes: List[SizeOption]
     colors: List[ColorOption]
+    audience: Audience = "unisex"
     created_at: datetime
 
 
@@ -259,6 +264,7 @@ def user_to_out(doc: Dict[str, Any]) -> UserOut:
         role=doc["role"],
         gender=doc.get("gender"),
         age=doc.get("age"),
+        dob=doc.get("dob"),
         created_at=doc["created_at"],
     )
 
@@ -275,6 +281,7 @@ def item_to_out(doc: Dict[str, Any]) -> ItemOut:
         image_b64=doc["image_b64"],
         sizes=[SizeOption(**s) for s in doc.get("sizes", [])],
         colors=[ColorOption(**c) for c in doc.get("colors", [])],
+        audience=doc.get("audience", "unisex"),
         created_at=doc["created_at"],
     )
 
@@ -300,6 +307,28 @@ async def register(body: RegisterIn) -> AuthOut:
     existing = await db.users.find_one({"email": body.email.lower()})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
+
+    # Resolve age: prefer DOB if provided, otherwise use submitted age.
+    resolved_age: Optional[int] = body.age
+    dob_iso: Optional[str] = None
+    if body.dob:
+        try:
+            dob_date = datetime.strptime(body.dob, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="dob must be YYYY-MM-DD")
+        today = datetime.now(timezone.utc).date()
+        years = today.year - dob_date.year - (
+            (today.month, today.day) < (dob_date.month, dob_date.day)
+        )
+        if years < 13:
+            raise HTTPException(status_code=400, detail="You must be at least 13 years old")
+        if years > 120:
+            raise HTTPException(status_code=400, detail="Please enter a valid date of birth")
+        resolved_age = years
+        dob_iso = body.dob
+    if resolved_age is None:
+        raise HTTPException(status_code=400, detail="age or dob is required")
+
     user_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
     doc = {
@@ -308,7 +337,8 @@ async def register(body: RegisterIn) -> AuthOut:
         "full_name": body.full_name.strip(),
         "role": body.role,
         "gender": body.gender,
-        "age": body.age,
+        "age": resolved_age,
+        "dob": dob_iso,
         "hashed_password": hash_password(body.password),
         "created_at": now,
     }
@@ -469,6 +499,7 @@ async def create_item(
         "image_b64": _strip_data_prefix(body.image_b64),
         "sizes": [s.model_dump() for s in body.sizes],
         "colors": [c.model_dump() for c in body.colors],
+        "audience": body.audience,
         "created_at": now,
     }
     await db.items.insert_one(doc)
@@ -481,7 +512,9 @@ async def list_items(
     size: Optional[str] = None,
     color: Optional[str] = None,
     seller_id: Optional[str] = None,
+    audience: Optional[str] = None,
     q: Optional[str] = None,
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(auth_scheme),
 ) -> List[ItemOut]:
     query: Dict[str, Any] = {}
     if category:
@@ -494,6 +527,26 @@ async def list_items(
         query["seller_id"] = seller_id
     if q:
         query["name"] = {"$regex": q, "$options": "i"}
+
+    # Audience filtering — explicit param wins, otherwise infer from buyer gender.
+    if audience and audience != "all":
+        query["audience"] = audience
+    elif not audience:
+        # Try to derive default from logged-in buyer
+        if creds and creds.credentials:
+            try:
+                payload = jwt.decode(creds.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+                u = await db.users.find_one({"id": payload.get("sub")}, {"_id": 0})
+                if u and u.get("role") == "buyer":
+                    g = u.get("gender")
+                    if g == "male":
+                        query["audience"] = {"$in": ["men", "unisex"]}
+                    elif g == "female":
+                        query["audience"] = {"$in": ["women", "unisex"]}
+                    # other / prefer_not_to_say → show everything (no filter)
+            except jwt.PyJWTError:
+                pass
+
     docs = await db.items.find(query, {"_id": 0}).sort("created_at", -1).to_list(200)
     return [item_to_out(d) for d in docs]
 
@@ -558,6 +611,18 @@ async def generate_tryon(
 
     garment_b64 = item["image_b64"]
 
+    # Personalize the prompt with user demographics for better try-on.
+    gender = user.get("gender")
+    age = user.get("age")
+    persona_bits: List[str] = []
+    if gender == "male":
+        persona_bits.append("the person is male")
+    elif gender == "female":
+        persona_bits.append("the person is female")
+    if age:
+        persona_bits.append(f"approximately {age} years old")
+    persona = (", ".join(persona_bits) + ". ") if persona_bits else ""
+
     system_msg = (
         "You are a fashion virtual try-on generator. You will receive two images: "
         "(1) a person's full-body photo, and (2) a clothing item. Generate a realistic "
@@ -573,9 +638,11 @@ async def generate_tryon(
 
     msg = UserMessage(
         text=(
-            f"Generate a virtual try-on. The person is wearing the garment '{item['name']}' "
-            f"(category: {item['category']}). Maintain pose, identity, and background; "
-            f"replace only the relevant clothing. Photorealistic, full body, studio quality."
+            f"Generate a virtual try-on. {persona}"
+            f"The person is wearing the garment '{item['name']}' "
+            f"(category: {item['category']}, audience: {item.get('audience', 'unisex')}). "
+            f"Maintain pose, identity, and background; replace only the relevant clothing. "
+            f"Photorealistic, full body, studio quality."
         ),
         file_contents=[ImageContent(body_b64), ImageContent(garment_b64)],
     )
@@ -598,8 +665,8 @@ async def generate_tryon(
     except Exception:
         pass
 
-    # Compute fit suggestion using stored measurements
-    fit_summary = await _compute_fit_summary(user["id"], item)
+    # Compute fit suggestion using stored measurements + demographics.
+    fit_summary = await _compute_fit_summary(user, item)
 
     tryon_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
@@ -622,8 +689,8 @@ async def generate_tryon(
     )
 
 
-async def _compute_fit_summary(user_id: str, item: Dict[str, Any]) -> str:
-    profile = await db.profiles.find_one({"user_id": user_id}, {"_id": 0})
+async def _compute_fit_summary(user: Dict[str, Any], item: Dict[str, Any]) -> str:
+    profile = await db.profiles.find_one({"user_id": user["id"]}, {"_id": 0})
     if not profile:
         return "Add your body measurements for a personalized fit recommendation."
     m = profile.get("measurements", {})
@@ -645,6 +712,19 @@ async def _compute_fit_summary(user_id: str, item: Dict[str, Any]) -> str:
             best = s
     if not best:
         return "Size recommendation unavailable for this item."
+
+    # Add demographic flavor when available
+    gender = user.get("gender")
+    age = user.get("age")
+    persona: Optional[str] = None
+    if gender in ("male", "female") and age:
+        gender_word = "men" if gender == "male" else "women"
+        persona = f"typically suits {age}-yr-old {gender_word} with your measurements"
+    elif age:
+        persona = f"typically suits {age}-year-olds with your measurements"
+
+    if persona:
+        return f"Recommended size: {best['label']} — {persona}."
     return f"Recommended size: {best['label']} (closest match to your measurements)."
 
 

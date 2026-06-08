@@ -17,7 +17,7 @@ interface AuthValue {
     fullName: string,
     role: Role,
     gender: Gender,
-    age: number,
+    opts: { age?: number; dob?: string },
   ) => Promise<User>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -63,7 +63,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       fullName: string,
       role: Role,
       gender: Gender,
-      age: number,
+      opts: { age?: number; dob?: string },
     ) => {
       const { token, user: u } = await api.register({
         email,
@@ -71,7 +71,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         full_name: fullName,
         role,
         gender,
-        age,
+        age: opts.age,
+        dob: opts.dob,
       });
       await setTokenStorage(token);
       setUser(u);
