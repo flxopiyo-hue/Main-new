@@ -1,7 +1,9 @@
+import { Feather } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,8 +14,16 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppButton } from "@/src/components/AppButton";
 import { useToast } from "@/src/components/Toast";
-import { api, Measurements, Order, Profile as ProfileT } from "@/src/lib/api";
+import {
+  api,
+  FitFeedback,
+  Measurements,
+  Order,
+  Profile as ProfileT,
+  WishlistEntry,
+} from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
+import { dataUriFromBase64 } from "@/src/lib/images";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
 export default function Profile() {
@@ -21,16 +31,19 @@ export default function Profile() {
   const toast = useToast();
   const [profile, setProfile] = useState<ProfileT | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [wishlist, setWishlist] = useState<WishlistEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     try {
-      const [p, o] = await Promise.all([
+      const [p, o, w] = await Promise.all([
         api.getProfile(),
         user?.role === "buyer" ? api.orders() : Promise.resolve<Order[]>([]),
+        user?.role === "buyer" ? api.listWishlist() : Promise.resolve<WishlistEntry[]>([]),
       ]);
       setProfile(p);
       setOrders(o);
+      setWishlist(w);
     } catch (e: any) {
       toast.show(e?.message ?? "Failed to load profile", "error");
     } finally {
@@ -47,6 +60,18 @@ export default function Profile() {
   const handleLogout = async () => {
     await logout();
     router.replace("/(auth)/welcome");
+  };
+
+  const submitFeedback = async (orderId: string, fit: FitFeedback) => {
+    try {
+      const updated = await api.orderFeedback(orderId, fit);
+      setOrders((curr) =>
+        curr.map((o) => (o.id === orderId ? { ...o, fit_feedback: updated.fit_feedback } : o)),
+      );
+      toast.show("Thanks for the feedback", "success");
+    } catch (e: any) {
+      toast.show(e?.message ?? "Could not submit feedback", "error");
+    }
   };
 
   if (loading) {
@@ -102,34 +127,131 @@ export default function Profile() {
 
         {user?.role === "buyer" ? (
           <View style={styles.section}>
+            <Text style={[tp.caption, { marginBottom: spacing.md }]}>Wishlist</Text>
+            {wishlist.length === 0 ? (
+              <Text style={tp.bodyMuted}>Tap a heart on any piece to save it here.</Text>
+            ) : (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.wishRow}
+              >
+                {wishlist.map((w) => (
+                  <TouchableOpacity
+                    key={w.item.id}
+                    testID={`wishlist-${w.item.id}`}
+                    onPress={() => router.push(`/item/${w.item.id}`)}
+                    style={styles.wishCard}
+                    activeOpacity={0.85}
+                  >
+                    <View style={styles.wishImageWrap}>
+                      <Image
+                        source={{ uri: dataUriFromBase64(w.item.image_b64) }}
+                        style={styles.wishImage}
+                        resizeMode="cover"
+                      />
+                      {w.restocked ? (
+                        <View style={styles.restockBadge} testID={`wishlist-${w.item.id}-restock`}>
+                          <Feather name="bell" size={11} color={colors.primaryFg} />
+                          <Text style={styles.restockText}>Back in stock</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    <Text style={styles.wishName} numberOfLines={2}>
+                      {w.item.name}
+                    </Text>
+                    <Text style={styles.wishPrice}>
+                      ${(w.item.price_cents / 100).toFixed(0)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+        ) : null}
+
+        {user?.role === "buyer" ? (
+          <View style={styles.section}>
             <Text style={[tp.caption, { marginBottom: spacing.md }]}>Orders</Text>
             {orders.length === 0 ? (
               <Text style={tp.bodyMuted}>No orders yet.</Text>
             ) : (
               orders.map((o) => (
                 <View key={o.id} style={styles.orderRow} testID={`order-${o.id}`}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.orderName}>{o.item_name}</Text>
-                    <Text style={[tp.bodyMuted, { marginTop: 2 }]}>
-                      Size {o.size}
-                      {o.color ? ` · ${o.color}` : ""}
-                    </Text>
-                  </View>
-                  <View style={styles.orderRight}>
-                    <Text style={styles.orderAmount}>${(o.amount_cents / 100).toFixed(0)}</Text>
-                    <View
-                      style={[
-                        styles.statusPill,
-                        o.status === "paid" && styles.statusPaid,
-                        o.status === "pending" && styles.statusPending,
-                      ]}
-                    >
-                      <Text style={styles.statusText}>{o.status.toUpperCase()}</Text>
+                  <View style={styles.orderTop}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.orderName}>{o.item_name}</Text>
+                      <Text style={[tp.bodyMuted, { marginTop: 2 }]}>
+                        Size {o.size}
+                        {o.color ? ` · ${o.color}` : ""}
+                      </Text>
+                    </View>
+                    <View style={styles.orderRight}>
+                      <Text style={styles.orderAmount}>
+                        ${(o.amount_cents / 100).toFixed(0)}
+                      </Text>
+                      <View
+                        style={[
+                          styles.statusPill,
+                          o.status === "paid" && styles.statusPaid,
+                          o.status === "pending" && styles.statusPending,
+                        ]}
+                      >
+                        <Text style={styles.statusText}>{o.status.toUpperCase()}</Text>
+                      </View>
                     </View>
                   </View>
+                  {o.status === "paid" ? (
+                    <View style={styles.fitFeedbackRow}>
+                      <Text style={styles.fitFeedbackPrompt}>
+                        {o.fit_feedback ? "How it fit:" : "How did it fit?"}
+                      </Text>
+                      {(["small", "perfect", "large"] as FitFeedback[]).map((f) => {
+                        const active = o.fit_feedback === f;
+                        return (
+                          <TouchableOpacity
+                            key={f}
+                            testID={`order-${o.id}-fit-${f}`}
+                            disabled={!!o.fit_feedback}
+                            onPress={() => submitFeedback(o.id, f)}
+                            style={[styles.fitChip, active && styles.fitChipActive]}
+                          >
+                            <Text
+                              style={[
+                                styles.fitChipLabel,
+                                active && styles.fitChipLabelActive,
+                              ]}
+                            >
+                              {f === "small" ? "Too small" : f === "large" ? "Too large" : "Perfect"}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  ) : null}
                 </View>
               ))
             )}
+          </View>
+        ) : null}
+
+        {user?.role === "seller" ? (
+          <View style={styles.section}>
+            <TouchableOpacity
+              testID="profile-analytics-link"
+              onPress={() => router.push("/seller/analytics")}
+              style={styles.analyticsCard}
+              activeOpacity={0.85}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={tp.caption}>Atelier insights</Text>
+                <Text style={[tp.h3, { marginTop: 4 }]}>Analytics</Text>
+                <Text style={[tp.bodyMuted, { marginTop: 4 }]}>
+                  Views · try-ons · wishlists · revenue
+                </Text>
+              </View>
+              <Feather name="bar-chart-2" size={28} color={colors.primary} />
+            </TouchableOpacity>
           </View>
         ) : null}
 
@@ -179,7 +301,8 @@ const styles = StyleSheet.create({
   cellLabel: { fontFamily: fonts.bodyMedium, fontSize: 10, letterSpacing: 1.5, color: colors.mutedFg, textTransform: "uppercase" },
   cellValue: { fontFamily: fonts.heading, fontSize: 26, color: colors.primary, marginTop: 4 },
   bold: { fontFamily: fonts.bodySemi },
-  orderRow: { flexDirection: "row", gap: spacing.md, alignItems: "center", paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
+  orderRow: { paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border, gap: spacing.sm },
+  orderTop: { flexDirection: "row", gap: spacing.md, alignItems: "center" },
   orderName: { fontFamily: fonts.heading, fontSize: 18, color: colors.primary },
   orderRight: { alignItems: "flex-end", gap: 4 },
   orderAmount: { fontFamily: fonts.bodySemi, fontSize: 14 },
@@ -191,4 +314,69 @@ const styles = StyleSheet.create({
   statusPaid: { backgroundColor: colors.success },
   statusPending: { backgroundColor: "#FFD60A" },
   statusText: { fontFamily: fonts.bodySemi, fontSize: 10, letterSpacing: 1, color: colors.primary },
+  fitFeedbackRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 4,
+  },
+  fitFeedbackPrompt: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 11,
+    letterSpacing: 1.2,
+    color: colors.mutedFg,
+    textTransform: "uppercase",
+    marginRight: 4,
+  },
+  fitChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  fitChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  fitChipLabel: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 11,
+    letterSpacing: 1,
+    color: colors.primary,
+    textTransform: "uppercase",
+  },
+  fitChipLabelActive: { color: colors.primaryFg },
+  wishRow: { gap: spacing.md, paddingRight: spacing.md },
+  wishCard: { width: 130 },
+  wishImageWrap: { position: "relative" },
+  wishImage: { width: 130, height: 170, backgroundColor: colors.muted },
+  wishName: { fontFamily: fonts.body, fontSize: 13, color: colors.primary, marginTop: 8 },
+  wishPrice: { fontFamily: fonts.bodySemi, fontSize: 12, color: colors.primary, marginTop: 2 },
+  restockBadge: {
+    position: "absolute",
+    left: 0,
+    bottom: 0,
+    right: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    paddingVertical: 4,
+    backgroundColor: colors.success,
+  },
+  restockText: {
+    color: colors.primaryFg,
+    fontFamily: fonts.bodySemi,
+    fontSize: 10,
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
+  analyticsCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
 });

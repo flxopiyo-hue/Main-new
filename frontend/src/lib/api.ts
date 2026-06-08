@@ -85,8 +85,42 @@ export interface Order {
   color?: string | null;
   amount_cents: number;
   status: string;
+  fit_feedback?: "small" | "perfect" | "large" | null;
   session_id: string;
   created_at: string;
+}
+
+export type FitFeedback = "small" | "perfect" | "large";
+
+export interface WishlistEntry {
+  item: Item;
+  added_at: string;
+  restocked: boolean;
+}
+
+export interface ItemAnalytics {
+  item_id: string;
+  name: string;
+  views: number;
+  try_ons: number;
+  wishlists: number;
+  orders_paid: number;
+  revenue_cents: number;
+  conversion: number;
+}
+
+export interface SellerAnalytics {
+  total_views: number;
+  total_try_ons: number;
+  total_wishlists: number;
+  total_orders_paid: number;
+  total_revenue_cents: number;
+  items: ItemAnalytics[];
+}
+
+export interface TryOnShare {
+  image_b64: string;
+  caption: string;
 }
 
 async function getToken(): Promise<string | null> {
@@ -102,7 +136,7 @@ export async function setToken(token: string | null): Promise<void> {
 }
 
 interface RequestOpts {
-  method?: "GET" | "POST" | "PUT" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
   auth?: boolean;
 }
@@ -195,6 +229,24 @@ export const api = {
   tryOn: (body: { item_id: string; use_profile_photo?: boolean; body_photo_b64?: string }) =>
     request<TryOnResult>("/tryon", { method: "POST", body }),
   tryOnHistory: () => request<TryOnResult[]>("/tryon/history"),
+  shareTryOn: (id: string) => request<TryOnShare>(`/tryon/${id}/share`),
+
+  // Wishlist
+  addWishlist: (itemId: string) =>
+    request<{ ok: boolean }>(`/wishlist/${itemId}`, { method: "POST" }),
+  removeWishlist: (itemId: string) =>
+    request<{ ok: boolean }>(`/wishlist/${itemId}`, { method: "DELETE" }),
+  listWishlist: () => request<WishlistEntry[]>("/wishlist"),
+  wishlistIds: () => request<{ item_ids: string[] }>("/wishlist/ids"),
+
+  // Seller analytics + inventory
+  sellerAnalytics: () => request<SellerAnalytics>("/seller/analytics"),
+  patchItem: (id: string, body: { sizes?: SizeOption[] }) =>
+    request<Item>(`/items/${id}`, { method: "PATCH", body }),
+
+  // Order fit feedback
+  orderFeedback: (id: string, fit: FitFeedback) =>
+    request<Order>(`/orders/${id}/feedback`, { method: "POST", body: { fit } }),
 
   // Payments
   checkout: (body: { item_id: string; size: string; color?: string; origin_url: string }) =>

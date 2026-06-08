@@ -15,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useToast } from "@/src/components/Toast";
 import { api, Item, TryOnResult } from "@/src/lib/api";
 import { dataUriFromBase64 } from "@/src/lib/images";
+import { shareBase64Image } from "@/src/lib/share";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
 export default function TryOnHub() {
@@ -97,12 +98,31 @@ export default function TryOnHub() {
                 style={styles.historyImage}
                 resizeMode="cover"
               />
-              {item.fit_summary ? (
-                <View style={styles.fitBanner}>
-                  <Feather name="check-circle" size={14} color={colors.primaryFg} />
-                  <Text style={styles.fitText}>{item.fit_summary}</Text>
-                </View>
-              ) : null}
+              <View style={styles.historyActions}>
+                {item.fit_summary ? (
+                  <View style={styles.fitBanner}>
+                    <Feather name="check-circle" size={14} color={colors.primaryFg} />
+                    <Text style={styles.fitText}>{item.fit_summary}</Text>
+                  </View>
+                ) : (
+                  <View style={{ flex: 1 }} />
+                )}
+                <TouchableOpacity
+                  testID={`tryon-share-${item.id}`}
+                  style={styles.shareBtn}
+                  onPress={async () => {
+                    try {
+                      const data = await api.shareTryOn(item.id);
+                      const ok = await shareBase64Image(data.image_b64, "aurafit-tryon");
+                      if (!ok) toast.show("Sharing not available", "error");
+                    } catch (e: any) {
+                      toast.show(e?.message ?? "Could not share", "error");
+                    }
+                  }}
+                >
+                  <Feather name="share-2" size={16} color={colors.primaryFg} />
+                </TouchableOpacity>
+              </View>
             </View>
           )}
           ListEmptyComponent={
@@ -134,6 +154,7 @@ const styles = StyleSheet.create({
   historyCard: { paddingHorizontal: spacing.lg, marginBottom: spacing.lg },
   historyImage: { width: "100%", aspectRatio: 3 / 4, backgroundColor: colors.muted },
   fitBanner: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
@@ -141,6 +162,13 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
   },
   fitText: { color: colors.primaryFg, fontFamily: fonts.bodyMedium, fontSize: 13, flex: 1 },
+  historyActions: { flexDirection: "row", alignItems: "stretch" },
+  shareBtn: {
+    width: 56,
+    backgroundColor: "#1F1F1F",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   emptyHistory: {
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.xl,

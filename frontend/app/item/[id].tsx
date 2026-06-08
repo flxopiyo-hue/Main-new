@@ -14,10 +14,12 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppButton } from "@/src/components/AppButton";
+import { HeartButton } from "@/src/components/HeartButton";
 import { useToast } from "@/src/components/Toast";
 import { api, BACKEND_URL, ColorOption, Item, SizeOption } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
 import { dataUriFromBase64 } from "@/src/lib/images";
+import { shareBase64Image } from "@/src/lib/share";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
 export default function ItemDetail() {
@@ -29,23 +31,33 @@ export default function ItemDetail() {
   const [loading, setLoading] = useState(true);
   const [selectedSize, setSelectedSize] = useState<SizeOption | null>(null);
   const [selectedColor, setSelectedColor] = useState<ColorOption | null>(null);
+  const [tryOnId, setTryOnId] = useState<string | null>(null);
   const [tryOnImage, setTryOnImage] = useState<string | null>(null);
   const [fitSummary, setFitSummary] = useState<string | null>(null);
+  const [wished, setWished] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [buying, setBuying] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const data = await api.getItem(String(id));
+      const [data, wl] = await Promise.all([
+        api.getItem(String(id)),
+        user?.role === "buyer" ? api.wishlistIds() : Promise.resolve({ item_ids: [] }),
+      ]);
       setItem(data);
-      if (data.sizes.length > 0) setSelectedSize(data.sizes[0]);
+      setWished(wl.item_ids.includes(String(id)));
+      if (data.sizes.length > 0) {
+        const inStock = data.sizes.find((s) => s.available_qty > 0) ?? data.sizes[0];
+        setSelectedSize(inStock);
+      }
       if (data.colors.length > 0) setSelectedColor(data.colors[0]);
     } catch (e: any) {
       toast.show(e?.message ?? "Failed to load item", "error");
     } finally {
       setLoading(false);
     }
-  }, [id, toast]);
+  }, [id, toast, user?.role]);
 
   useEffect(() => {
     load();
@@ -64,6 +76,7 @@ export default function ItemDetail() {
       }
       const result = await api.tryOn({ item_id: item.id, use_profile_photo: true });
       setTryOnImage(result.result_image_b64);
+      setTryOnId(result.id);
       setFitSummary(result.fit_summary ?? null);
     } catch (e: any) {
       toast.show(e?.message ?? "Try-on failed", "error");
@@ -77,6 +90,20 @@ export default function ItemDetail() {
       runTryOn();
     }
   }, [tryon, item, tryOnImage, generating, runTryOn]);
+
+  const onShare = async () => {
+    if (!tryOnId) return;
+    setSharing(true);
+    try {
+      const data = await api.shareTryOn(tryOnId);
+      const ok = await shareBase64Image(data.image_b64, "aurafit-tryon");
+      if (!ok) toast.show("Sharing not available on this device", "error");
+    } catch (e: any) {
+      toast.show(e?.message ?? "Could not share", "error");
+    } finally {
+      setSharing(false);
+    }
+  };
 
   const buy = async () => {
     if (!item || !selectedSize) return;
@@ -254,6 +281,18 @@ export default function ItemDetail() {
             onPress={runTryOn}
             loading={generating}
           />
+          {tryOnImage ? (
+            <>
+              <View style={{ height: spacing.sm }} />
+              <AppButton
+                testID="item-share-btn"
+                label="Share This Look"
+                variant="secondary"
+                onPress={onShare}
+                loading={sharing}
+              />
+            </>
+          ) : null}
           <View style={{ height: spacing.md }} />
           <AppButton
             testID="item-buy-btn"
@@ -285,6 +324,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  heroIconWrap: { marginRight: 8 },
   generating: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.55)",

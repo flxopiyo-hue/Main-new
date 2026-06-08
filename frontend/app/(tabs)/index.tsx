@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ChipsRow } from "@/src/components/ChipsRow";
+import { HeartButton } from "@/src/components/HeartButton";
 import { useToast } from "@/src/components/Toast";
 import { api, Item } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
@@ -39,6 +40,7 @@ export default function Discover() {
   const [category, setCategory] = useState<string | null>(null);
   const [sizeFilter, setSizeFilter] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [wishedIds, setWishedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -47,19 +49,23 @@ export default function Discover() {
 
   const load = useCallback(async () => {
     try {
-      const data = await api.listItems({
-        category: category ?? undefined,
-        size: sizeFilter ?? undefined,
-        audience: showAll ? "all" : undefined,
-      });
+      const [data, wl] = await Promise.all([
+        api.listItems({
+          category: category ?? undefined,
+          size: sizeFilter ?? undefined,
+          audience: showAll ? "all" : undefined,
+        }),
+        user?.role === "buyer" ? api.wishlistIds() : Promise.resolve({ item_ids: [] }),
+      ]);
       setItems(data);
+      setWishedIds(new Set(wl.item_ids));
     } catch (e: any) {
       toast.show(e?.message ?? "Failed to load items", "error");
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [category, sizeFilter, showAll, toast]);
+  }, [category, sizeFilter, showAll, toast, user?.role]);
 
   useFocusEffect(
     useCallback(() => {
@@ -84,6 +90,8 @@ export default function Discover() {
   };
 
   const renderItem = ({ item, index }: { item: Item; index: number }) => {
+    const totalQty = item.sizes.reduce((s, x) => s + (x.available_qty || 0), 0);
+    const outOfStock = totalQty === 0;
     return (
       <TouchableOpacity
         testID={`item-card-${item.id}`}
@@ -91,11 +99,36 @@ export default function Discover() {
         onPress={() => router.push(`/item/${item.id}`)}
         style={[styles.card, index % 2 === 0 ? styles.cardLeft : styles.cardRight]}
       >
-        <Image
-          source={{ uri: dataUriFromBase64(item.image_b64) }}
-          style={styles.cardImage}
-          resizeMode="cover"
-        />
+        <View style={styles.cardImageWrap}>
+          <Image
+            source={{ uri: dataUriFromBase64(item.image_b64) }}
+            style={styles.cardImage}
+            resizeMode="cover"
+          />
+          {user?.role === "buyer" ? (
+            <View style={styles.cardHeart}>
+              <HeartButton
+                itemId={item.id}
+                initial={wishedIds.has(item.id)}
+                size={18}
+                onChange={(active) => {
+                  setWishedIds((prev) => {
+                    const next = new Set(prev);
+                    if (active) next.add(item.id);
+                    else next.delete(item.id);
+                    return next;
+                  });
+                }}
+                testID={`item-card-${item.id}-heart`}
+              />
+            </View>
+          ) : null}
+          {outOfStock ? (
+            <View style={styles.outBadge} testID={`item-card-${item.id}-out`}>
+              <Text style={styles.outBadgeText}>Sold out</Text>
+            </View>
+          ) : null}
+        </View>
         <View style={styles.cardBody}>
           <Text style={styles.cardSeller} numberOfLines={1}>
             {item.seller_name.toUpperCase()}
