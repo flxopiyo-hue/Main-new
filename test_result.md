@@ -107,6 +107,27 @@ user_problem_statement: |
   1) Enhanced AI try-on with multi-angle previews (front + side + back), and
   2) Currency localization — user is in Kenya, so support KES + other currencies.
 
+
+  - task: "Backend refactor — split server.py into core/* + models.py + routers/* modules"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py + /app/backend/core/* + /app/backend/models.py + /app/backend/routers/*"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Server.py shrunk from 1784 → 80 lines (just FastAPI app, CORS, lifecycle, router includes). Extracted:
+          • core/config.py (env vars, constants)
+          • core/db.py (Mongo client singleton)
+          • core/security.py (bcrypt, JWT, get_current_user, require_role, try_get_user_from_creds)
+          • core/images.py (strip_data_prefix, watermark_image)
+          • models.py (every Pydantic schema + user_to_out, item_to_out, collection_to_out, total_qty)
+          • routers/{auth,profile,items,wishlist,tryon,orders,payments,seller,collections}.py — each owns one APIRouter()
+          Route-ordering invariants preserved (/items/mine before /items/{id}, /collections/mine before /collections/{id}, /tryon/history before /tryon/{id}/share).
+          Verified via 15 curl smoke tests (auth/me, items, items/mine, feed, collections, wishlist, orders, tryon/history, seller/analytics, seller/connect/status, prefs PATCH valid + 422, profile). All 200/expected. Backend lint: 0 issues. No behavioural change; legacy try-ons (single result_image_b64) still surface as images=[{angle:'front',...}].
 backend:
   - task: "Currency Localization — per-item currency, user.preferred_currency (default KES), Stripe charges item currency, PATCH /api/auth/preferences"
     implemented: true

@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 7 (modular-router refactor) backend regression PASSED — 30/30 pytest cases green in 16.8s against the public preview URL. Verified that every spec bullet behaves identically to iteration 6 after the server.py → routers/* split. Real Gemini Nano Banana single-angle try-on succeeded (skip-on-5xx safeguard never triggered). Currency precedence (explicit > seller.preferred_currency > KES default) now works end-to-end — the iteration-6 ItemIn bug is fixed (currency=Optional[Currency]=None in models.py:131). Route-ordering invariants verified explicitly: /items/mine, /collections/mine and /tryon/history all resolve to their literal handlers and are NOT swallowed by /items/{id}, /collections/{id} or /tryon/{id}/share. View counter logic correctly skips the seller's own GET. Stripe checkout propagates item.currency=EUR into the persisted order and /payments/status returns it. Connect mock (sk_test_emergent proxy limitation) correctly synthesises acct_demo_* and flips connect_status to 'active'. No regressions detected.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration7_refactor.py",
+    "/app/backend/tests/test_iteration6_currency_multiangle.py",
+    "/app/test_reports/pytest/iteration7_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Refactor is clean: server.py is now 80 lines, models.py 343, every router <240 lines except tryon.py (382) which is still reasonable for the multi-angle logic. All files comfortably under the 700-line guideline.",
+    "core/security.py correctly centralises JWT + auth dependency. try_get_user_from_creds is used by /items list and /items/{id} for optional auth — verified the seller-skip-views logic still functions.",
+    "models.py: ItemIn.currency is now Optional[Currency]=None and the fallback chain `body.currency or user.get('preferred_currency') or DEFAULT_CURRENCY` in routers/items.py:38-40 is correct.",
+    "routers/items.py and routers/collections.py declare /mine BEFORE /{id} via decorator order, which FastAPI relies on for route resolution. Suite explicitly asserts this.",
+    "routers/payments.py: STRIPE_API_KEY required at request time (good — won't crash on import). Currency is lowercased before hitting Stripe but stored uppercased in the Order doc — matches Stripe convention and our DTO.",
+    "routers/seller.py: Stripe Connect onboarding is MOCKED (sk_test_emergent proxy limitation). connect_setup synthesises acct_demo_<hex> and marks active. Note returned via CONNECT_MOCKED_NOTE — frontend should surface this string so users know it's mocked.",
+    "routers/tryon.py: per-angle generation runs via asyncio.gather; failed angles are dropped, only 502 when ALL angles fail. Matches iteration-6 behaviour.",
+    "Minor nit: collection_to_out drops `audience` and `category` because they don't exist on the collection doc — fine. But routers/collections.py:79 returns `items` via `item_to_out(it).model_dump()` which is correct; collection_to_out is also correct."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration7_refactor.py (new — 30 cases targeting the refactor)",
+    "/app/test_reports/pytest/iteration7_results.xml (new JUnit XML)"
+  ],
+  "success_rate": {"backend": "100% (30/30)", "frontend": "not tested (backend-only request)"},
+  "seed_data_creation": "Creates ephemeral TEST_REF_*/TEST_OWN_*/TEST_curr_* users, items and collections via the public API; every artefact is cleaned up in test teardown. Seller's preferred_currency is mutated to USD inside one test and restored to KES afterwards. Demo accounts (atelier@aurafit.demo, buyer@aurafit.demo) are reused per /app/memory/test_credentials.md.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Run: cd /app/backend && python -m pytest tests/test_iteration7_refactor.py -v. Single live Nano Banana call (1 angle) is exercised — if budget is exhausted, the suite SKIPs the try-on block instead of failing. The legacy iteration-6 suite (tests/test_iteration6_currency_multiangle.py) is also still green except it does a 3-angle call (≈ 10s) — prefer iteration_7 for quick CI. Public URL comes from frontend/.env:EXPO_PUBLIC_BACKEND_URL. Seller demo creds are atelier@aurafit.demo / demo-seller-2026 (NOT seller@aurafit.demo).",
+  "rca_of_issue": "N/A — refactor verified as behaviour-preserving. The iteration-6 ItemIn bug (currency always 'KES') is no longer reproducible because models.py:131 now declares `currency: Optional[Currency] = None` and routers/items.py:38-40 applies the `body.currency or user.preferred_currency or DEFAULT_CURRENCY` fallback. Verified live with seller preferred=USD → POST /items without currency yields item.currency='USD'."
+}
