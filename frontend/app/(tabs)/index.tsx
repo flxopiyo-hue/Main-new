@@ -16,8 +16,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { ChipsRow } from "@/src/components/ChipsRow";
 import { HeartButton } from "@/src/components/HeartButton";
 import { useToast } from "@/src/components/Toast";
-import { api, Item } from "@/src/lib/api";
+import { api, Collection, Item } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
+import { formatPrice, indicativePrice } from "@/src/lib/currency";
 import { dataUriFromBase64 } from "@/src/lib/images";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
@@ -37,6 +38,7 @@ export default function Discover() {
   const { user } = useAuth();
   const toast = useToast();
   const [items, setItems] = useState<Item[]>([]);
+  const [collections, setCollections] = useState<Collection[]>([]);
   const [category, setCategory] = useState<string | null>(null);
   const [sizeFilter, setSizeFilter] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
@@ -136,7 +138,19 @@ export default function Discover() {
           <Text style={styles.cardName} numberOfLines={2}>
             {item.name}
           </Text>
-          <Text style={styles.cardPrice}>${(item.price_cents / 100).toFixed(0)}</Text>
+          <Text style={styles.cardPrice}>{formatPrice(item.price_cents, item.currency)}</Text>
+          {(() => {
+            const approx = indicativePrice(
+              item.price_cents,
+              item.currency,
+              user?.preferred_currency,
+            );
+            return approx ? (
+              <Text style={styles.cardPriceApprox} numberOfLines={1}>
+                {approx}
+              </Text>
+            ) : null;
+          })()}
         </View>
       </TouchableOpacity>
     );
@@ -217,6 +231,53 @@ export default function Discover() {
           numColumns={2}
           contentContainerStyle={styles.listContent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          ListHeaderComponent={
+            collections.length > 0 && !category && !sizeFilter ? (
+              <View style={styles.dropsBlock}>
+                <View style={styles.dropsHeader}>
+                  <Text style={tp.caption}>Drops</Text>
+                  <Text style={[tp.bodyMuted, { fontSize: 12 }]}>
+                    {collections.length} collection{collections.length === 1 ? "" : "s"}
+                  </Text>
+                </View>
+                <FlatList
+                  horizontal
+                  data={collections}
+                  keyExtractor={(c) => c.id}
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.dropsRow}
+                  renderItem={({ item: c }) => (
+                    <TouchableOpacity
+                      testID={`drop-${c.id}`}
+                      onPress={() => router.push(`/collection/${c.id}`)}
+                      style={styles.dropCard}
+                      activeOpacity={0.85}
+                    >
+                      {c.cover_image_b64 ? (
+                        <Image
+                          source={{ uri: dataUriFromBase64(c.cover_image_b64) }}
+                          style={styles.dropImage}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={[styles.dropImage, styles.dropImageEmpty]} />
+                      )}
+                      <View style={styles.dropOverlay} />
+                      <View style={styles.dropTextWrap}>
+                        <Text style={styles.dropName} numberOfLines={2}>
+                          {c.name}
+                        </Text>
+                        <Text style={styles.dropMeta} numberOfLines={1}>
+                          {c.seller_name} · {c.item_ids.length} piece
+                          {c.item_ids.length === 1 ? "" : "s"}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
+                />
+              </View>
+            ) : null
+          }
         />
       )}
     </SafeAreaView>
@@ -278,6 +339,48 @@ const styles = StyleSheet.create({
     textDecorationLine: "underline",
   },
   listContent: { paddingBottom: spacing.xxl, paddingTop: spacing.md },
+  dropsBlock: { marginBottom: spacing.lg },
+  dropsHeader: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  dropsRow: { paddingHorizontal: spacing.lg, gap: spacing.md },
+  dropCard: {
+    width: 240,
+    height: 150,
+    backgroundColor: colors.muted,
+    overflow: "hidden",
+    position: "relative",
+  },
+  dropImage: { ...StyleSheet.absoluteFillObject, width: 240, height: 150 },
+  dropImageEmpty: { backgroundColor: colors.primary },
+  dropOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.35)",
+  },
+  dropTextWrap: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    bottom: 14,
+  },
+  dropName: {
+    fontFamily: fonts.heading,
+    fontSize: 20,
+    lineHeight: 22,
+    color: "#FFFFFF",
+  },
+  dropMeta: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 11,
+    color: "#E5E5E5",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    marginTop: 4,
+  },
   card: {
     flex: 1,
     marginBottom: spacing.lg,
@@ -290,6 +393,12 @@ const styles = StyleSheet.create({
   cardSeller: { fontFamily: fonts.bodyMedium, fontSize: 10, letterSpacing: 2, color: colors.mutedFg },
   cardName: { fontFamily: fonts.heading, fontSize: 18, color: colors.primary, marginTop: 2 },
   cardPrice: { fontFamily: fonts.bodySemi, fontSize: 14, color: colors.primary, marginTop: 4 },
+  cardPriceApprox: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: colors.mutedFg,
+    marginTop: 2,
+  },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   empty: { padding: spacing.lg },
   emptyHero: { width: "100%", aspectRatio: 4 / 5, backgroundColor: colors.muted, marginBottom: spacing.lg },

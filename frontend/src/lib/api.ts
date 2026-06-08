@@ -9,6 +9,20 @@ const TOKEN_KEY = "aurafit.token";
 export type Role = "buyer" | "seller";
 export type Gender = "male" | "female" | "other" | "prefer_not_to_say";
 export type Audience = "men" | "women" | "unisex";
+export type CurrencyCode =
+  | "USD"
+  | "KES"
+  | "EUR"
+  | "GBP"
+  | "NGN"
+  | "ZAR"
+  | "INR"
+  | "UGX"
+  | "TZS"
+  | "RWF"
+  | "GHS"
+  | "EGP";
+export type TryOnAngle = "front" | "three_quarter" | "side" | "back";
 
 export interface User {
   id: string;
@@ -18,6 +32,9 @@ export interface User {
   gender?: Gender | null;
   age?: number | null;
   dob?: string | null;
+  stripe_account_id?: string | null;
+  connect_status?: "unstarted" | "pending" | "active";
+  preferred_currency?: CurrencyCode;
   created_at: string;
 }
 
@@ -61,6 +78,7 @@ export interface Item {
   description: string;
   category: string;
   price_cents: number;
+  currency: CurrencyCode;
   image_b64: string;
   sizes: SizeOption[];
   colors: ColorOption[];
@@ -68,10 +86,16 @@ export interface Item {
   created_at: string;
 }
 
+export interface TryOnImageOut {
+  angle: TryOnAngle;
+  image_b64: string;
+}
+
 export interface TryOnResult {
   id: string;
   item_id: string;
   result_image_b64: string;
+  images?: TryOnImageOut[];
   fit_summary?: string | null;
   created_at: string;
 }
@@ -84,6 +108,7 @@ export interface Order {
   size: string;
   color?: string | null;
   amount_cents: number;
+  currency: CurrencyCode;
   status: string;
   fit_feedback?: "small" | "perfect" | "large" | null;
   session_id: string;
@@ -106,6 +131,8 @@ export interface ItemAnalytics {
   wishlists: number;
   orders_paid: number;
   revenue_cents: number;
+  platform_fee_cents: number;
+  net_cents: number;
   conversion: number;
 }
 
@@ -115,7 +142,30 @@ export interface SellerAnalytics {
   total_wishlists: number;
   total_orders_paid: number;
   total_revenue_cents: number;
+  total_platform_fee_cents: number;
+  total_net_cents: number;
+  connect_status: "unstarted" | "pending" | "active";
+  platform_fee_bps: number;
   items: ItemAnalytics[];
+}
+
+export interface ConnectStatus {
+  stripe_account_id?: string | null;
+  connect_status: "unstarted" | "pending" | "active";
+  onboarding_url?: string | null;
+  platform_fee_bps: number;
+  note?: string | null;
+}
+
+export interface Collection {
+  id: string;
+  seller_id: string;
+  seller_name: string;
+  name: string;
+  description: string;
+  item_ids: string[];
+  cover_image_b64?: string | null;
+  created_at: string;
 }
 
 export interface TryOnShare {
@@ -177,10 +227,13 @@ export const api = {
     gender: Gender;
     age?: number;
     dob?: string;
+    preferred_currency?: CurrencyCode;
   }) => request<{ token: string; user: User }>("/auth/register", { method: "POST", body, auth: false }),
   login: (body: { email: string; password: string }) =>
     request<{ token: string; user: User }>("/auth/login", { method: "POST", body, auth: false }),
   me: () => request<User>("/auth/me"),
+  updatePreferences: (body: { preferred_currency?: CurrencyCode }) =>
+    request<User>("/auth/preferences", { method: "PATCH", body }),
 
   // Profile
   getProfile: () => request<Profile>("/profile"),
@@ -218,6 +271,7 @@ export const api = {
     description: string;
     category: string;
     price_cents: number;
+    currency?: CurrencyCode;
     image_b64: string;
     sizes: SizeOption[];
     colors: ColorOption[];
@@ -226,10 +280,19 @@ export const api = {
   deleteItem: (id: string) => request<{ ok: boolean }>(`/items/${id}`, { method: "DELETE" }),
 
   // Try-On
-  tryOn: (body: { item_id: string; use_profile_photo?: boolean; body_photo_b64?: string }) =>
-    request<TryOnResult>("/tryon", { method: "POST", body }),
+  tryOn: (body: {
+    item_id: string;
+    use_profile_photo?: boolean;
+    body_photo_b64?: string;
+    angles?: TryOnAngle[];
+  }) => request<TryOnResult>("/tryon", { method: "POST", body }),
   tryOnHistory: () => request<TryOnResult[]>("/tryon/history"),
-  shareTryOn: (id: string) => request<TryOnShare>(`/tryon/${id}/share`),
+  shareTryOn: (
+    id: string,
+    fmt: "square" | "story" = "square",
+    angle: TryOnAngle = "front",
+  ) =>
+    request<TryOnShare>(`/tryon/${id}/share?fmt=${fmt}&angle=${angle}`),
 
   // Wishlist
   addWishlist: (itemId: string) =>
@@ -239,10 +302,25 @@ export const api = {
   listWishlist: () => request<WishlistEntry[]>("/wishlist"),
   wishlistIds: () => request<{ item_ids: string[] }>("/wishlist/ids"),
 
-  // Seller analytics + inventory
+  // Seller analytics + inventory + connect
   sellerAnalytics: () => request<SellerAnalytics>("/seller/analytics"),
+  connectStatus: () => request<ConnectStatus>("/seller/connect/status"),
+  connectSetup: () => request<ConnectStatus>("/seller/connect/setup", { method: "POST" }),
   patchItem: (id: string, body: { sizes?: SizeOption[] }) =>
     request<Item>(`/items/${id}`, { method: "PATCH", body }),
+
+  // Feed (algorithmic discover)
+  feed: () => request<Item[]>("/feed"),
+
+  // Collections
+  listCollections: () => request<Collection[]>("/collections"),
+  myCollections: () => request<Collection[]>("/collections/mine"),
+  getCollection: (id: string) =>
+    request<{ collection: Collection; items: Item[] }>(`/collections/${id}`),
+  createCollection: (body: { name: string; description: string; item_ids: string[] }) =>
+    request<Collection>("/collections", { method: "POST", body }),
+  deleteCollection: (id: string) =>
+    request<{ ok: boolean }>(`/collections/${id}`, { method: "DELETE" }),
 
   // Order fit feedback
   orderFeedback: (id: string, fit: FitFeedback) =>

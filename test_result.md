@@ -101,3 +101,92 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: |
+  Continue developing AuraFit (AI virtual try-on clothing app). Two enhancements this iteration:
+  1) Enhanced AI try-on with multi-angle previews (front + side + back), and
+  2) Currency localization — user is in Kenya, so support KES + other currencies.
+
+backend:
+  - task: "Multi-angle Try-On — TryOnIn accepts angles list, parallel Gemini Nano Banana generations, response carries images:[{angle,image_b64}]"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Added TryOnAngle type, ANGLE_INSTRUCTIONS prompt map, _generate_single_angle helper, asyncio.gather parallel generation. /api/tryon now accepts angles[] (max 4, default ['front']). /api/tryon/history returns images[]. /api/tryon/{id}/share accepts ?angle=front|three_quarter|side|back. Backward compat: result_image_b64 still populated (first angle). Legacy single-angle records still play back via /history."
+
+  - task: "Currency Localization — per-item currency, user.preferred_currency (default KES), Stripe charges item currency, PATCH /api/auth/preferences"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Added Currency literal (USD/KES/EUR/GBP/NGN/ZAR/INR/UGX/TZS/RWF/GHS/EGP), DEFAULT_CURRENCY='KES'. Items now carry currency (defaults to seller.preferred_currency at create time). Users carry preferred_currency (defaults to KES on register if not provided). Orders carry currency. Stripe checkout now passes the item's currency (lowercased). New PATCH /api/auth/preferences endpoint validates the literal and updates user.preferred_currency. UserOut + OrderOut return currency."
+
+frontend:
+  - task: "Multi-angle UI in Item Detail — Try It On (front) and Multi-Angle Try-On (front+side+back) buttons; thumbnail strip; share active angle"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/item/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "runTryOn(angles) now drives both single & multi-angle flows. UI shows ActivityIndicator with copy 'Rendering 3 angles…' during multi. Thumb strip with testID item-angle-{front|side|back} when >1 image returned. Share button now shares activeAngle. Reset button clears all angles."
+
+  - task: "Currency display everywhere via formatPrice/indicativePrice; profile picker; new-item currency chip selector"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/lib/currency.ts, /app/frontend/app/(tabs)/profile.tsx, /app/frontend/app/seller/new-item.tsx, /app/frontend/app/(tabs)/index.tsx, /app/frontend/app/item/[id].tsx, /app/frontend/app/checkout/result.tsx, /app/frontend/app/collection/[id].tsx, /app/frontend/app/(tabs)/atelier.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "New currency.ts with 12 currencies (KSh, $, €, £, ₦, R, ₹, USh, TSh, RF, GH₵, E£), formatPrice handles decimals=0/2, indicativePrice gives ≈ conversion when buyer's preferred currency differs from listing. Profile screen has expandable Region & Currency card with testID profile-currency-{CODE}. Seller new-item has chip-row currency selector defaulting to seller's preferred currency. All price strings replaced. Verified via screenshots: Discover cards show '$ 169.00' with '≈ KSh 21,886' below; Profile shows current KES + opens picker with all 12 options."
+
+metadata:
+  created_by: "main_agent"
+  version: "1.6"
+  test_sequence: 6
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Multi-angle Try-On (backend + frontend)"
+    - "Currency Localization (backend + frontend)"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: |
+      Iteration 6 implements (a) Multi-angle AI try-on (front/3-4/side/back) with parallel Nano Banana renders and (b) Currency localization (12 currencies, KES default for new Kenyan users, indicative FX, per-item listing currency, Stripe charges item currency).
+      Please test:
+      Backend:
+        1) POST /api/auth/register without preferred_currency → user.preferred_currency = "KES"
+        2) PATCH /api/auth/preferences {"preferred_currency":"USD"} → 200, user.preferred_currency = "USD"; bad code → 422
+        3) POST /api/items (seller) without currency → item.currency = seller.preferred_currency
+        4) POST /api/items with explicit currency=KES → stored
+        5) POST /api/tryon with angles=["front","side","back"] → returns images list of 3 entries (each has angle + image_b64) AND result_image_b64 is the front one. Make sure the call completes (Nano Banana parallel) — allow up to 90s.
+        6) GET /api/tryon/{id}/share?fmt=square&angle=side → returns a watermarked image_b64 for the side angle (200). With angle=back when only front+side exist, should gracefully fall back.
+        7) GET /api/tryon/history → returns images[] populated; legacy records (single result_image_b64) should also surface as images[{angle:"front",image_b64:…}].
+        8) POST /api/payments/checkout → success, order.currency matches item.currency.
+      Use the existing demo credentials in /app/memory/test_credentials.md.
+      Frontend (only if backend passes):
+        1) Login as buyer → Profile tab → tap "REGION & CURRENCY" → list of 12 currencies appears → switch to USD then back to KES (toast shows). On Discover, the indicative price under each card should disappear when KES = listing currency, and reappear with the right symbol otherwise.
+        2) On an item detail page, tap "Try It On" → single front render arrives. Tap "Multi-Angle Try-On" → 3 thumbs appear (Front/Side/Back) — tap each to swap hero. Share button shares the active angle.
+        3) Seller new-item form → currency chips visible, selecting KES updates the price input label to "Price (KES)" with placeholder "12,500".

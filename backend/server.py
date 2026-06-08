@@ -51,6 +51,11 @@ STRIPE_API_KEY = os.environ.get("STRIPE_API_KEY", "")
 
 NANO_BANANA_MODEL = "gemini-3.1-flash-image-preview"
 VISION_MODEL = "gemini-2.5-flash"
+PLATFORM_FEE_BPS = 800  # 8% take rate
+CONNECT_MOCKED_NOTE = (
+    "Demo onboarding — replace `STRIPE_API_KEY` with a real Stripe test key "
+    "to enable real Stripe Connect Express accounts and live payouts."
+)
 
 # -------------------------------------------------------------------------
 # DB
@@ -74,6 +79,14 @@ Role = Literal["buyer", "seller"]
 Gender = Literal["male", "female", "other", "prefer_not_to_say"]
 Audience = Literal["men", "women", "unisex"]
 FitFeedback = Literal["small", "perfect", "large"]
+# Supported listing/display currencies. KES = Kenyan Shilling (default for new accounts).
+Currency = Literal[
+    "USD", "KES", "EUR", "GBP", "NGN", "ZAR", "INR", "UGX", "TZS", "RWF", "GHS", "EGP"
+]
+DEFAULT_CURRENCY: str = "KES"
+# Try-on viewing angles. Front is the only required one (uses uploaded body photo).
+TryOnAngle = Literal["front", "three_quarter", "side", "back"]
+MAX_TRYON_ANGLES = 4
 
 
 class RegisterIn(BaseModel):
@@ -84,11 +97,16 @@ class RegisterIn(BaseModel):
     gender: Gender
     age: Optional[int] = Field(default=None, ge=13, le=120)
     dob: Optional[str] = None  # ISO date "YYYY-MM-DD"; if set, server derives age
+    preferred_currency: Optional[Currency] = None  # defaults to DEFAULT_CURRENCY
 
 
 class LoginIn(BaseModel):
     email: EmailStr
     password: str
+
+
+class PreferencesIn(BaseModel):
+    preferred_currency: Optional[Currency] = None
 
 
 class UserOut(BaseModel):
@@ -99,6 +117,9 @@ class UserOut(BaseModel):
     gender: Optional[Gender] = None
     age: Optional[int] = None
     dob: Optional[str] = None
+    stripe_account_id: Optional[str] = None
+    connect_status: Literal["unstarted", "pending", "active"] = "unstarted"
+    preferred_currency: Currency = DEFAULT_CURRENCY  # type: ignore[assignment]
     created_at: datetime
 
 
@@ -157,6 +178,7 @@ class ItemIn(BaseModel):
     description: str = ""
     category: Literal["shirts", "dresses", "pants", "outerwear", "shoes", "accessories"]
     price_cents: int = Field(ge=0)
+    currency: Currency = DEFAULT_CURRENCY  # type: ignore[assignment]
     image_b64: str  # primary garment image
     sizes: List[SizeOption]
     colors: List[ColorOption] = []
@@ -171,6 +193,7 @@ class ItemOut(BaseModel):
     description: str
     category: str
     price_cents: int
+    currency: Currency = "USD"  # listing currency
     image_b64: str
     sizes: List[SizeOption]
     colors: List[ColorOption]
@@ -182,12 +205,22 @@ class TryOnIn(BaseModel):
     item_id: str
     use_profile_photo: bool = True  # use stored front photo
     body_photo_b64: Optional[str] = None  # override if provided
+    # Angles to render. Default keeps existing single-angle behavior.
+    angles: List[TryOnAngle] = Field(default_factory=lambda: ["front"])
+
+
+class TryOnImage(BaseModel):
+    angle: TryOnAngle
+    image_b64: str
 
 
 class TryOnOut(BaseModel):
     id: str
     item_id: str
+    # Backward-compat: first angle's image (always "front" when present, else first).
     result_image_b64: str
+    # New: every generated angle.
+    images: List[TryOnImage] = Field(default_factory=list)
     fit_summary: Optional[str] = None
     created_at: datetime
 
@@ -212,6 +245,7 @@ class OrderOut(BaseModel):
     size: str
     color: Optional[str]
     amount_cents: int
+    currency: Currency = "USD"
     status: str  # pending / paid / failed / cancelled
     fit_feedback: Optional[FitFeedback] = None
     session_id: str
@@ -240,6 +274,8 @@ class ItemAnalytics(BaseModel):
     wishlists: int = 0
     orders_paid: int = 0
     revenue_cents: int = 0
+    platform_fee_cents: int = 0
+    net_cents: int = 0
     conversion: float = 0.0  # orders_paid / max(views, 1)
 
 
@@ -249,7 +285,36 @@ class SellerAnalyticsOut(BaseModel):
     total_wishlists: int
     total_orders_paid: int
     total_revenue_cents: int
+    total_platform_fee_cents: int = 0
+    total_net_cents: int = 0
+    connect_status: Literal["unstarted", "pending", "active"] = "unstarted"
+    platform_fee_bps: int = PLATFORM_FEE_BPS
     items: List[ItemAnalytics]
+
+
+class ConnectStatusOut(BaseModel):
+    stripe_account_id: Optional[str] = None
+    connect_status: Literal["unstarted", "pending", "active"]
+    onboarding_url: Optional[str] = None
+    platform_fee_bps: int = PLATFORM_FEE_BPS
+    note: Optional[str] = None
+
+
+class CollectionIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    description: str = ""
+    item_ids: List[str] = []
+
+
+class CollectionOut(BaseModel):
+    id: str
+    seller_id: str
+    seller_name: str
+    name: str
+    description: str
+    item_ids: List[str]
+    cover_image_b64: Optional[str] = None
+    created_at: datetime
 
 
 class TryOnShareOut(BaseModel):
@@ -311,6 +376,9 @@ def user_to_out(doc: Dict[str, Any]) -> UserOut:
         gender=doc.get("gender"),
         age=doc.get("age"),
         dob=doc.get("dob"),
+        stripe_account_id=doc.get("stripe_account_id"),
+        connect_status=doc.get("connect_status", "unstarted"),
+        preferred_currency=doc.get("preferred_currency", DEFAULT_CURRENCY),
         created_at=doc["created_at"],
     )
 
@@ -324,6 +392,7 @@ def item_to_out(doc: Dict[str, Any]) -> ItemOut:
         description=doc.get("description", ""),
         category=doc["category"],
         price_cents=doc["price_cents"],
+        currency=doc.get("currency", "USD"),
         image_b64=doc["image_b64"],
         sizes=[SizeOption(**s) for s in doc.get("sizes", [])],
         colors=[ColorOption(**c) for c in doc.get("colors", [])],
@@ -385,6 +454,7 @@ async def register(body: RegisterIn) -> AuthOut:
         "gender": body.gender,
         "age": resolved_age,
         "dob": dob_iso,
+        "preferred_currency": body.preferred_currency or DEFAULT_CURRENCY,
         "hashed_password": hash_password(body.password),
         "created_at": now,
     }
@@ -405,6 +475,23 @@ async def login(body: LoginIn) -> AuthOut:
 @api_router.get("/auth/me", response_model=UserOut)
 async def me(user: Dict[str, Any] = Depends(get_current_user)) -> UserOut:
     return user_to_out(user)
+
+
+@api_router.patch("/auth/preferences", response_model=UserOut)
+async def update_preferences(
+    body: PreferencesIn, user: Dict[str, Any] = Depends(get_current_user)
+) -> UserOut:
+    """Update user-level preferences (currency, etc.). Currently only currency."""
+    update: Dict[str, Any] = {}
+    if body.preferred_currency:
+        update["preferred_currency"] = body.preferred_currency
+    if not update:
+        raise HTTPException(status_code=400, detail="No preferences provided")
+    await db.users.update_one({"id": user["id"]}, {"$set": update})
+    fresh = await db.users.find_one(
+        {"id": user["id"]}, {"_id": 0, "hashed_password": 0}
+    )
+    return user_to_out(fresh)
 
 
 # -------------------------------------------------------------------------
@@ -534,6 +621,8 @@ async def create_item(
     await require_role("seller", user)
     item_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
+    # If seller didn't pass an explicit currency, fall back to their preferred currency.
+    listing_currency = body.currency or user.get("preferred_currency") or DEFAULT_CURRENCY
     doc = {
         "id": item_id,
         "seller_id": user["id"],
@@ -542,6 +631,7 @@ async def create_item(
         "description": body.description,
         "category": body.category,
         "price_cents": body.price_cents,
+        "currency": listing_currency,
         "image_b64": _strip_data_prefix(body.image_b64),
         "sizes": [s.model_dump() for s in body.sizes],
         "colors": [c.model_dump() for c in body.colors],
@@ -742,6 +832,82 @@ async def list_wishlist_ids(
 # -------------------------------------------------------------------------
 # Try-On routes
 # -------------------------------------------------------------------------
+import asyncio
+
+
+# Per-angle prompt instructions used to coax Nano Banana into rendering the
+# same person + garment from different viewing angles.
+ANGLE_INSTRUCTIONS: Dict[str, str] = {
+    "front": (
+        "FRONT VIEW: facing the camera straight-on, arms relaxed at sides, "
+        "studio backdrop, soft daylight, full body framing from head to feet."
+    ),
+    "three_quarter": (
+        "THREE-QUARTER VIEW: same person rotated about 45 degrees, weight on "
+        "back foot, contrapposto fashion stance, garment fully visible from this "
+        "angle, soft cinematic light, full body framing."
+    ),
+    "side": (
+        "SIDE PROFILE VIEW: same person photographed from a 90-degree side angle, "
+        "arms slightly forward, garment silhouette emphasised, studio backdrop, "
+        "full body framing from head to feet."
+    ),
+    "back": (
+        "BACK VIEW: same person facing away from the camera so the back of the "
+        "garment is the focal point (back seams, hem, drape clearly visible), "
+        "head turned slightly toward the camera in 3/4 over-the-shoulder pose, "
+        "full body framing."
+    ),
+}
+
+
+async def _generate_single_angle(
+    *,
+    body_b64: str,
+    garment_b64: str,
+    item: Dict[str, Any],
+    user: Dict[str, Any],
+    angle: str,
+    persona: str,
+) -> Optional[str]:
+    """Generate a single angle for the try-on. Returns base64 image or None on failure."""
+    angle_hint = ANGLE_INSTRUCTIONS.get(angle, ANGLE_INSTRUCTIONS["front"])
+    system_msg = (
+        "You are a fashion virtual try-on generator. You will receive two images: "
+        "(1) a person's full-body photo, and (2) a clothing item. Generate a realistic "
+        "photo of the same person wearing the clothing item, preserving the person's "
+        "identity (face, skin tone, hair) and body shape. Replace only the relevant "
+        "clothing region. The output must be a single photorealistic image with a clean, "
+        "neutral studio backdrop."
+    )
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"tryon-{user['id']}-{angle}-{uuid.uuid4()}",
+        system_message=system_msg,
+    ).with_model("gemini", NANO_BANANA_MODEL).with_params(modalities=["image", "text"])
+
+    msg = UserMessage(
+        text=(
+            f"Generate a virtual try-on at the {angle.replace('_', ' ').upper()} angle. "
+            f"{persona}"
+            f"The person is wearing the garment '{item['name']}' "
+            f"(category: {item['category']}, audience: {item.get('audience', 'unisex')}). "
+            f"{angle_hint} "
+            f"Maintain the same identity, skin tone, hair, and overall body proportions. "
+            f"Photorealistic, full body, studio quality, fashion editorial."
+        ),
+        file_contents=[ImageContent(body_b64), ImageContent(garment_b64)],
+    )
+    try:
+        _text, images = await chat.send_message_multimodal_response(msg)
+    except Exception as e:
+        logger.warning("Try-on angle %s failed: %s", angle, e)
+        return None
+    if not images:
+        return None
+    return images[0]["data"]
+
+
 @api_router.post("/tryon", response_model=TryOnOut)
 async def generate_tryon(
     body: TryOnIn, user: Dict[str, Any] = Depends(get_current_user)
@@ -780,52 +946,50 @@ async def generate_tryon(
         persona_bits.append(f"approximately {age} years old")
     persona = (", ".join(persona_bits) + ". ") if persona_bits else ""
 
-    system_msg = (
-        "You are a fashion virtual try-on generator. You will receive two images: "
-        "(1) a person's full-body photo, and (2) a clothing item. Generate a realistic "
-        "photo of the same person wearing the clothing item, preserving the person's "
-        "identity, pose, body shape, skin tone, hair, and background. Replace only the "
-        "relevant clothing region. The output must be a single photorealistic image."
-    )
-    chat = LlmChat(
-        api_key=EMERGENT_LLM_KEY,
-        session_id=f"tryon-{user['id']}-{uuid.uuid4()}",
-        system_message=system_msg,
-    ).with_model("gemini", NANO_BANANA_MODEL).with_params(modalities=["image", "text"])
+    # Validate & de-dupe angles (preserve order). Always ensure "front" comes first.
+    seen: set[str] = set()
+    angles: List[str] = []
+    if "front" in body.angles or not body.angles:
+        angles.append("front")
+        seen.add("front")
+    for a in body.angles:
+        if a in ANGLE_INSTRUCTIONS and a not in seen:
+            angles.append(a)
+            seen.add(a)
+        if len(angles) >= MAX_TRYON_ANGLES:
+            break
 
-    msg = UserMessage(
-        text=(
-            f"Generate a virtual try-on. {persona}"
-            f"The person is wearing the garment '{item['name']}' "
-            f"(category: {item['category']}, audience: {item.get('audience', 'unisex')}). "
-            f"Maintain pose, identity, and background; replace only the relevant clothing. "
-            f"Photorealistic, full body, studio quality."
-        ),
-        file_contents=[ImageContent(body_b64), ImageContent(garment_b64)],
-    )
+    # Run angle generations in parallel.
+    coros = [
+        _generate_single_angle(
+            body_b64=body_b64,
+            garment_b64=garment_b64,
+            item=item,
+            user=user,
+            angle=a,
+            persona=persona,
+        )
+        for a in angles
+    ]
+    results = await asyncio.gather(*coros, return_exceptions=False)
 
-    try:
-        text_resp, images = await chat.send_message_multimodal_response(msg)
-    except Exception as e:
-        logger.exception("Nano Banana error")
-        raise HTTPException(status_code=502, detail=f"Try-on generation failed: {e}")
+    angle_images: List[TryOnImage] = []
+    for ang, img_b64 in zip(angles, results):
+        if img_b64:
+            angle_images.append(TryOnImage(angle=ang, image_b64=img_b64))  # type: ignore[arg-type]
 
-    if not images:
+    if not angle_images:
         raise HTTPException(
-            status_code=502, detail=f"AI did not return an image. Response: {text_resp[:200]}"
+            status_code=502, detail="AI did not return any images. Please try again."
         )
 
-    result_b64 = images[0]["data"]
-    # validate base64
-    try:
-        base64.b64decode(result_b64[:200] + "==", validate=False)
-    except Exception:
-        pass
+    # Ensure "front" is always present in the response — fallback to first.
+    front_image = next((a for a in angle_images if a.angle == "front"), angle_images[0])
 
     # Compute fit suggestion using stored measurements + demographics.
     fit_summary = await _compute_fit_summary(user, item)
 
-    # Bump per-item try-on counter for seller analytics.
+    # Bump per-item try-on counter for seller analytics (one per try-on, not per angle).
     await db.items.update_one({"id": item["id"]}, {"$inc": {"try_ons": 1}})
 
     tryon_id = str(uuid.uuid4())
@@ -835,7 +999,10 @@ async def generate_tryon(
             "id": tryon_id,
             "user_id": user["id"],
             "item_id": item["id"],
-            "result_image_b64": result_b64,
+            # Backward-compat single field still stored.
+            "result_image_b64": front_image.image_b64,
+            # New: array of {angle, image_b64}
+            "images": [a.model_dump() for a in angle_images],
             "fit_summary": fit_summary,
             "created_at": now,
         }
@@ -843,7 +1010,8 @@ async def generate_tryon(
     return TryOnOut(
         id=tryon_id,
         item_id=item["id"],
-        result_image_b64=result_b64,
+        result_image_b64=front_image.image_b64,
+        images=angle_images,
         fit_summary=fit_summary,
         created_at=now,
     )
@@ -954,16 +1122,24 @@ async def tryon_history(
         .sort("created_at", -1)
         .to_list(50)
     )
-    return [
-        TryOnOut(
-            id=d["id"],
-            item_id=d["item_id"],
-            result_image_b64=d["result_image_b64"],
-            fit_summary=d.get("fit_summary"),
-            created_at=d["created_at"],
+    out: List[TryOnOut] = []
+    for d in docs:
+        raw_imgs = d.get("images") or []
+        imgs = [TryOnImage(**a) for a in raw_imgs if a.get("image_b64")]
+        # Legacy try-ons (pre multi-angle) only have result_image_b64.
+        if not imgs and d.get("result_image_b64"):
+            imgs = [TryOnImage(angle="front", image_b64=d["result_image_b64"])]
+        out.append(
+            TryOnOut(
+                id=d["id"],
+                item_id=d["item_id"],
+                result_image_b64=d.get("result_image_b64", imgs[0].image_b64 if imgs else ""),
+                images=imgs,
+                fit_summary=d.get("fit_summary"),
+                created_at=d["created_at"],
+            )
         )
-        for d in docs
-    ]
+    return out
 
 
 # -------------------------------------------------------------------------
@@ -984,6 +1160,8 @@ async def create_checkout(
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
     amount_dollars = item["price_cents"] / 100.0
+    # Use the item's listing currency for Stripe (defaults to USD for legacy items).
+    listing_currency = (item.get("currency") or "USD").lower()
     origin = body.origin_url.rstrip("/")
     success_url = f"{origin}/checkout/result?session_id={{CHECKOUT_SESSION_ID}}"
     cancel_url = f"{origin}/checkout/result?session_id={{CHECKOUT_SESSION_ID}}&cancelled=1"
@@ -991,7 +1169,7 @@ async def create_checkout(
     stripe = _stripe_client()
     req = CheckoutSessionRequest(
         amount=amount_dollars,
-        currency="usd",
+        currency=listing_currency,
         success_url=success_url,
         cancel_url=cancel_url,
         metadata={
@@ -999,6 +1177,7 @@ async def create_checkout(
             "item_id": item["id"],
             "size": body.size,
             "color": body.color or "",
+            "currency": listing_currency,
         },
     )
     try:
@@ -1009,6 +1188,8 @@ async def create_checkout(
 
     order_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
+    platform_fee_cents = (item["price_cents"] * PLATFORM_FEE_BPS) // 10000
+    seller_net_cents = item["price_cents"] - platform_fee_cents
     await db.orders.insert_one(
         {
             "id": order_id,
@@ -1019,6 +1200,9 @@ async def create_checkout(
             "size": body.size,
             "color": body.color,
             "amount_cents": item["price_cents"],
+            "currency": item.get("currency", "USD"),
+            "platform_fee_cents": platform_fee_cents,
+            "seller_net_cents": seller_net_cents,
             "status": "pending",
             "session_id": session.session_id,
             "created_at": now,
@@ -1061,6 +1245,7 @@ async def payment_status(
         "status": order["status"],
         "item_name": order["item_name"],
         "amount_cents": order["amount_cents"],
+        "currency": order.get("currency", "USD"),
     }
 
 
@@ -1080,6 +1265,7 @@ async def my_orders(user: Dict[str, Any] = Depends(get_current_user)) -> List[Or
             size=d["size"],
             color=d.get("color"),
             amount_cents=d["amount_cents"],
+            currency=d.get("currency", "USD"),
             status=d["status"],
             fit_feedback=d.get("fit_feedback"),
             session_id=d["session_id"],
@@ -1114,6 +1300,7 @@ async def submit_fit_feedback(
         size=fresh["size"],
         color=fresh.get("color"),
         amount_cents=fresh["amount_cents"],
+        currency=fresh.get("currency", "USD"),
         status=fresh["status"],
         fit_feedback=fresh.get("fit_feedback"),
         session_id=fresh["session_id"],
@@ -1134,19 +1321,24 @@ async def seller_analytics(
     ).to_list(500)
     out_items: List[ItemAnalytics] = []
     total_views = total_try_ons = total_wishlists = total_orders_paid = 0
-    total_revenue = 0
+    total_revenue = total_fee = total_net = 0
     for it in items:
         views = int(it.get("views", 0))
         tos = int(it.get("try_ons", 0))
         wishes = await db.wishlists.count_documents({"item_id": it["id"]})
         paid = 0
-        revenue = 0
+        revenue = fee = net = 0
         async for o in db.orders.find(
             {"item_id": it["id"], "status": "paid"},
-            {"_id": 0, "amount_cents": 1},
+            {"_id": 0, "amount_cents": 1, "platform_fee_cents": 1, "seller_net_cents": 1},
         ):
             paid += 1
-            revenue += int(o.get("amount_cents", 0))
+            amt = int(o.get("amount_cents", 0))
+            f = int(o.get("platform_fee_cents", (amt * PLATFORM_FEE_BPS) // 10000))
+            n = int(o.get("seller_net_cents", amt - f))
+            revenue += amt
+            fee += f
+            net += n
         conversion = (paid / views) if views > 0 else 0.0
         out_items.append(
             ItemAnalytics(
@@ -1157,6 +1349,8 @@ async def seller_analytics(
                 wishlists=wishes,
                 orders_paid=paid,
                 revenue_cents=revenue,
+                platform_fee_cents=fee,
+                net_cents=net,
                 conversion=round(conversion, 4),
             )
         )
@@ -1165,7 +1359,8 @@ async def seller_analytics(
         total_wishlists += wishes
         total_orders_paid += paid
         total_revenue += revenue
-    # Sort by revenue desc then views desc
+        total_fee += fee
+        total_net += net
     out_items.sort(key=lambda x: (-x.revenue_cents, -x.views))
     return SellerAnalyticsOut(
         total_views=total_views,
@@ -1173,48 +1368,344 @@ async def seller_analytics(
         total_wishlists=total_wishlists,
         total_orders_paid=total_orders_paid,
         total_revenue_cents=total_revenue,
+        total_platform_fee_cents=total_fee,
+        total_net_cents=total_net,
+        connect_status=user.get("connect_status", "unstarted"),
+        platform_fee_bps=PLATFORM_FEE_BPS,
         items=out_items,
     )
 
 
 # -------------------------------------------------------------------------
-# Shareable Try-On
+# Stripe Connect (MOCKED — sk_test_emergent is a proxy key, real Connect
+# cannot be invoked. The flow mirrors the real UX so swapping in a real
+# Stripe test key only requires replacing this single function body.)
 # -------------------------------------------------------------------------
-def _watermark_image(b64_in: str, seller_name: str) -> str:
-    """Add a tasteful AURAFIT · @SellerName watermark band to a JPEG."""
+@api_router.post("/seller/connect/setup", response_model=ConnectStatusOut)
+async def connect_setup(
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> ConnectStatusOut:
+    await require_role("seller", user)
+    existing = user.get("stripe_account_id")
+    if existing and user.get("connect_status") == "active":
+        return ConnectStatusOut(
+            stripe_account_id=existing,
+            connect_status="active",
+            note=CONNECT_MOCKED_NOTE,
+        )
+    # Mocked onboarding: synthesise an Express-account-style id and mark active.
+    acct_id = f"acct_demo_{uuid.uuid4().hex[:14]}"
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"stripe_account_id": acct_id, "connect_status": "active"}},
+    )
+    return ConnectStatusOut(
+        stripe_account_id=acct_id,
+        connect_status="active",
+        onboarding_url=None,
+        note=CONNECT_MOCKED_NOTE,
+    )
+
+
+@api_router.get("/seller/connect/status", response_model=ConnectStatusOut)
+async def connect_status(
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> ConnectStatusOut:
+    await require_role("seller", user)
+    return ConnectStatusOut(
+        stripe_account_id=user.get("stripe_account_id"),
+        connect_status=user.get("connect_status", "unstarted"),
+        onboarding_url=None,
+        note=CONNECT_MOCKED_NOTE if user.get("connect_status") != "active" else None,
+    )
+
+
+@api_router.get("/feed", response_model=List[ItemOut])
+async def items_feed(
+    user: Dict[str, Any] = Depends(get_current_user),
+    limit: int = 60,
+) -> List[ItemOut]:
+    """Personalized re-ranking of items for the current buyer.
+
+    Score = audience_match + seller_affinity + category_affinity + freshness.
+    """
+    # Build affinity vectors from this buyer's history.
+    seller_affinity: Dict[str, float] = {}
+    category_affinity: Dict[str, float] = {}
+
+    async def bump(seller_id: str, category: str, weight: float) -> None:
+        if seller_id:
+            seller_affinity[seller_id] = seller_affinity.get(seller_id, 0.0) + weight
+        if category:
+            category_affinity[category] = category_affinity.get(category, 0.0) + weight
+
+    # Wishlists (+2), try-ons (+1.5), paid orders (+3), perfect-fit orders (+4).
+    wishes = db.wishlists.find({"user_id": user["id"]}, {"_id": 0, "item_id": 1})
+    wish_ids: List[str] = []
+    async for w in wishes:
+        wish_ids.append(w["item_id"])
+    if wish_ids:
+        async for it in db.items.find(
+            {"id": {"$in": wish_ids}}, {"_id": 0, "seller_id": 1, "category": 1}
+        ):
+            await bump(it.get("seller_id", ""), it.get("category", ""), 2.0)
+
+    tryons = db.tryons.find({"user_id": user["id"]}, {"_id": 0, "item_id": 1}).sort(
+        "created_at", -1
+    )
+    to_ids: List[str] = []
+    async for t in tryons:
+        to_ids.append(t["item_id"])
+    if to_ids:
+        async for it in db.items.find(
+            {"id": {"$in": to_ids[:30]}}, {"_id": 0, "seller_id": 1, "category": 1}
+        ):
+            await bump(it.get("seller_id", ""), it.get("category", ""), 1.5)
+
+    async for o in db.orders.find(
+        {"buyer_id": user["id"], "status": "paid"},
+        {"_id": 0, "seller_id": 1, "item_id": 1, "fit_feedback": 1},
+    ):
+        seller_id = o.get("seller_id")
+        item_doc = await db.items.find_one(
+            {"id": o["item_id"]}, {"_id": 0, "category": 1}
+        )
+        category = item_doc.get("category") if item_doc else ""
+        weight = 4.0 if o.get("fit_feedback") == "perfect" else 3.0
+        await bump(seller_id, category, weight)
+
+    # Build the candidate query — same audience filter logic as list_items.
+    query: Dict[str, Any] = {}
+    g = user.get("gender")
+    if user.get("role") == "buyer":
+        if g == "male":
+            query["audience"] = {"$in": ["men", "unisex"]}
+        elif g == "female":
+            query["audience"] = {"$in": ["women", "unisex"]}
+
+    docs = await db.items.find(query, {"_id": 0}).sort("created_at", -1).to_list(300)
+
+    now = datetime.now(timezone.utc)
+
+    def score(d: Dict[str, Any]) -> float:
+        s = 0.0
+        s += seller_affinity.get(d.get("seller_id", ""), 0.0)
+        s += category_affinity.get(d.get("category", ""), 0.0)
+        # Freshness: items in the last 7 days get a small boost.
+        try:
+            age_days = (now - d["created_at"]).total_seconds() / 86400.0
+            s += max(0.0, 1.0 - age_days / 7.0) * 0.5
+        except Exception:
+            pass
+        return s
+
+    ranked = sorted(docs, key=lambda d: (-score(d), -d["created_at"].timestamp()))
+    return [item_to_out(d) for d in ranked[:limit]]
+
+
+# -------------------------------------------------------------------------
+# Collections (Designer drops)
+# -------------------------------------------------------------------------
+def _collection_to_out(doc: Dict[str, Any]) -> CollectionOut:
+    return CollectionOut(
+        id=doc["id"],
+        seller_id=doc["seller_id"],
+        seller_name=doc.get("seller_name", ""),
+        name=doc["name"],
+        description=doc.get("description", ""),
+        item_ids=doc.get("item_ids", []),
+        cover_image_b64=doc.get("cover_image_b64"),
+        created_at=doc["created_at"],
+    )
+
+
+@api_router.post("/collections", response_model=CollectionOut)
+async def create_collection(
+    body: CollectionIn,
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> CollectionOut:
+    await require_role("seller", user)
+    # Use first owned item as a cover if available.
+    cover: Optional[str] = None
+    if body.item_ids:
+        first = await db.items.find_one(
+            {"id": {"$in": body.item_ids}, "seller_id": user["id"]},
+            {"_id": 0, "image_b64": 1},
+        )
+        if first:
+            cover = first.get("image_b64")
+    coll_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+    doc = {
+        "id": coll_id,
+        "seller_id": user["id"],
+        "seller_name": user["full_name"],
+        "name": body.name.strip(),
+        "description": body.description.strip(),
+        "item_ids": [iid for iid in body.item_ids if iid],
+        "cover_image_b64": cover,
+        "created_at": now,
+    }
+    await db.collections.insert_one(doc)
+    return _collection_to_out(doc)
+
+
+@api_router.get("/collections", response_model=List[CollectionOut])
+async def list_collections() -> List[CollectionOut]:
+    """Public list of all collections (newest first)."""
+    docs = (
+        await db.collections.find({}, {"_id": 0}).sort("created_at", -1).to_list(80)
+    )
+    return [_collection_to_out(d) for d in docs]
+
+
+@api_router.get("/collections/mine", response_model=List[CollectionOut])
+async def my_collections(
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> List[CollectionOut]:
+    docs = (
+        await db.collections.find({"seller_id": user["id"]}, {"_id": 0})
+        .sort("created_at", -1)
+        .to_list(100)
+    )
+    return [_collection_to_out(d) for d in docs]
+
+
+@api_router.get("/collections/{collection_id}")
+async def get_collection(collection_id: str) -> Dict[str, Any]:
+    doc = await db.collections.find_one({"id": collection_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    items: List[Dict[str, Any]] = []
+    if doc.get("item_ids"):
+        async for it in db.items.find(
+            {"id": {"$in": doc["item_ids"]}}, {"_id": 0}
+        ):
+            items.append(it)
+    return {
+        "collection": _collection_to_out(doc).model_dump(),
+        "items": [item_to_out(it).model_dump() for it in items],
+    }
+
+
+@api_router.delete("/collections/{collection_id}")
+async def delete_collection(
+    collection_id: str, user: Dict[str, Any] = Depends(get_current_user)
+) -> Dict[str, bool]:
+    doc = await db.collections.find_one({"id": collection_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    if doc["seller_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Not your collection")
+    await db.collections.delete_one({"id": collection_id})
+    return {"ok": True}
+
+
+# -------------------------------------------------------------------------
+# Shareable Try-On (Square or Story formats)
+# -------------------------------------------------------------------------
+def _watermark_image(b64_in: str, seller_name: str, fmt: str = "square") -> str:
     raw = base64.b64decode(b64_in)
     img = Image.open(io.BytesIO(raw)).convert("RGB")
-    w, h = img.size
-    band_height = max(64, int(h * 0.08))
-    canvas = Image.new("RGB", (w, h + band_height), (10, 10, 10))
-    canvas.paste(img, (0, 0))
-    draw = ImageDraw.Draw(canvas)
-    try:
-        font_big = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf", int(band_height * 0.42))
-        font_sm = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", int(band_height * 0.28))
-    except Exception:
-        font_big = ImageFont.load_default()
-        font_sm = ImageFont.load_default()
-    pad = int(band_height * 0.25)
-    draw.text((pad, h + int(band_height * 0.18)), "AURAFIT", fill=(250, 250, 250), font=font_big)
-    credit = textwrap.shorten(f"by {seller_name}", width=40, placeholder="…")
-    bbox = draw.textbbox((0, 0), credit, font=font_sm)
-    tw = bbox[2] - bbox[0]
-    draw.text(
-        (w - tw - pad, h + int(band_height * 0.38)),
-        credit,
-        fill=(200, 200, 200),
-        font=font_sm,
-    )
+
+    if fmt == "story":
+        # 9:16 canvas (1080x1920). Center the image, blurred backdrop, brand block.
+        W, H = 1080, 1920
+        # Blurred backdrop from the source image.
+        from PIL import ImageFilter
+
+        bg = img.copy().resize((W, H)).filter(ImageFilter.GaussianBlur(radius=40))
+        bg = bg.point(lambda p: int(p * 0.55))  # darken
+        canvas = bg
+
+        # Foreground image fits inside a 920×1380 area at the top.
+        fg_max_w, fg_max_h = 920, 1380
+        w, h = img.size
+        scale = min(fg_max_w / w, fg_max_h / h)
+        new_w, new_h = int(w * scale), int(h * scale)
+        fg = img.resize((new_w, new_h), Image.LANCZOS)
+        fg_x = (W - new_w) // 2
+        fg_y = 200
+        canvas.paste(fg, (fg_x, fg_y))
+
+        # Brand bar at bottom.
+        draw = ImageDraw.Draw(canvas)
+        try:
+            font_big = ImageFont.truetype(
+                "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf", 110
+            )
+            font_sm = ImageFont.truetype(
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 50
+            )
+            font_xs = ImageFont.truetype(
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 38
+            )
+        except Exception:
+            font_big = font_sm = font_xs = ImageFont.load_default()
+        draw.text((80, 1640), "AURAFIT", fill=(250, 250, 250), font=font_big)
+        draw.text(
+            (80, 1760),
+            f"by {textwrap.shorten(seller_name, width=30, placeholder='…')}",
+            fill=(220, 220, 220),
+            font=font_sm,
+        )
+        draw.text(
+            (80, 1830),
+            "Try it on yourself · aurafit.app",
+            fill=(180, 180, 180),
+            font=font_xs,
+        )
+        out = canvas
+    else:
+        # Original "square-ish" band beneath the image.
+        w, h = img.size
+        band_height = max(64, int(h * 0.08))
+        out = Image.new("RGB", (w, h + band_height), (10, 10, 10))
+        out.paste(img, (0, 0))
+        draw = ImageDraw.Draw(out)
+        try:
+            font_big = ImageFont.truetype(
+                "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
+                int(band_height * 0.42),
+            )
+            font_sm = ImageFont.truetype(
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                int(band_height * 0.28),
+            )
+        except Exception:
+            font_big = ImageFont.load_default()
+            font_sm = ImageFont.load_default()
+        pad = int(band_height * 0.25)
+        draw.text(
+            (pad, h + int(band_height * 0.18)),
+            "AURAFIT",
+            fill=(250, 250, 250),
+            font=font_big,
+        )
+        credit = textwrap.shorten(f"by {seller_name}", width=40, placeholder="…")
+        bbox = draw.textbbox((0, 0), credit, font=font_sm)
+        tw = bbox[2] - bbox[0]
+        draw.text(
+            (w - tw - pad, h + int(band_height * 0.38)),
+            credit,
+            fill=(200, 200, 200),
+            font=font_sm,
+        )
+
     buf = io.BytesIO()
-    canvas.save(buf, format="JPEG", quality=88)
+    out.save(buf, format="JPEG", quality=88)
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
 @api_router.get("/tryon/{tryon_id}/share", response_model=TryOnShareOut)
 async def share_tryon(
-    tryon_id: str, user: Dict[str, Any] = Depends(get_current_user)
+    tryon_id: str,
+    fmt: str = "square",
+    angle: str = "front",
+    user: Dict[str, Any] = Depends(get_current_user),
 ) -> TryOnShareOut:
+    if fmt not in ("square", "story"):
+        raise HTTPException(status_code=400, detail="fmt must be 'square' or 'story'")
     tryon = await db.tryons.find_one({"id": tryon_id}, {"_id": 0})
     if not tryon:
         raise HTTPException(status_code=404, detail="Try-on not found")
@@ -1223,8 +1714,20 @@ async def share_tryon(
     item = await db.items.find_one({"id": tryon["item_id"]}, {"_id": 0})
     seller_name = item.get("seller_name", "AuraFit Designer") if item else "AuraFit Designer"
     item_name = item.get("name", "an AuraFit piece") if item else "an AuraFit piece"
+    # Pick the requested angle (default front), fall back gracefully to first available.
+    angle_imgs = tryon.get("images") or []
+    chosen_b64: Optional[str] = None
+    for a in angle_imgs:
+        if a.get("angle") == angle and a.get("image_b64"):
+            chosen_b64 = a["image_b64"]
+            break
+    if not chosen_b64:
+        # legacy fallback
+        chosen_b64 = tryon.get("result_image_b64") or (angle_imgs[0]["image_b64"] if angle_imgs else None)
+    if not chosen_b64:
+        raise HTTPException(status_code=404, detail="No image to share")
     try:
-        watermarked = _watermark_image(tryon["result_image_b64"], seller_name)
+        watermarked = _watermark_image(chosen_b64, seller_name, fmt=fmt)
     except Exception as e:
         logger.exception("Watermark error")
         raise HTTPException(status_code=500, detail=f"Share image failed: {e}")

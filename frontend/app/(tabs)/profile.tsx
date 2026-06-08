@@ -16,6 +16,7 @@ import { AppButton } from "@/src/components/AppButton";
 import { useToast } from "@/src/components/Toast";
 import {
   api,
+  CurrencyCode,
   FitFeedback,
   Measurements,
   Order,
@@ -23,16 +24,19 @@ import {
   WishlistEntry,
 } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
+import { CURRENCIES, formatPrice } from "@/src/lib/currency";
 import { dataUriFromBase64 } from "@/src/lib/images";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
 export default function Profile() {
-  const { user, logout } = useAuth();
+  const { user, logout, refresh } = useAuth();
   const toast = useToast();
   const [profile, setProfile] = useState<ProfileT | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [wishlist, setWishlist] = useState<WishlistEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currencyPickerOpen, setCurrencyPickerOpen] = useState(false);
+  const [savingCurrency, setSavingCurrency] = useState<CurrencyCode | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -71,6 +75,20 @@ export default function Profile() {
       toast.show("Thanks for the feedback", "success");
     } catch (e: any) {
       toast.show(e?.message ?? "Could not submit feedback", "error");
+    }
+  };
+
+  const changeCurrency = async (code: CurrencyCode) => {
+    setSavingCurrency(code);
+    try {
+      await api.updatePreferences({ preferred_currency: code });
+      await refresh();
+      toast.show(`Currency set to ${code}`, "success");
+      setCurrencyPickerOpen(false);
+    } catch (e: any) {
+      toast.show(e?.message ?? "Could not update currency", "error");
+    } finally {
+      setSavingCurrency(null);
     }
   };
 
@@ -125,6 +143,70 @@ export default function Profile() {
           ) : null}
         </View>
 
+        {/* Region / Currency */}
+        <View style={styles.section}>
+          <TouchableOpacity
+            testID="profile-currency-card"
+            onPress={() => setCurrencyPickerOpen((v) => !v)}
+            activeOpacity={0.85}
+            style={styles.currencyHeader}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={tp.caption}>Region & Currency</Text>
+              <Text style={[tp.h3, { marginTop: 6 }]} testID="profile-currency-current">
+                {user?.preferred_currency ?? "KES"}
+              </Text>
+              <Text style={[tp.bodyMuted, { marginTop: 4 }]}>
+                Show prices in your preferred currency. Sellers list pieces in their own
+                currency — we&apos;ll show an approximation alongside.
+              </Text>
+            </View>
+            <Feather
+              name={currencyPickerOpen ? "chevron-up" : "chevron-down"}
+              size={22}
+              color={colors.primary}
+            />
+          </TouchableOpacity>
+          {currencyPickerOpen ? (
+            <View style={styles.currencyList} testID="profile-currency-list">
+              {CURRENCIES.map((c) => {
+                const active = user?.preferred_currency === c.code;
+                const loading = savingCurrency === c.code;
+                return (
+                  <TouchableOpacity
+                    key={c.code}
+                    testID={`profile-currency-${c.code}`}
+                    onPress={() => changeCurrency(c.code)}
+                    disabled={!!savingCurrency}
+                    style={[styles.currencyRow, active && styles.currencyRowActive]}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[styles.currencySymbol, active && styles.currencyTextActive]}>
+                      {c.symbol}
+                    </Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.currencyCode, active && styles.currencyTextActive]}>
+                        {c.code}
+                      </Text>
+                      <Text style={[styles.currencyLabel, active && styles.currencyLabelActive]}>
+                        {c.label}
+                      </Text>
+                    </View>
+                    {loading ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={active ? colors.primaryFg : colors.primary}
+                      />
+                    ) : active ? (
+                      <Feather name="check" size={18} color={colors.primaryFg} />
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ) : null}
+        </View>
+
         {user?.role === "buyer" ? (
           <View style={styles.section}>
             <Text style={[tp.caption, { marginBottom: spacing.md }]}>Wishlist</Text>
@@ -161,7 +243,7 @@ export default function Profile() {
                       {w.item.name}
                     </Text>
                     <Text style={styles.wishPrice}>
-                      ${(w.item.price_cents / 100).toFixed(0)}
+                      {formatPrice(w.item.price_cents, w.item.currency)}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -188,7 +270,7 @@ export default function Profile() {
                     </View>
                     <View style={styles.orderRight}>
                       <Text style={styles.orderAmount}>
-                        ${(o.amount_cents / 100).toFixed(0)}
+                        {formatPrice(o.amount_cents, o.currency)}
                       </Text>
                       <View
                         style={[
@@ -379,4 +461,41 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     backgroundColor: colors.surface,
   },
+  currencyHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  currencyList: {
+    marginTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  currencyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  currencyRowActive: { backgroundColor: colors.primary, borderBottomColor: colors.primary },
+  currencySymbol: {
+    fontFamily: fonts.heading,
+    fontSize: 22,
+    color: colors.primary,
+    width: 44,
+    textAlign: "center",
+  },
+  currencyCode: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 14,
+    letterSpacing: 1,
+    color: colors.primary,
+  },
+  currencyLabel: { fontFamily: fonts.body, fontSize: 12, color: colors.mutedFg, marginTop: 2 },
+  currencyTextActive: { color: colors.primaryFg },
+  currencyLabelActive: { color: colors.primaryFg, opacity: 0.85 },
 });

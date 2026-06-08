@@ -15,7 +15,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { AppButton } from "@/src/components/AppButton";
 import { AppInput } from "@/src/components/AppInput";
 import { useToast } from "@/src/components/Toast";
-import { api, Audience, ColorOption, SizeOption } from "@/src/lib/api";
+import { api, Audience, ColorOption, CurrencyCode, SizeOption } from "@/src/lib/api";
+import { useAuth } from "@/src/lib/auth";
+import { CURRENCIES, parseAmountToCents, priceInputPlaceholder } from "@/src/lib/currency";
 import { dataUriFromBase64, pickImageFromCamera, pickImageFromLibrary } from "@/src/lib/images";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
@@ -43,11 +45,14 @@ const parseNum = (s: string): number | undefined => {
 
 export default function NewItem() {
   const toast = useToast();
+  const { user } = useAuth();
+  const defaultCurrency: CurrencyCode = (user?.preferred_currency ?? "KES") as CurrencyCode;
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("shirts");
   const [audience, setAudience] = useState<Audience>("unisex");
-  const [priceUsd, setPriceUsd] = useState("");
+  const [currency, setCurrency] = useState<CurrencyCode>(defaultCurrency);
+  const [priceInput, setPriceInput] = useState("");
   const [image, setImage] = useState<{ base64: string } | null>(null);
   const [sizes, setSizes] = useState<Record<string, SizeOption>>({});
   const [pickedColors, setPickedColors] = useState<ColorOption[]>([]);
@@ -84,11 +89,11 @@ export default function NewItem() {
   const submit = async () => {
     if (!image) return toast.show("Please add a product image", "error");
     if (!name.trim()) return toast.show("Please add a name", "error");
-    if (!priceUsd) return toast.show("Please set a price", "error");
+    if (!priceInput) return toast.show("Please set a price", "error");
     const sizesArr = Object.values(sizes);
     if (sizesArr.length === 0) return toast.show("Add at least one size", "error");
 
-    const priceCents = Math.round(parseFloat(priceUsd.replace(",", ".")) * 100);
+    const priceCents = parseAmountToCents(priceInput, currency);
     if (!priceCents || priceCents <= 0)
       return toast.show("Price must be a positive number", "error");
 
@@ -99,6 +104,7 @@ export default function NewItem() {
         description: description.trim(),
         category,
         price_cents: priceCents,
+        currency,
         image_b64: image.base64,
         sizes: sizesArr,
         colors: pickedColors,
@@ -183,12 +189,37 @@ export default function NewItem() {
         />
         <AppInput
           testID="new-item-price-input"
-          label="Price (USD)"
-          value={priceUsd}
-          onChangeText={setPriceUsd}
+          label={`Price (${currency})`}
+          value={priceInput}
+          onChangeText={setPriceInput}
           keyboardType="decimal-pad"
-          placeholder="129"
+          placeholder={priceInputPlaceholder(currency)}
         />
+        <Text style={[tp.caption, styles.label]}>Currency</Text>
+        <View style={styles.currencyRow}>
+          {CURRENCIES.map((c) => (
+            <TouchableOpacity
+              key={c.code}
+              testID={`new-item-currency-${c.code}`}
+              onPress={() => setCurrency(c.code)}
+              style={[
+                styles.currencyChip,
+                currency === c.code ? styles.currencyChipActive : styles.currencyChipInactive,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.currencyChipLabel,
+                  currency === c.code
+                    ? styles.currencyChipLabelActive
+                    : styles.currencyChipLabelInactive,
+                ]}
+              >
+                {c.symbol} {c.code}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
 
         <Text style={[tp.caption, styles.label]}>Category</Text>
         <View style={styles.catRow}>
@@ -452,6 +483,17 @@ const styles = StyleSheet.create({
   colorRow: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
   colorSwatch: { width: 40, height: 40, borderWidth: 1, borderColor: colors.border },
   colorSwatchActive: { borderColor: colors.primary, borderWidth: 2 },
+  currencyRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  currencyChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+  },
+  currencyChipInactive: { borderColor: colors.border, backgroundColor: colors.surface },
+  currencyChipActive: { borderColor: colors.primary, backgroundColor: colors.primary },
+  currencyChipLabel: { fontFamily: fonts.bodySemi, fontSize: 12, letterSpacing: 0.6 },
+  currencyChipLabelInactive: { color: colors.primary },
+  currencyChipLabelActive: { color: colors.primaryFg },
   footer: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,

@@ -56,14 +56,24 @@ export default function Atelier() {
           <Text style={tp.caption}>YOUR ATELIER</Text>
           <Text style={[tp.h2, styles.title]}>Inventory</Text>
         </View>
-        <TouchableOpacity
-          testID="atelier-add-btn"
-          onPress={() => router.push("/seller/new-item")}
-          style={styles.addBtn}
-        >
-          <Feather name="plus" size={18} color={colors.primaryFg} />
-          <Text style={styles.addLabel}>New</Text>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            testID="atelier-new-drop-btn"
+            onPress={() => router.push("/seller/new-collection")}
+            style={styles.secondaryBtn}
+          >
+            <Feather name="layers" size={16} color={colors.primary} />
+            <Text style={styles.secondaryLabel}>Drop</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            testID="atelier-add-btn"
+            onPress={() => router.push("/seller/new-item")}
+            style={styles.addBtn}
+          >
+            <Feather name="plus" size={18} color={colors.primaryFg} />
+            <Text style={styles.addLabel}>New</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {loading ? (
@@ -98,7 +108,7 @@ export default function Atelier() {
                 <Text style={styles.rowName} numberOfLines={2}>
                   {item.name}
                 </Text>
-                <Text style={styles.rowPrice}>${(item.price_cents / 100).toFixed(0)}</Text>
+                <Text style={styles.rowPrice}>{formatPrice(item.price_cents, item.currency)}</Text>
                 <Text style={styles.rowSizes} numberOfLines={1}>
                   {item.sizes.map((s) => `${s.label} (${s.available_qty})`).join(" · ")}
                 </Text>
@@ -139,6 +149,24 @@ const styles = StyleSheet.create({
   },
   addLabel: {
     color: colors.primaryFg,
+    fontFamily: fonts.bodySemi,
+    fontSize: 12,
+    letterSpacing: 1.5,
+    textTransform: "uppercase",
+  },
+  headerActions: { flexDirection: "row", gap: 8 },
+  secondaryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.surface,
+  },
+  secondaryLabel: {
+    color: colors.primary,
     fontFamily: fonts.bodySemi,
     fontSize: 12,
     letterSpacing: 1.5,

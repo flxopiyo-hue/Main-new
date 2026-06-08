@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 6 (multi-angle try-on + currency localization) backend-only regression executed against the public preview URL. 15/16 pytest cases passed (1 SKIPPED only when /items/feed path tried first → covered by /feed fallback; rerun is green). Real multi-angle Gemini Nano Banana generation succeeded in ~10s for angles=['front','side','back'] and returned 3 distinct base64 images with result_image_b64==front.image_b64. Share endpoint correctly serves alternate angles and gracefully falls back when an angle is missing. History endpoint surfaces images[] for both new multi-angle and legacy single-angle try-ons. PATCH /auth/preferences works (200 for valid, 422 for invalid, 400 for empty). KES default applied on registration. Stripe checkout propagates item.currency=EUR onto the resulting Order. ONE REAL BUG found: creating an item WITHOUT an explicit `currency` does not fall back to the seller's preferred_currency — it always defaults to 'KES' because ItemIn.currency has a non-None default. Spec compliance for that bullet is FAILING.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/items",
+        "issue": "When the request body omits `currency`, the new item is stored as 'KES' instead of the seller's preferred_currency. Root cause: ItemIn in server.py:181 declares `currency: Currency = DEFAULT_CURRENCY` (a non-None default 'KES'), so `body.currency or user.get('preferred_currency')` at server.py:625 never evaluates the fallback branch. Fix: declare `currency: Optional[Currency] = None` on ItemIn (and accept None on input), keeping ItemOut.currency='USD' default for legacy reads.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "GET /api/items/feed",
+        "issue": "The spec references /api/items/feed but the actual route is /api/feed (server.py:1423). Either move the route under /items/feed or update the iteration-6 spec / frontend callers. Currently /api/items/feed returns 404."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration6_currency_multiangle.py",
+    "/app/backend/tests/test_aurafit_api.py",
+    "/app/test_reports/pytest/iteration6_results.xml"
+  ],
+  "action_items": [
+    "Backend: change ItemIn.currency to `Optional[Currency] = None` in /app/backend/server.py so that create_item correctly falls back to the seller's preferred_currency when omitted (currently always coerced to 'KES').",
+    "Backend (optional / clarification): align /items/feed vs /feed — either alias the route under /api/items/feed or update the iteration-6 spec / frontend api.ts to call /api/feed.",
+    "After the ItemIn fix, rerun `pytest /app/backend/tests/test_iteration6_currency_multiangle.py -v` to confirm all 16 cases green."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 1782 lines — well above the 700-line guideline. Suggest splitting into routers (auth, profile, items, tryon, payments) and a models module.",
+    "ItemIn.currency uses a class-level default that overrides the intended seller-preference fallback. Use Optional[Currency]=None for fields that are meant to be 'falls back to user setting'.",
+    "GET /tryon/{id}/share path traversal: angle is read from query but only matched against stored angles, so safe. Good.",
+    "/api/tryon uses asyncio.gather over ANGLE_INSTRUCTIONS — correctly drops failed angles and only 502s when *all* angles fail. Verified live with 3-angle call returning 200 in ~10s.",
+    "Order document stores raw `currency` field directly (no validation against the Literal). Consider validating before insert in case legacy values drift."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration6_currency_multiangle.py (new — 16 cases)"
+  ],
+  "success_rate": {"backend": "94% (15/16)", "frontend": "not tested"},
+  "seed_data_creation": "Creates ephemeral TEST_* users and items via API; items are deleted in teardown. Seller's preferred_currency is mutated to USD inside one test and restored to KES afterwards. Existing demo accounts (atelier@aurafit.demo, buyer@aurafit.demo) are reused.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app/backend && python -m pytest tests/test_iteration6_currency_multiangle.py -v. Single failing test is TestItemCurrency::test_create_item_without_currency_uses_sellers_preferred — driven by the real backend bug described in backend_issues.critical[0]. The multi-angle try-on call is real and ~10s; if budget is exhausted the suite SKIPS that block (test_three_angles_returned and downstream share tests) rather than failing. Seller demo creds: atelier@aurafit.demo / demo-seller-2026 (NOT seller@aurafit.demo as stated in the original request — test_credentials.md is authoritative). Public URL: EXPO_PUBLIC_BACKEND_URL.",
+  "rca_of_issue": "Bug: POST /api/items without `currency` always saves 'KES'. RCA: server.py:181 ItemIn.currency=DEFAULT_CURRENCY ('KES'). FastAPI/Pydantic fills body.currency with 'KES' when the client omits the field, so the seller-preference fallback at server.py:625 (`body.currency or user.get('preferred_currency')`) never executes. Reproduction: 1) login seller, 2) PATCH /api/auth/preferences {'preferred_currency':'USD'}, 3) POST /api/items WITHOUT a currency field. Observed: item.currency='KES'. Expected per spec: 'USD'. Mitigation: make currency optional on ItemIn (default=None); the existing fallback chain at line 625 will then resolve correctly."
+}

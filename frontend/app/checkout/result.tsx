@@ -5,13 +5,15 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppButton } from "@/src/components/AppButton";
-import { api } from "@/src/lib/api";
+import { api, CurrencyCode } from "@/src/lib/api";
+import { formatPrice } from "@/src/lib/currency";
 import { colors, spacing, type as tp } from "@/src/lib/theme";
 
 interface Status {
   status: string;
   item_name: string;
   amount_cents: number;
+  currency?: CurrencyCode;
 }
 
 export default function CheckoutResult() {
@@ -76,7 +78,7 @@ export default function CheckoutResult() {
               You&apos;re in.
             </Text>
             <Text style={[tp.bodyMuted, styles.sub]}>
-              {status?.item_name} · ${(status!.amount_cents / 100).toFixed(0)} paid.
+              {status?.item_name} · {formatPrice(status!.amount_cents, status!.currency)} paid.
             </Text>
           </>
         ) : isCancelled ? (
