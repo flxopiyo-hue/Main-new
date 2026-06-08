@@ -1,0 +1,88 @@
+{
+  "theme": "Light",
+  "archetype": "Archetype 4 (Swiss & High-Contrast / Editorial)",
+  "vibe": "High-end luxury fashion, editorial, minimalistic, premium. The interface gets out of the way of the clothes and the user's photos, allowing the fashion to be the true hero.",
+  "typography": {
+    "heading_font": "Cormorant Garamond",
+    "body_font": "Manrope",
+    "scales": {
+      "h1": { "fontSize": 36, "lineHeight": 40, "letterSpacing": -1, "fontFamily": "Cormorant Garamond" },
+      "h2": { "fontSize": 28, "lineHeight": 34, "fontFamily": "Cormorant Garamond" },
+      "h3": { "fontSize": 22, "lineHeight": 28, "fontFamily": "Cormorant Garamond" },
+      "body_lg": { "fontSize": 18, "lineHeight": 26, "fontFamily": "Manrope" },
+      "body": { "fontSize": 16, "lineHeight": 24, "fontFamily": "Manrope" },
+      "caption": { "fontSize": 12, "lineHeight": 16, "textTransform": "uppercase", "letterSpacing": 2, "fontFamily": "Manrope" }
+    }
+  },
+  "colors": {
+    "background": "#FAFAFA",
+    "surface": "#FFFFFF",
+    "primary": "#0A0A0A",
+    "primary_foreground": "#FFFFFF",
+    "secondary": "#E5E5E5",
+    "secondary_foreground": "#0A0A0A",
+    "muted": "#F5F5F5",
+    "muted_foreground": "#737373",
+    "border": "#E5E5E5",
+    "error": "#FF3B30",
+    "success": "#34C759",
+    "overlay": "rgba(0, 0, 0, 0.4)"
+  },
+  "layout_and_spacing": {
+    "screen_padding": 24,
+    "gap_small": 8,
+    "gap_medium": 16,
+    "gap_large": 32,
+    "gap_xlarge": 48,
+    "border_radius": {
+      "none": 0,
+      "sm": 2,
+      "pill": 999,
+      "bottom_sheet": 24
+    },
+    "card_style": "Flat, no shadow, 1px #E5E5E5 border, 0px border-radius. Minimalist editorial look. Images inside cards should have 0px border-radius."
+  },
+  "components": {
+    "buttons": "Sharp corners (borderRadius: 0), solid #0A0A0A background for primary, pure white background with 1px border for secondary. Minimum height: 56px for touch targets.",
+    "inputs": "Underline only (borderBottomWidth: 1) or full flat rectangle with 1px border and 0px radius. Generous padding (16px).",
+    "bottom_tabs": "Minimalist @expo/vector-icons (Feather or Ionicons), active state is solid black icon, inactive is light grey (#A3A3A3). No text labels, height 80px with safe area inset.",
+    "image_containers": "Aspect ratio 3:4 or 4:5 (editorial portrait). 0px border radius. Overlay text must have high contrast, use dark gradients if overlaying white text.",
+    "bottom_sheet": "For Size Guide, Filters, and Try-On parameters. Use borderTopLeftRadius 24px and borderTopRightRadius 24px to soften interactions."
+  },
+  "icons_library": "@expo/vector-icons (Feather preferred for thin, elegant strokes that match the Swiss/Editorial vibe)",
+  "media_urls": {
+    "hero_models": [
+      {
+        "url": "https://images.unsplash.com/photo-1668952135120-7d997b1b3778?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODl8MHwxfHNlYXJjaHwxfHxmYXNoaW9uJTIwZWRpdG9yaWFsJTIwbW9kZWwlMjBzdHVkaW98ZW58MHx8fHwxNzgwOTIzMjg3fDA&ixlib=rb-4.1.0&q=85",
+        "description": "Editorial model in long coat, perfect for the main discovery feed or virtual try-on placeholder."
+      },
+      {
+         "url": "https://images.pexels.com/photos/1066171/pexels-photo-1066171.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+         "description": "Artistic moody portrait, ideal for the onboarding background before body profile setup."
+      }
+    ],
+    "products": [
+      {
+        "url": "https://images.unsplash.com/photo-1467043237213-65f2da53396f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDR8MHwxfHNlYXJjaHwxfHxmYXNoaW9uJTIwY2xvdGhlcyUyMGlzb2xhdGVkfGVufDB8fHx8MTc4MDkyMzI5NXww&ixlib=rb-4.1.0&q=85",
+        "description": "White crew neck flat lay, use as sample clothing product item in the feed."
+      },
+      {
+         "url": "https://images.unsplash.com/photo-1576188973526-0e5d7047b0cf?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDR8MHwxfHNlYXJjaHwzfHxmYXNoaW9uJTIwY2xvdGhlcyUyMGlzb2xhdGVkfGVufDB8fHx8MTc4MDkyMzI5NXww&ixlib=rb-4.1.0&q=85",
+         "description": "Black sneakers/hoodie, alternative product listing."
+      }
+    ]
+  },
+  "technical_rules": [
+    "Use StyleSheet for all styling. DO NOT USE Tailwind, pure CSS, or web frameworks.",
+    "All interactive and key informational elements MUST include a `testID` (for React Native) or `data-testid` attribute for testing.",
+    "Do NOT use Shadcn UI. Build native UI using React Native primitives (View, Text, TextInput, TouchableOpacity, FlatList, ScrollView).",
+    "Images must use responsive sizing with flex: 1 and appropriate resizeMode ('cover' for editorial shots, 'contain' for flatlays)."
+  ],
+  "instructions_to_main_agent": [
+    "Build the Expo app following the Swiss Brutalist/Editorial archetype: stark contrast, sharp corners, and massive typography. Let the photos dominate.",
+    "Implement the exact user flows: Onboarding (Body dimensions & photos), AI Try-On Screen (image compositing simulation), Discovery Feed (FlatList of clothes), Product Detail (Size guide, Try On, Buy Now), Seller Dashboard, and Buyer Profile.",
+    "Use react-native-safe-area-context to handle notches seamlessly.",
+    "Load custom fonts (Cormorant Garamond, Manrope) via expo-font during the app loading phase.",
+    "Ensure the AI try-on composite screen handles two images (user body + product) beautifully, perhaps with an absolute positioned overlay simulation."
+  ]
+}
