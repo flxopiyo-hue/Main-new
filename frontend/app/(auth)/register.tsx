@@ -1,13 +1,13 @@
 import { Feather } from "@expo/vector-icons";
-import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
-import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppButton } from "@/src/components/AppButton";
 import { AppInput } from "@/src/components/AppInput";
+import { DobPicker } from "@/src/components/DobPicker";
 import { useToast } from "@/src/components/Toast";
 import { Gender, Role } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
@@ -63,9 +63,9 @@ export default function Register() {
 
   const derivedAge = dob ? computeAge(dob) : null;
 
-  const onDobChange = (_e: DateTimePickerEvent, selected?: Date) => {
-    if (Platform.OS !== "ios") setShowPicker(false);
-    if (selected) setDob(selected);
+  const onDobConfirm = (selected: Date) => {
+    setDob(selected);
+    setShowPicker(false);
   };
 
   const submit = async () => {
@@ -224,26 +224,14 @@ export default function Register() {
         ) : (
           <Text style={styles.dobHint}>You must be at least 13 to join AuraFit</Text>
         )}
-        {showPicker ? (
-          <DateTimePicker
-            testID="register-dob-picker"
-            value={dob ?? maxDob}
-            mode="date"
-            display={Platform.OS === "ios" ? "spinner" : "default"}
-            maximumDate={maxDob}
-            minimumDate={minDob}
-            onChange={onDobChange}
-          />
-        ) : null}
-        {Platform.OS === "ios" && showPicker ? (
-          <TouchableOpacity
-            testID="register-dob-done"
-            onPress={() => setShowPicker(false)}
-            style={styles.dobDoneBtn}
-          >
-            <Text style={styles.dobDoneLabel}>Done</Text>
-          </TouchableOpacity>
-        ) : null}
+        <DobPicker
+          visible={showPicker}
+          value={dob}
+          minDate={minDob}
+          maxDate={maxDob}
+          onConfirm={onDobConfirm}
+          onCancel={() => setShowPicker(false)}
+        />
       </KeyboardAwareScrollView>
       <View style={styles.footer}>
         <AppButton
@@ -356,18 +344,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.mutedFg,
     marginTop: spacing.xs,
-  },
-  dobDoneBtn: {
-    alignSelf: "flex-end",
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-  },
-  dobDoneLabel: {
-    fontFamily: fonts.bodySemi,
-    fontSize: 13,
-    letterSpacing: 1,
-    color: colors.primary,
-    textTransform: "uppercase",
   },
   footer: {
     paddingHorizontal: spacing.lg,
