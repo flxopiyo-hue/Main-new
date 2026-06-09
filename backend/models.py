@@ -88,6 +88,7 @@ class ProfileIn(BaseModel):
     preferred_size: Optional[str] = None  # XS, S, M, L, XL, XXL
     front_photo_b64: Optional[str] = None  # base64 (no data: prefix)
     side_photo_b64: Optional[str] = None
+    three_quarter_photo_b64: Optional[str] = None
 
 
 class ProfileOut(BaseModel):
@@ -96,13 +97,16 @@ class ProfileOut(BaseModel):
     preferred_size: Optional[str] = None
     has_front_photo: bool = False
     has_side_photo: bool = False
+    has_three_quarter_photo: bool = False
     updated_at: datetime
 
 
 class EstimateMeasurementsIn(BaseModel):
-    front_photo_b64: str
-    side_photo_b64: str
-    height_cm: Optional[float] = None  # optional reference height
+    # All photos optional individually but caller must supply at least one.
+    front_photo_b64: Optional[str] = None
+    side_photo_b64: Optional[str] = None
+    three_quarter_photo_b64: Optional[str] = None
+    height_cm: Optional[float] = None  # optional reference height (recommended)
 
 
 # ---------------------------------------------------------------------------

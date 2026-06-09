@@ -53,6 +53,7 @@ export interface Profile {
   preferred_size?: string | null;
   has_front_photo: boolean;
   has_side_photo: boolean;
+  has_three_quarter_photo?: boolean;
   updated_at: string;
 }
 
@@ -242,10 +243,12 @@ export const api = {
     preferred_size?: string | null;
     front_photo_b64?: string;
     side_photo_b64?: string;
+    three_quarter_photo_b64?: string;
   }) => request<Profile>("/profile", { method: "PUT", body }),
   estimateMeasurements: (body: {
-    front_photo_b64: string;
-    side_photo_b64: string;
+    front_photo_b64?: string;
+    side_photo_b64?: string;
+    three_quarter_photo_b64?: string;
     height_cm?: number;
   }) => request<Measurements>("/profile/estimate", { method: "POST", body }),
 

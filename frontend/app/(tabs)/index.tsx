@@ -161,7 +161,7 @@ export default function Discover() {
       {/* Sticky header */}
       <View style={styles.header}>
         <View>
-          <Text style={tp.caption}>AURAFIT</Text>
+          <Text style={tp.caption}>DRAPE</Text>
           <Text style={[tp.h2, styles.headerTitle]}>Hello, {user?.full_name.split(" ")[0]}.</Text>
         </View>
         <TouchableOpacity

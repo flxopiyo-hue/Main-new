@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "AuraFit",
+    "name": "Drape",
     "slug": "aurafit",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "aurafit",
+    "scheme": "drape",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "ios": {
@@ -52,7 +52,8 @@
           "cameraPermission": "Capture body and clothing photos for try-on."
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-localization"
     ],
     "experiments": {
       "typedRoutes": true

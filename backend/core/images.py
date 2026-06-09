@@ -57,7 +57,7 @@ def watermark_image(b64_in: str, seller_name: str, fmt: str = "square") -> str:
             )
         except Exception:
             font_big = font_sm = font_xs = ImageFont.load_default()
-        draw.text((80, 1640), "AURAFIT", fill=(250, 250, 250), font=font_big)
+        draw.text((80, 1640), "DRAPE", fill=(250, 250, 250), font=font_big)
         draw.text(
             (80, 1760),
             f"by {textwrap.shorten(seller_name, width=30, placeholder='…')}",
@@ -66,7 +66,7 @@ def watermark_image(b64_in: str, seller_name: str, fmt: str = "square") -> str:
         )
         draw.text(
             (80, 1830),
-            "Try it on yourself · aurafit.app",
+            "See it drape · drape.app",
             fill=(180, 180, 180),
             font=font_xs,
         )
@@ -93,7 +93,7 @@ def watermark_image(b64_in: str, seller_name: str, fmt: str = "square") -> str:
         pad = int(band_height * 0.25)
         draw.text(
             (pad, h + int(band_height * 0.18)),
-            "AURAFIT",
+            "DRAPE",
             fill=(250, 250, 250),
             font=font_big,
         )

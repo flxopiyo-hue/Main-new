@@ -86,7 +86,7 @@ export default function Register() {
       return;
     }
     if (derivedAge !== null && derivedAge < 13) {
-      toast.show("You must be at least 13 years old to use AuraFit", "error");
+      toast.show("You must be at least 13 years old to use Drape", "error");
       return;
     }
     setLoading(true);
@@ -116,7 +116,7 @@ export default function Register() {
         >
           <Feather name="arrow-left" size={22} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={[tp.caption]}>AURAFIT</Text>
+        <Text style={[tp.caption]}>DRAPE</Text>
         <View style={styles.iconBtn} />
       </View>
       <KeyboardAwareScrollView
@@ -222,7 +222,7 @@ export default function Register() {
             {derivedAge} years old
           </Text>
         ) : (
-          <Text style={styles.dobHint}>You must be at least 13 to join AuraFit</Text>
+          <Text style={styles.dobHint}>You must be at least 13 to join Drape</Text>
         )}
         <DobPicker
           visible={showPicker}

@@ -44,7 +44,7 @@ export default function Login() {
         >
           <Feather name="arrow-left" size={22} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={[tp.caption]}>AURAFIT</Text>
+        <Text style={[tp.caption]}>DRAPE</Text>
         <View style={styles.iconBtn} />
       </View>
       <KeyboardAwareScrollView
