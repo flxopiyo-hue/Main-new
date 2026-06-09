@@ -16,7 +16,7 @@ from core.config import DEFAULT_CURRENCY, PLATFORM_FEE_BPS
 # ---------------------------------------------------------------------------
 # Literal types
 # ---------------------------------------------------------------------------
-Role = Literal["buyer", "seller"]
+Role = Literal["buyer", "seller", "admin"]
 Gender = Literal["male", "female", "other", "prefer_not_to_say"]
 Audience = Literal["men", "women", "unisex"]
 FitFeedback = Literal["small", "perfect", "large"]
@@ -157,6 +157,28 @@ def garment_type_label(gtype: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Seller-specific structures (company info + payout details)
+# ---------------------------------------------------------------------------
+class Location(BaseModel):
+    city: str = Field(min_length=1, max_length=80)
+    country: str = Field(min_length=1, max_length=80)
+
+
+class BankDetails(BaseModel):
+    """Where the seller's payouts are sent. Either bank or M-Pesa is required
+    when the seller is onboarding for payouts — we don't enforce here at the
+    model layer; the registration handler validates it."""
+    bank_name: Optional[str] = Field(default=None, max_length=80)
+    branch: Optional[str] = Field(default=None, max_length=80)
+    account_name: Optional[str] = Field(default=None, max_length=120)
+    account_number: Optional[str] = Field(default=None, max_length=40)
+    swift_code: Optional[str] = Field(default=None, max_length=20)
+    # Kenyan mobile money — optional; some merchants only use M-Pesa.
+    mpesa_paybill: Optional[str] = Field(default=None, max_length=20)
+    mpesa_till: Optional[str] = Field(default=None, max_length=20)
+
+
+# ---------------------------------------------------------------------------
 # Auth
 # ---------------------------------------------------------------------------
 class RegisterIn(BaseModel):
@@ -164,10 +186,15 @@ class RegisterIn(BaseModel):
     password: str = Field(min_length=6)
     full_name: str = Field(min_length=1)
     role: Role
-    gender: Gender
+    # Buyer-only personal demographics (sellers leave blank)
+    gender: Optional[Gender] = None
     age: Optional[int] = Field(default=None, ge=13, le=120)
     dob: Optional[str] = None  # ISO date "YYYY-MM-DD"; if set, server derives age
-    preferred_currency: Optional[Currency] = None  # defaults to DEFAULT_CURRENCY
+    preferred_currency: Optional[Currency] = None
+    # Seller-only fields (buyers leave blank)
+    company_name: Optional[str] = Field(default=None, max_length=120)
+    location: Optional[Location] = None
+    bank_details: Optional[BankDetails] = None
 
 
 class LoginIn(BaseModel):
@@ -190,6 +217,11 @@ class UserOut(BaseModel):
     stripe_account_id: Optional[str] = None
     connect_status: ConnectStatus = "unstarted"
     preferred_currency: Currency = DEFAULT_CURRENCY  # type: ignore[assignment]
+    # Seller-only (always present in response shape, null for buyers/admins)
+    company_name: Optional[str] = None
+    location: Optional[Location] = None
+    bank_details: Optional[BankDetails] = None
+    suspended: bool = False
     created_at: datetime
 
 
@@ -433,6 +465,8 @@ class CollectionOut(BaseModel):
 # DB document → DTO helpers (single source of truth for default handling)
 # ---------------------------------------------------------------------------
 def user_to_out(doc: Dict[str, Any]) -> UserOut:
+    raw_loc = doc.get("location")
+    raw_bank = doc.get("bank_details")
     return UserOut(
         id=doc["id"],
         email=doc["email"],
@@ -444,6 +478,10 @@ def user_to_out(doc: Dict[str, Any]) -> UserOut:
         stripe_account_id=doc.get("stripe_account_id"),
         connect_status=doc.get("connect_status", "unstarted"),
         preferred_currency=doc.get("preferred_currency", DEFAULT_CURRENCY),
+        company_name=doc.get("company_name"),
+        location=Location(**raw_loc) if raw_loc else None,
+        bank_details=BankDetails(**raw_bank) if raw_bank else None,
+        suspended=bool(doc.get("suspended", False)),
         created_at=doc["created_at"],
     )
 

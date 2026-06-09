@@ -39,16 +39,28 @@ const formatDobDisplay = (d: Date): string =>
   d.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
 
 export default function Register() {
-  const { register } = useAuth();
+  const { registerBuyer, registerSeller } = useAuth();
   const toast = useToast();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<Role>("buyer");
+  const [loading, setLoading] = useState(false);
+
+  // Buyer-only fields
   const [gender, setGender] = useState<Gender | null>(null);
   const [dob, setDob] = useState<Date | null>(null);
   const [showPicker, setShowPicker] = useState(false);
-  const [loading, setLoading] = useState(false);
+
+  // Seller-only fields
+  const [companyName, setCompanyName] = useState("");
+  const [city, setCity] = useState("");
+  const [country, setCountry] = useState("Kenya");
+  const [bankName, setBankName] = useState("");
+  const [accountName, setAccountName] = useState("");
+  const [accountNumber, setAccountNumber] = useState("");
+  const [mpesaPaybill, setMpesaPaybill] = useState("");
+  const [mpesaTill, setMpesaTill] = useState("");
 
   const maxDob = useMemo(() => {
     const d = new Date();
@@ -70,33 +82,66 @@ export default function Register() {
 
   const submit = async () => {
     if (!fullName.trim() || !email.trim() || !password) {
-      toast.show("Please fill in all fields", "error");
+      toast.show("Please fill in all required fields", "error");
       return;
     }
     if (password.length < 6) {
       toast.show("Password must be at least 6 characters", "error");
       return;
     }
-    if (!gender) {
-      toast.show("Please select your gender", "error");
-      return;
-    }
-    if (!dob) {
-      toast.show("Please pick your date of birth", "error");
-      return;
-    }
-    if (derivedAge !== null && derivedAge < 13) {
-      toast.show("You must be at least 13 years old to use Drape", "error");
-      return;
-    }
     setLoading(true);
     try {
-      const user = await register(email.trim(), password, fullName.trim(), role, gender, {
-        dob: formatDob(dob),
-      });
-      if (user.role === "buyer") {
+      if (role === "buyer") {
+        if (!gender) {
+          toast.show("Please select your gender", "error");
+          setLoading(false);
+          return;
+        }
+        if (!dob) {
+          toast.show("Please pick your date of birth", "error");
+          setLoading(false);
+          return;
+        }
+        if (derivedAge !== null && derivedAge < 13) {
+          toast.show("You must be at least 13 years old to use Drape", "error");
+          setLoading(false);
+          return;
+        }
+        await registerBuyer(email.trim(), password, fullName.trim(), {
+          gender,
+          dob: formatDob(dob),
+        });
         router.replace("/onboarding/measurements");
       } else {
+        if (!companyName.trim()) {
+          toast.show("Company name is required", "error");
+          setLoading(false);
+          return;
+        }
+        if (!city.trim() || !country.trim()) {
+          toast.show("Please enter your city and country", "error");
+          setLoading(false);
+          return;
+        }
+        const bank_details =
+          bankName.trim() ||
+          accountName.trim() ||
+          accountNumber.trim() ||
+          mpesaPaybill.trim() ||
+          mpesaTill.trim()
+            ? {
+                bank_name: bankName.trim() || undefined,
+                account_name: accountName.trim() || undefined,
+                account_number: accountNumber.trim() || undefined,
+                mpesa_paybill: mpesaPaybill.trim() || undefined,
+                mpesa_till: mpesaTill.trim() || undefined,
+              }
+            : undefined;
+        await registerSeller(email.trim(), password, fullName.trim(), {
+          company_name: companyName.trim(),
+          location: { city: city.trim(), country: country.trim() },
+          bank_details,
+        });
         router.replace("/(tabs)");
       }
     } catch (e: any) {
@@ -151,7 +196,7 @@ export default function Register() {
         <View style={{ height: spacing.xl }} />
         <AppInput
           testID="register-name-input"
-          label="Full Name"
+          label={role === "seller" ? "Your full name" : "Full Name"}
           value={fullName}
           onChangeText={setFullName}
           autoCapitalize="words"
@@ -176,62 +221,45 @@ export default function Register() {
           placeholder="At least 6 characters"
         />
 
-        <Text style={[tp.caption, styles.label]}>Gender</Text>
-        <View style={styles.genderRow}>
-          {GENDERS.map((g) => {
-            const selected = gender === g.key;
-            return (
-              <TouchableOpacity
-                key={g.key}
-                testID={`register-gender-${g.key}`}
-                onPress={() => setGender(g.key)}
-                style={[
-                  styles.genderChip,
-                  selected ? styles.genderChipActive : styles.genderChipInactive,
-                ]}
-                activeOpacity={0.85}
-              >
-                <Text
-                  style={[
-                    styles.genderLabel,
-                    selected ? styles.genderLabelActive : styles.genderLabelInactive,
-                  ]}
-                >
-                  {g.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        <View style={{ height: spacing.lg }} />
-        <Text style={[tp.caption, styles.label]}>Date of birth</Text>
-        <TouchableOpacity
-          testID="register-dob-trigger"
-          onPress={() => setShowPicker(true)}
-          activeOpacity={0.85}
-          style={styles.dobField}
-        >
-          <Feather name="calendar" size={16} color={colors.primary} />
-          <Text style={styles.dobValue}>
-            {dob ? formatDobDisplay(dob) : "Pick a date"}
-          </Text>
-        </TouchableOpacity>
-        {derivedAge !== null ? (
-          <Text style={styles.dobAge} testID="register-derived-age">
-            {derivedAge} years old
-          </Text>
+        {role === "buyer" ? (
+          <BuyerFields
+            gender={gender}
+            setGender={setGender}
+            dob={dob}
+            derivedAge={derivedAge}
+            openPicker={() => setShowPicker(true)}
+          />
         ) : (
-          <Text style={styles.dobHint}>You must be at least 13 to join Drape</Text>
+          <SellerFields
+            companyName={companyName}
+            setCompanyName={setCompanyName}
+            city={city}
+            setCity={setCity}
+            country={country}
+            setCountry={setCountry}
+            bankName={bankName}
+            setBankName={setBankName}
+            accountName={accountName}
+            setAccountName={setAccountName}
+            accountNumber={accountNumber}
+            setAccountNumber={setAccountNumber}
+            mpesaPaybill={mpesaPaybill}
+            setMpesaPaybill={setMpesaPaybill}
+            mpesaTill={mpesaTill}
+            setMpesaTill={setMpesaTill}
+          />
         )}
-        <DobPicker
-          visible={showPicker}
-          value={dob}
-          minDate={minDob}
-          maxDate={maxDob}
-          onConfirm={onDobConfirm}
-          onCancel={() => setShowPicker(false)}
-        />
+
+        {role === "buyer" ? (
+          <DobPicker
+            visible={showPicker}
+            value={dob}
+            minDate={minDob}
+            maxDate={maxDob}
+            onConfirm={onDobConfirm}
+            onCancel={() => setShowPicker(false)}
+          />
+        ) : null}
       </KeyboardAwareScrollView>
       <View style={styles.footer}>
         <AppButton
@@ -247,6 +275,185 @@ export default function Register() {
         </TouchableOpacity>
       </View>
     </SafeAreaView>
+  );
+}
+
+interface BuyerFieldsProps {
+  gender: Gender | null;
+  setGender: (g: Gender) => void;
+  dob: Date | null;
+  derivedAge: number | null;
+  openPicker: () => void;
+}
+
+function BuyerFields({ gender, setGender, dob, derivedAge, openPicker }: BuyerFieldsProps) {
+  return (
+    <>
+      <Text style={[tp.caption, styles.label]}>Gender</Text>
+      <View style={styles.genderRow}>
+        {GENDERS.map((g) => {
+          const selected = gender === g.key;
+          return (
+            <TouchableOpacity
+              key={g.key}
+              testID={`register-gender-${g.key}`}
+              onPress={() => setGender(g.key)}
+              style={[
+                styles.genderChip,
+                selected ? styles.genderChipActive : styles.genderChipInactive,
+              ]}
+              activeOpacity={0.85}
+            >
+              <Text
+                style={[
+                  styles.genderLabel,
+                  selected ? styles.genderLabelActive : styles.genderLabelInactive,
+                ]}
+              >
+                {g.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      <View style={{ height: spacing.lg }} />
+      <Text style={[tp.caption, styles.label]}>Date of birth</Text>
+      <TouchableOpacity
+        testID="register-dob-trigger"
+        onPress={openPicker}
+        activeOpacity={0.85}
+        style={styles.dobField}
+      >
+        <Feather name="calendar" size={16} color={colors.primary} />
+        <Text style={styles.dobValue}>
+          {dob ? formatDobDisplay(dob) : "Pick a date"}
+        </Text>
+      </TouchableOpacity>
+      {derivedAge !== null ? (
+        <Text style={styles.dobAge} testID="register-derived-age">
+          {derivedAge} years old
+        </Text>
+      ) : (
+        <Text style={styles.dobHint}>You must be at least 13 to join Drape</Text>
+      )}
+    </>
+  );
+}
+
+interface SellerFieldsProps {
+  companyName: string;
+  setCompanyName: (s: string) => void;
+  city: string;
+  setCity: (s: string) => void;
+  country: string;
+  setCountry: (s: string) => void;
+  bankName: string;
+  setBankName: (s: string) => void;
+  accountName: string;
+  setAccountName: (s: string) => void;
+  accountNumber: string;
+  setAccountNumber: (s: string) => void;
+  mpesaPaybill: string;
+  setMpesaPaybill: (s: string) => void;
+  mpesaTill: string;
+  setMpesaTill: (s: string) => void;
+}
+
+function SellerFields(props: SellerFieldsProps) {
+  return (
+    <>
+      <View style={styles.sectionDivider}>
+        <Text style={[tp.caption, { color: colors.primary }]}>Atelier</Text>
+      </View>
+      <AppInput
+        testID="register-company-input"
+        label="Company / Brand name"
+        value={props.companyName}
+        onChangeText={props.setCompanyName}
+        autoCapitalize="words"
+        placeholder="Maison Lumière"
+      />
+      <View style={styles.rowSplit}>
+        <View style={styles.flex1}>
+          <AppInput
+            testID="register-city-input"
+            label="City"
+            value={props.city}
+            onChangeText={props.setCity}
+            autoCapitalize="words"
+            placeholder="Nairobi"
+          />
+        </View>
+        <View style={styles.flex1}>
+          <AppInput
+            testID="register-country-input"
+            label="Country"
+            value={props.country}
+            onChangeText={props.setCountry}
+            autoCapitalize="words"
+            placeholder="Kenya"
+          />
+        </View>
+      </View>
+
+      <View style={styles.sectionDivider}>
+        <Text style={[tp.caption, { color: colors.primary }]}>Payouts</Text>
+        <Text style={[tp.bodyMuted, { marginTop: 4, fontSize: 12 }]}>
+          Optional now — you can add these later in Settings. Provide at least one method before your first payout.
+        </Text>
+      </View>
+
+      <Text style={[tp.caption, styles.label, { marginTop: spacing.sm }]}>Bank</Text>
+      <AppInput
+        testID="register-bank-name-input"
+        label="Bank name"
+        value={props.bankName}
+        onChangeText={props.setBankName}
+        autoCapitalize="words"
+        placeholder="Equity Bank"
+      />
+      <AppInput
+        testID="register-account-name-input"
+        label="Account name"
+        value={props.accountName}
+        onChangeText={props.setAccountName}
+        autoCapitalize="words"
+        placeholder="Maison Lumière Ltd"
+      />
+      <AppInput
+        testID="register-account-number-input"
+        label="Account number"
+        value={props.accountNumber}
+        onChangeText={props.setAccountNumber}
+        keyboardType="number-pad"
+        placeholder="0123456789"
+      />
+
+      <Text style={[tp.caption, styles.label, { marginTop: spacing.sm }]}>M-Pesa</Text>
+      <View style={styles.rowSplit}>
+        <View style={styles.flex1}>
+          <AppInput
+            testID="register-mpesa-paybill-input"
+            label="Paybill"
+            value={props.mpesaPaybill}
+            onChangeText={props.setMpesaPaybill}
+            keyboardType="number-pad"
+            placeholder="247247"
+          />
+        </View>
+        <View style={styles.flex1}>
+          <AppInput
+            testID="register-mpesa-till-input"
+            label="Till number"
+            value={props.mpesaTill}
+            onChangeText={props.setMpesaTill}
+            keyboardType="number-pad"
+            placeholder="123456"
+          />
+        </View>
+      </View>
+    </>
   );
 }
 
@@ -275,6 +482,8 @@ function RoleCard({ label, sub, selected, onPress, testID }: RoleCardProps) {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
   flex: { flex: 1 },
+  flex1: { flex: 1 },
+  rowSplit: { flexDirection: "row", gap: spacing.md },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -289,6 +498,13 @@ const styles = StyleSheet.create({
   title: { marginTop: spacing.md },
   sub: { marginTop: spacing.md, maxWidth: 320 },
   label: { marginBottom: spacing.sm },
+  sectionDivider: {
+    marginTop: spacing.lg,
+    marginBottom: spacing.md,
+    paddingBottom: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
   roleRow: { flexDirection: "row", gap: spacing.md },
   roleCard: {
     flex: 1,

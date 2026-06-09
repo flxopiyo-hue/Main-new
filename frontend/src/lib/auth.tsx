@@ -2,7 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
-import { api, Gender, Role, setToken as setTokenStorage, User } from "@/src/lib/api";
+import { api, BankDetails, Gender, Location, setToken as setTokenStorage, User } from "@/src/lib/api";
 import { getDeviceRegion, suggestCurrencyForRegion } from "@/src/lib/locale";
 import { storage } from "@/src/utils/storage";
 
@@ -38,17 +38,33 @@ async function syncCurrencyToLocale(user: User): Promise<User> {
   }
 }
 
+export type RegisterBuyerOpts = {
+  gender: Gender;
+  dob?: string;
+  age?: number;
+};
+
+export type RegisterSellerOpts = {
+  company_name: string;
+  location: Location;
+  bank_details?: BankDetails;
+};
+
 interface AuthValue {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<User>;
-  register: (
+  registerBuyer: (
     email: string,
     password: string,
     fullName: string,
-    role: Role,
-    gender: Gender,
-    opts: { age?: number; dob?: string },
+    opts: RegisterBuyerOpts,
+  ) => Promise<User>;
+  registerSeller: (
+    email: string,
+    password: string,
+    fullName: string,
+    opts: RegisterSellerOpts,
   ) => Promise<User>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -88,31 +104,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return synced;
   }, []);
 
-  const register = useCallback(
+  const registerBuyer = useCallback(
     async (
       email: string,
       password: string,
       fullName: string,
-      role: Role,
-      gender: Gender,
-      opts: { age?: number; dob?: string },
+      opts: RegisterBuyerOpts,
     ) => {
-      // Best effort: pre-seed preferred_currency from device region during
-      // registration so the very first response already carries the local currency.
       const region = getDeviceRegion();
       const preferred_currency = suggestCurrencyForRegion(region) ?? undefined;
       const { token, user: u } = await api.register({
         email,
         password,
         full_name: fullName,
-        role,
-        gender,
+        role: "buyer",
+        gender: opts.gender,
         age: opts.age,
         dob: opts.dob,
         preferred_currency,
       });
       await setTokenStorage(token);
-      // Mark already synced so we don't re-PATCH on next login.
+      await storage.setItem(LOCALE_SYNC_KEY, preferred_currency ?? "skipped");
+      setUser(u);
+      return u;
+    },
+    [],
+  );
+
+  const registerSeller = useCallback(
+    async (
+      email: string,
+      password: string,
+      fullName: string,
+      opts: RegisterSellerOpts,
+    ) => {
+      const region = getDeviceRegion();
+      const preferred_currency = suggestCurrencyForRegion(region) ?? undefined;
+      const { token, user: u } = await api.register({
+        email,
+        password,
+        full_name: fullName,
+        role: "seller",
+        preferred_currency,
+        company_name: opts.company_name,
+        location: opts.location,
+        bank_details: opts.bank_details,
+      });
+      await setTokenStorage(token);
       await storage.setItem(LOCALE_SYNC_KEY, preferred_currency ?? "skipped");
       setUser(u);
       return u;
@@ -126,8 +164,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, login, register, logout, refresh }),
-    [user, loading, login, register, logout, refresh],
+    () => ({ user, loading, login, registerBuyer, registerSeller, logout, refresh }),
+    [user, loading, login, registerBuyer, registerSeller, logout, refresh],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

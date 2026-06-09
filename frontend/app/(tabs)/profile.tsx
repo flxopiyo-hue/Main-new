@@ -107,41 +107,85 @@ export default function Profile() {
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.header}>
           <Text style={tp.caption}>{user?.role.toUpperCase()} ACCOUNT</Text>
-          <Text style={[tp.h1, styles.name]}>{user?.full_name}</Text>
+          <Text style={[tp.h1, styles.name]}>
+            {user?.role === "seller" && user?.company_name ? user.company_name : user?.full_name}
+          </Text>
+          {user?.role === "seller" && user?.company_name ? (
+            <Text style={[tp.bodyMuted, { marginTop: 2 }]}>{user?.full_name}</Text>
+          ) : null}
           <Text style={[tp.bodyMuted, { marginTop: 4 }]}>{user?.email}</Text>
-          {user?.gender || user?.age ? (
+          {user?.role === "buyer" && (user?.gender || user?.age) ? (
             <Text style={[tp.bodyMuted, { marginTop: 4 }]} testID="profile-demographics">
               {user.gender ? user.gender.replace(/_/g, " ") : ""}
               {user.gender && user.age ? " · " : ""}
               {user.age ? `${user.age} yrs` : ""}
             </Text>
           ) : null}
-        </View>
-
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={tp.caption}>Body Profile</Text>
-            <TouchableOpacity
-              testID="profile-edit-body-btn"
-              onPress={() => router.push("/onboarding/measurements")}
-            >
-              <Text style={styles.link}>Edit</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.grid}>
-            <Cell label="Height" value={m.height_cm} />
-            <Cell label="Chest" value={m.chest_cm} />
-            <Cell label="Waist" value={m.waist_cm} />
-            <Cell label="Hips" value={m.hips_cm} />
-            <Cell label="Shoulders" value={m.shoulders_cm} />
-            <Cell label="Inseam" value={m.inseam_cm} />
-          </View>
-          {profile?.preferred_size ? (
-            <Text style={[tp.bodyMuted, { marginTop: spacing.md }]}>
-              Preferred size: <Text style={styles.bold}>{profile.preferred_size}</Text>
+          {user?.role === "seller" && user?.location ? (
+            <Text style={[tp.bodyMuted, { marginTop: 4 }]} testID="profile-seller-location">
+              {user.location.city}, {user.location.country}
             </Text>
           ) : null}
         </View>
+
+        {user?.role === "buyer" ? (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={tp.caption}>Body Profile</Text>
+              <TouchableOpacity
+                testID="profile-edit-body-btn"
+                onPress={() => router.push("/onboarding/measurements")}
+              >
+                <Text style={styles.link}>Edit</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.grid}>
+              <Cell label="Height" value={m.height_cm} />
+              <Cell label="Chest" value={m.chest_cm} />
+              <Cell label="Waist" value={m.waist_cm} />
+              <Cell label="Hips" value={m.hips_cm} />
+              <Cell label="Shoulders" value={m.shoulders_cm} />
+              <Cell label="Inseam" value={m.inseam_cm} />
+            </View>
+            {profile?.preferred_size ? (
+              <Text style={[tp.bodyMuted, { marginTop: spacing.md }]}>
+                Preferred size: <Text style={styles.bold}>{profile.preferred_size}</Text>
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+
+        {user?.role === "seller" ? (
+          <View style={styles.section} testID="profile-seller-details">
+            <Text style={[tp.caption, { marginBottom: spacing.md }]}>Payout details</Text>
+            {user.bank_details && Object.values(user.bank_details).some(Boolean) ? (
+              <>
+                {user.bank_details.bank_name ? (
+                  <DetailRow label="Bank" value={user.bank_details.bank_name} />
+                ) : null}
+                {user.bank_details.account_name ? (
+                  <DetailRow label="Account name" value={user.bank_details.account_name} />
+                ) : null}
+                {user.bank_details.account_number ? (
+                  <DetailRow
+                    label="Account number"
+                    value={`••• ${user.bank_details.account_number.slice(-4)}`}
+                  />
+                ) : null}
+                {user.bank_details.mpesa_paybill ? (
+                  <DetailRow label="M-Pesa Paybill" value={user.bank_details.mpesa_paybill} />
+                ) : null}
+                {user.bank_details.mpesa_till ? (
+                  <DetailRow label="M-Pesa Till" value={user.bank_details.mpesa_till} />
+                ) : null}
+              </>
+            ) : (
+              <Text style={tp.bodyMuted}>
+                No payout method on file yet. Add bank or M-Pesa details before your first payout.
+              </Text>
+            )}
+          </View>
+        ) : null}
 
         {/* Region / Currency */}
         <View style={styles.section}>
@@ -359,6 +403,15 @@ function Cell({ label, value }: { label: string; value?: number | null }) {
   );
 }
 
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.detailRow}>
+      <Text style={styles.detailLabel}>{label}</Text>
+      <Text style={styles.detailValue} numberOfLines={1}>{value}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
   center: { alignItems: "center", justifyContent: "center" },
@@ -382,6 +435,28 @@ const styles = StyleSheet.create({
   cell: { width: "33.333%", paddingHorizontal: spacing.sm / 2, marginBottom: spacing.md },
   cellLabel: { fontFamily: fonts.bodyMedium, fontSize: 10, letterSpacing: 1.5, color: colors.mutedFg, textTransform: "uppercase" },
   cellValue: { fontFamily: fonts.heading, fontSize: 26, color: colors.primary, marginTop: 4 },
+  detailRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: spacing.md,
+  },
+  detailLabel: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 11,
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+    color: colors.mutedFg,
+    width: 130,
+  },
+  detailValue: {
+    flex: 1,
+    fontFamily: fonts.bodySemi,
+    fontSize: 14,
+    color: colors.primary,
+  },
   bold: { fontFamily: fonts.bodySemi },
   orderRow: { paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border, gap: spacing.sm },
   orderTop: { flexDirection: "row", gap: spacing.md, alignItems: "center" },

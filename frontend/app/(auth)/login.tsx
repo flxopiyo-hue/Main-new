@@ -25,8 +25,12 @@ export default function Login() {
     }
     setLoading(true);
     try {
-      await login(email.trim(), password);
-      router.replace("/(tabs)");
+      const u = await login(email.trim(), password);
+      if (u.role === "admin") {
+        router.replace("/admin");
+      } else {
+        router.replace("/(tabs)");
+      }
     } catch (e: any) {
       toast.show(e?.message ?? "Login failed", "error");
     } finally {

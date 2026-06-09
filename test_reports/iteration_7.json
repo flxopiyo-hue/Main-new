@@ -1,0 +1,53 @@
+{
+  "summary": "Iteration 7 (Seller Signup Overhaul + Admin Role + Admin Dashboard) PASSED end-to-end. Backend 21/21 tests green (seller register success/missing-field, demographic stripping, admin self-register block, admin login + /auth/me, admin gating 403 for buyer/seller, /admin/users list+search+filter, /admin/users/{id} for seed seller, suspend toggle, /admin/orders + ?status=paid, /admin/items + DELETE last item + /api/items/{id}->404, seller-deletion blocked). Frontend: seller-mode register form correctly hides gender/DOB and shows company/city/country/bank/M-Pesa inputs; seller signup completes and lands on Discover with Atelier tab; buyer regression still lands on /onboarding/measurements; admin login lands on /admin (not /(tabs)); dashboard tiles + revenue/fees/net + top-seller-0 (Maison Lumière) all render; users search 'atelier' + 'drape' work, seller filter narrows list, suspend->restore pill toggles correctly, admin's own row shows 'Cannot modify admin' with no toggle; items list renders 8 (now 7 after backend delete) seeded items with admin-item-{id}-delete buttons (auto-confirm dismiss works); orders list + paid filter work; bottom-bar nav across dashboard/users/items/orders works; admin-logout-btn returns to /(auth)/welcome. Minor analytics bug found: platform_fees / net_to_sellers display KSh 0 even when gross paid revenue is KSh 676 (see backend_issues.minor).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/admin/analytics",
+        "issue": "total_platform_fee_cents and total_net_to_sellers_cents are 0 when older paid orders are missing platform_fee_cents/seller_net_cents in Mongo. In routers/admin.py the fallback `paid.get('fee', (revenue * PLATFORM_FEE_BPS) // 10000)` never fires because the $sum aggregation always returns 0 (the key exists). Result: dashboard shows gross KSh 676 but fees KSh 0 / net KSh 0. Recommend computing fallback when summed fee==0 and revenue>0, or backfilling fee/net on legacy paid orders."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "shadow* style props",
+        "issue": "Console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' emitted on most screens. Migrate shadowColor/shadowOffset/shadowOpacity/shadowRadius to the new boxShadow API in StyleSheet.create() blocks across src/components."
+      },
+      {
+        "component": "pointerEvents prop",
+        "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Move `pointerEvents` from JSX prop to `style={{ pointerEvents: ... }}`."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration7_admin_seller.py",
+    "/app/test_reports/pytest/iteration7_admin_results.xml"
+  ],
+  "action_items": [
+    "Fix /api/admin/analytics fee/net fallback so legacy paid orders missing platform_fee_cents/seller_net_cents still compute revenue * PLATFORM_FEE_BPS / 10000 (or backfill those fields on existing docs).",
+    "Migrate deprecated shadow* style props to boxShadow across RN StyleSheet definitions to silence the warning on every screen.",
+    "Move pointerEvents JSX prop to style.pointerEvents (likely in AppInput / KeyboardAware wrappers used by register.tsx)."
+  ],
+  "critical_code_review_comments": [
+    "routers/admin.py analytics fallback for fee/net uses dict.get with a default that is never used because the aggregation $sum always populates the key with 0 - swap to an explicit `if not fee and revenue: fee = revenue * PLATFORM_FEE_BPS // 10000`.",
+    "routers/auth.py role=seller path correctly null-outs gender/age/dob and validates company_name + location - matches spec.",
+    "models.py UserOut now includes company_name/location/bank_details with null defaults so the response shape stays consistent across roles - good.",
+    "app/admin/users.tsx correctly suppresses the toggle for role=='admin' and shows 'Cannot modify admin' italic text."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration7_admin_seller.py (new)",
+    "/app/test_reports/pytest/iteration7_admin_results.xml (new pytest junit)",
+    "/app/test_reports/iteration_7.json (this report)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Backend pytest created several TEST_*@drape.demo seller + buyer accounts via /api/auth/register and toggled their suspended flag back to false. Backend delete-item test removed the LAST item (Cropped Linen Shirt by created_at desc) for the seed seller; frontend admin-items delete test removed one more (now 6 seeded items remain). Re-running /app/backend/seed.py will NOT re-create items because the seller still has inventory - run a manual delete of remaining items first if a full re-seed is needed.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend test_iteration7_admin_seller.py is idempotent and safe to re-run; it always deletes only the LAST item in admin items list per spec. Admin credentials: admin@drape.app / drape-admin-2026 (pre-seeded by seed.py). Frontend default Country field is pre-filled to 'Kenya' so don't overwrite blindly. Welcome screen testIDs are welcome-create-account-btn and welcome-sign-in-btn (NOT visible text). DOB picker confirm button label is exactly 'Confirm' (no testID).",
+  "rca_of_issue": "Analytics fee/net=0 RCA: In /app/backend/routers/admin.py the paid_pipeline groups with $sum:'$platform_fee_cents' and $sum:'$seller_net_cents'. Because Mongo $sum coerces missing fields to 0, the resulting document ALWAYS has keys 'fee' and 'net' set to 0 for legacy paid orders that pre-date the platform-fee field. The fallback `paid.get('fee', revenue*PLATFORM_FEE_BPS//10000)` never triggers because the key is present (value 0). Mitigation: change to `fee = int(paid.get('fee') or (revenue * PLATFORM_FEE_BPS) // 10000)` (treat 0 as missing), OR backfill all paid orders with computed platform_fee_cents/seller_net_cents."
+}

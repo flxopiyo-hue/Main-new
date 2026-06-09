@@ -62,6 +62,13 @@ async def require_role(role: str, user: Dict[str, Any]) -> None:
         raise HTTPException(status_code=403, detail=f"Requires {role} role")
 
 
+async def require_admin(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    """FastAPI dependency that gates an endpoint behind the admin role."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
 async def try_get_user_from_creds(
     creds: Optional[HTTPAuthorizationCredentials],
 ) -> Optional[Dict[str, Any]]:

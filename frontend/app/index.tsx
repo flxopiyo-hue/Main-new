@@ -16,6 +16,7 @@ export default function Index() {
     );
   }
   if (!user) return <Redirect href="/welcome" />;
+  if (user.role === "admin") return <Redirect href="/admin" />;
   return <Redirect href="/(tabs)" />;
 }
 

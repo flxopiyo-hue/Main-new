@@ -26,6 +26,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from core.db import close_db
 from routers import (
+    admin,
     auth,
     collections,
     items,
@@ -63,6 +64,7 @@ api_router.include_router(orders.router)
 api_router.include_router(payments.router)
 api_router.include_router(seller.router)
 api_router.include_router(collections.router)
+api_router.include_router(admin.router)
 
 app.include_router(api_router)
 

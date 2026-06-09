@@ -189,34 +189,131 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "1.6"
-  test_sequence: 6
+  version: "1.7"
+  test_sequence: 7
   run_ui: false
 
 test_plan:
   current_focus:
-    - "Multi-angle Try-On (backend + frontend)"
-    - "Currency Localization (backend + frontend)"
+    - "Seller registration overhaul (frontend) — Company/Location/Bank/M-Pesa instead of age/gender/DOB"
+    - "Admin role + admin dashboard (backend + frontend)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
+backend:
+  - task: "Seller registration schema — drop age/gender/DOB, require company_name + location, accept optional bank_details (incl. M-Pesa)"
+    implemented: true
+    working: true
+    file: "/app/backend/routers/auth.py, /app/backend/models.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          RegisterIn now carries company_name / location (Location) / bank_details (BankDetails) and the
+          register handler enforces company_name + location.{city,country} for role=seller while
+          rejecting demographics. role=admin POSTs are 403'd — admins can only come from seed.py.
+          UserOut surfaces company_name / location / bank_details / suspended so the frontend can render
+          the seller profile correctly. Admin endpoints (/api/admin/users, /api/admin/users/{id} PATCH,
+          /api/admin/orders, /api/admin/items, /api/admin/items/{id} DELETE, /api/admin/analytics) are
+          gated by require_admin().
+
+  - task: "Admin endpoints — analytics, user list/get/patch (suspend / restore / unlock connect), order list, item list/delete"
+    implemented: true
+    working: true
+    file: "/app/backend/routers/admin.py, /app/backend/seed.py, /app/backend/core/security.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Seed script now also creates admin@drape.app / drape-admin-2026 idempotently and back-fills
+          the demo seller with company_name / location / bank_details. require_admin() raises 403 for
+          buyers / sellers. /api/admin/analytics aggregates total_users (by role + suspended),
+          total_items / total_orders / total_paid_orders, gross revenue + platform fee + net to sellers,
+          pending_connect_sellers, top 5 sellers by paid revenue. /api/admin/items returns every
+          listing; DELETE /api/admin/items/{id} removes the item and cleans up dependent wishlist rows.
+
+frontend:
+  - task: "Register screen splits Buyer vs Seller fields — buyers keep gender + DOB; sellers fill Company/Brand, City/Country, optional Bank + M-Pesa"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/(auth)/register.tsx, /app/frontend/src/lib/api.ts, /app/frontend/src/lib/auth.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Selecting the Seller role swaps the Gender + DOB block for an Atelier section (Company name,
+          City, Country) followed by a Payouts section (Bank name / Account name / Account number /
+          M-Pesa Paybill / Till). useAuth() now exposes registerBuyer and registerSeller helpers that
+          send the matching schema. Verified manually via Playwright: brand-new seller account
+          (newseller…@drape.demo) registered without 422; landed on Discover with role=seller; Atelier
+          tab visible. Backend /api/auth/register went 200 once the frontend payload matched the schema.
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Updated /app/(tabs)/profile.tsx: when role=seller, header shows company name + location;
+          Body Profile block is buyer-only; a new "Payout details" section renders bank / account
+          (masked) / M-Pesa Paybill / Till when present, else an empty-state nudge.
+
+  - task: "Admin dashboard — /admin (analytics), /admin/users (search + suspend), /admin/items (delete), /admin/orders (filter by status); shared AdminShell with bottom nav + sign out"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/admin/_layout.tsx, /app/frontend/app/admin/index.tsx, /app/frontend/app/admin/users.tsx, /app/frontend/app/admin/items.tsx, /app/frontend/app/admin/orders.tsx, /app/frontend/src/components/AdminShell.tsx, /app/frontend/app/index.tsx, /app/frontend/app/(auth)/login.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Index redirect + login redirect now route role=admin to /admin instead of /(tabs).
+          AdminShell provides editorial header + bottom tab bar (Dashboard / Users / Items / Orders) +
+          sign-out. Dashboard surfaces 4 tile cards (Members, Suspended, Listings, Orders), a hero
+          revenue panel (gross / platform fees / net to sellers) and a Top 5 sellers list — all in the
+          admin's preferred currency. Users screen supports search-by-name/email/company, role filters
+          (All / Buyers / Sellers / Admins), and Suspend / Restore toggle (admins can't be modified).
+          Items screen lists every listing with a confirm-and-delete bin (Alert.alert native, confirm()
+          on web). Orders screen filters by status (All / Paid / Pending / Failed / Cancelled). Each
+          screen guards against non-admin viewers by replacing to /(auth)/welcome on focus.
+          Manual Playwright check: admin@drape.app login lands on /admin with 16 members / 13 buyers /
+          2 sellers / 1 admin / 9 orders / 4 paid; Top sellers = Maison Lumière 4 orders. Users tab
+          shows seed admin (cannot modify) + suspend buttons for buyers/sellers. Items tab lists all 8
+          seeded items with delete icons. Orders tab shows all 9 historical orders with green PAID
+          pills.
+
 agent_communication:
   - agent: "main"
     message: |
-      Iteration 6 implements (a) Multi-angle AI try-on (front/3-4/side/back) with parallel Nano Banana renders and (b) Currency localization (12 currencies, KES default for new Kenyan users, indicative FX, per-item listing currency, Stripe charges item currency).
+      Iteration 7 implements the "Seller signup overhaul + Admin role" feature.
+      Test credentials (in /app/memory/test_credentials.md):
+        - admin@drape.app / drape-admin-2026   (admin)
+        - atelier@aurafit.demo / demo-seller-2026  (seller — now has company/location/bank)
+        - buyer@aurafit.demo / demo-buyer-2026 (buyer)
       Please test:
       Backend:
-        1) POST /api/auth/register without preferred_currency → user.preferred_currency = "KES"
-        2) PATCH /api/auth/preferences {"preferred_currency":"USD"} → 200, user.preferred_currency = "USD"; bad code → 422
-        3) POST /api/items (seller) without currency → item.currency = seller.preferred_currency
-        4) POST /api/items with explicit currency=KES → stored
-        5) POST /api/tryon with angles=["front","side","back"] → returns images list of 3 entries (each has angle + image_b64) AND result_image_b64 is the front one. Make sure the call completes (Nano Banana parallel) — allow up to 90s.
-        6) GET /api/tryon/{id}/share?fmt=square&angle=side → returns a watermarked image_b64 for the side angle (200). With angle=back when only front+side exist, should gracefully fall back.
-        7) GET /api/tryon/history → returns images[] populated; legacy records (single result_image_b64) should also surface as images[{angle:"front",image_b64:…}].
-        8) POST /api/payments/checkout → success, order.currency matches item.currency.
-      Use the existing demo credentials in /app/memory/test_credentials.md.
+        1) POST /api/auth/register with role=seller + {company_name, location, bank_details} → 200, returns user with company_name + location populated.
+        2) POST /api/auth/register with role=seller missing company_name → 400 "Company name is required for sellers".
+        3) POST /api/auth/register with role=seller missing location → 400 "Location (city, country) is required for sellers".
+        4) POST /api/auth/register with role=seller passing age/dob → server should ignore them (resolved_age None, dob None).
+        5) POST /api/auth/register with role=admin → 403 "Admin accounts cannot be self-registered".
+        6) POST /api/auth/login as admin@drape.app/drape-admin-2026 → 200, user.role=admin.
+        7) GET /api/admin/analytics as admin → 200, returns counts + revenue + top_sellers; same call as a buyer → 403.
+        8) GET /api/admin/users?role=seller → list of sellers (UserOut shape with company_name + location).
+        9) PATCH /api/admin/users/{id} {suspended:true} as admin → user.suspended=true; tried as seller → 403.
+        10) GET /api/admin/items → all items; DELETE /api/admin/items/{id} as admin → 200; corresponding wishlist rows cleared.
       Frontend (only if backend passes):
-        1) Login as buyer → Profile tab → tap "REGION & CURRENCY" → list of 12 currencies appears → switch to USD then back to KES (toast shows). On Discover, the indicative price under each card should disappear when KES = listing currency, and reappear with the right symbol otherwise.
-        2) On an item detail page, tap "Try It On" → single front render arrives. Tap "Multi-Angle Try-On" → 3 thumbs appear (Front/Side/Back) — tap each to swap hero. Share button shares the active angle.
-        3) Seller new-item form → currency chips visible, selecting KES updates the price input label to "Price (KES)" with placeholder "12,500".
+        1) Welcome → CREATE ACCOUNT → tap Seller chip → form should now show Atelier section (Company, City, Country) + Payouts section (Bank/M-Pesa) and NO gender/DOB inputs.
+        2) Fill Company "Test Co", City "Nairobi", Country "Kenya", submit → registers successfully and lands on /(tabs)/index.
+        3) Welcome → SIGN IN as admin@drape.app/drape-admin-2026 → lands on /admin → 4 metric tiles visible + Top sellers + bottom Dashboard/Users/Items/Orders tabs.
+        4) Tap Users → search "atelier" → finds Maison Lumière; toggle SUSPEND then RESTORE.
+        5) Tap Items → delete icon on any item → confirmation → item disappears (do not actually delete seeded items unless you re-seed afterwards).
+        6) Tap Orders → switch between PAID/PENDING filters → list updates.

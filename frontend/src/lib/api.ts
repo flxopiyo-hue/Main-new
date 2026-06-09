@@ -6,8 +6,9 @@ import { storage } from "@/src/utils/storage";
 const BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL as string;
 const TOKEN_KEY = "aurafit.token";
 
-export type Role = "buyer" | "seller";
+export type Role = "buyer" | "seller" | "admin";
 export type Gender = "male" | "female" | "other" | "prefer_not_to_say";
+export type ConnectStatusCode = "unstarted" | "pending" | "active";
 export type Audience = "men" | "women" | "unisex";
 export type CurrencyCode =
   | "USD"
@@ -42,6 +43,21 @@ export type GarmentType =
   | "jewelry"
   | "other";
 
+export interface Location {
+  city: string;
+  country: string;
+}
+
+export interface BankDetails {
+  bank_name?: string | null;
+  branch?: string | null;
+  account_name?: string | null;
+  account_number?: string | null;
+  swift_code?: string | null;
+  mpesa_paybill?: string | null;
+  mpesa_till?: string | null;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -51,8 +67,13 @@ export interface User {
   age?: number | null;
   dob?: string | null;
   stripe_account_id?: string | null;
-  connect_status?: "unstarted" | "pending" | "active";
+  connect_status?: ConnectStatusCode;
   preferred_currency?: CurrencyCode;
+  // Seller-specific (null for buyers/admins)
+  company_name?: string | null;
+  location?: Location | null;
+  bank_details?: BankDetails | null;
+  suspended?: boolean;
   created_at: string;
 }
 
@@ -193,6 +214,23 @@ export interface TryOnShare {
   caption: string;
 }
 
+// Admin types
+export interface AdminAnalytics {
+  total_users: number;
+  buyers: number;
+  sellers: number;
+  admins: number;
+  suspended: number;
+  total_items: number;
+  total_orders: number;
+  total_paid_orders: number;
+  total_revenue_cents: number;
+  total_platform_fee_cents: number;
+  total_net_to_sellers_cents: number;
+  pending_connect_sellers: number;
+  top_sellers: { seller_id: string; name: string; revenue_cents: number; orders: number }[];
+}
+
 async function getToken(): Promise<string | null> {
   return storage.secureGet<string>(TOKEN_KEY, "");
 }
@@ -244,10 +282,14 @@ export const api = {
     password: string;
     full_name: string;
     role: Role;
-    gender: Gender;
+    gender?: Gender | null;
     age?: number;
     dob?: string;
     preferred_currency?: CurrencyCode;
+    // Seller-only
+    company_name?: string;
+    location?: Location;
+    bank_details?: BankDetails;
   }) => request<{ token: string; user: User }>("/auth/register", { method: "POST", body, auth: false }),
   login: (body: { email: string; password: string }) =>
     request<{ token: string; user: User }>("/auth/login", { method: "POST", body, auth: false }),
@@ -362,6 +404,31 @@ export const api = {
       `/payments/status/${sessionId}`,
     ),
   orders: () => request<Order[]>("/orders"),
+
+  // Admin
+  adminAnalytics: () => request<AdminAnalytics>("/admin/analytics"),
+  adminListUsers: (params: { role?: Role; suspended?: boolean; q?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.role) qs.append("role", params.role);
+    if (params.suspended !== undefined) qs.append("suspended", String(params.suspended));
+    if (params.q) qs.append("q", params.q);
+    const suffix = qs.toString();
+    return request<User[]>(`/admin/users${suffix ? `?${suffix}` : ""}`);
+  },
+  adminGetUser: (userId: string) => request<User>(`/admin/users/${userId}`),
+  adminPatchUser: (
+    userId: string,
+    body: { suspended?: boolean; connect_status?: ConnectStatusCode; company_name?: string },
+  ) => request<User>(`/admin/users/${userId}`, { method: "PATCH", body }),
+  adminListOrders: (params: { status?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.status) qs.append("status", params.status);
+    const suffix = qs.toString();
+    return request<Order[]>(`/admin/orders${suffix ? `?${suffix}` : ""}`);
+  },
+  adminListItems: () => request<Item[]>("/admin/items"),
+  adminDeleteItem: (itemId: string) =>
+    request<{ ok: boolean }>(`/admin/items/${itemId}`, { method: "DELETE" }),
 };
 
 export const BACKEND_URL = BASE_URL;

@@ -27,6 +27,20 @@ SELLER = {
     "email": "atelier@aurafit.demo",
     "full_name": "Maison Lumière",
     "password": "demo-seller-2026",
+    "company_name": "Maison Lumière",
+    "location": {"city": "Nairobi", "country": "Kenya"},
+    "bank_details": {
+        "bank_name": "Equity Bank",
+        "account_name": "Maison Lumière Ltd",
+        "account_number": "0123456789",
+        "mpesa_paybill": "247247",
+    },
+}
+
+ADMIN = {
+    "email": "admin@drape.app",
+    "full_name": "Drape Platform Admin",
+    "password": "drape-admin-2026",
 }
 
 ITEMS = [
@@ -182,11 +196,18 @@ async def main() -> None:
     client = AsyncIOMotorClient(MONGO_URL)
     db = client[DB_NAME]
 
+    # ----- Seller -----
+    seller_extras = {
+        "company_name": SELLER["company_name"],
+        "location": SELLER["location"],
+        "bank_details": SELLER["bank_details"],
+        "suspended": False,
+    }
     existing = await db.users.find_one({"email": SELLER["email"]})
     if existing:
         seller_id = existing["id"]
-        if existing.get("role") != "seller":
-            await db.users.update_one({"id": seller_id}, {"$set": {"role": "seller"}})
+        update: Dict[str, Any] = {"$set": {**seller_extras, "role": "seller"}}
+        await db.users.update_one({"id": seller_id}, update)
     else:
         seller_id = str(uuid.uuid4())
         hashed = bcrypt.hashpw(SELLER["password"].encode(), bcrypt.gensalt()).decode()
@@ -198,12 +219,37 @@ async def main() -> None:
                 "role": "seller",
                 "hashed_password": hashed,
                 "created_at": datetime.now(timezone.utc),
+                **seller_extras,
             }
         )
 
+    # ----- Admin -----
+    admin_existing = await db.users.find_one({"email": ADMIN["email"]})
+    if admin_existing:
+        await db.users.update_one(
+            {"id": admin_existing["id"]},
+            {"$set": {"role": "admin", "suspended": False}},
+        )
+        print(f"  · admin already present ({ADMIN['email']})")
+    else:
+        admin_id = str(uuid.uuid4())
+        hashed_admin = bcrypt.hashpw(ADMIN["password"].encode(), bcrypt.gensalt()).decode()
+        await db.users.insert_one(
+            {
+                "id": admin_id,
+                "email": ADMIN["email"],
+                "full_name": ADMIN["full_name"],
+                "role": "admin",
+                "hashed_password": hashed_admin,
+                "suspended": False,
+                "created_at": datetime.now(timezone.utc),
+            }
+        )
+        print(f"  + seeded admin {ADMIN['email']} / {ADMIN['password']}")
+
     item_count = await db.items.count_documents({"seller_id": seller_id})
     if item_count > 0:
-        print(f"Seller already has {item_count} items, skipping seeding.")
+        print(f"Seller already has {item_count} items, skipping item seeding.")
         client.close()
         return
 
