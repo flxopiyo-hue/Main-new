@@ -203,15 +203,22 @@ export default function Discover() {
         <View style={styles.center} testID="discover-loading">
           <ActivityIndicator color={colors.primary} />
         </View>
-      ) : items.length === 0 ? (
+      ) : (
         <FlatList
-          testID="discover-list-empty"
-          data={[]}
-          renderItem={() => null}
+          testID="discover-list"
+          data={items}
+          keyExtractor={(i) => i.id}
+          renderItem={renderItem}
+          numColumns={2}
+          // numColumns is fixed at 2; key only needs to change if we ever
+          // switched between grid and list. Keep stable to avoid full re-mount.
+          key="discover-grid-2col"
+          contentContainerStyle={
+            items.length === 0 ? styles.emptyListContent : styles.listContent
+          }
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-          contentContainerStyle={{ flex: 1 }}
-          ListHeaderComponent={
-            <View style={styles.empty}>
+          ListEmptyComponent={
+            <View style={styles.empty} testID="discover-empty">
               <Image source={{ uri: HERO }} style={styles.emptyHero} resizeMode="cover" />
               <Text style={[tp.h3, styles.emptyTitle]}>
                 {category ? `No ${category} in this size yet.` : "Stocking the racks…"}
@@ -221,16 +228,6 @@ export default function Discover() {
               </Text>
             </View>
           }
-        />
-      ) : (
-        <FlatList
-          testID="discover-list"
-          data={items}
-          keyExtractor={(i) => i.id}
-          renderItem={renderItem}
-          numColumns={2}
-          contentContainerStyle={styles.listContent}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           ListHeaderComponent={
             collections.length > 0 && !category && !sizeFilter ? (
               <View style={styles.dropsBlock}>
@@ -339,6 +336,11 @@ const styles = StyleSheet.create({
     textDecorationLine: "underline",
   },
   listContent: { paddingBottom: spacing.xxl, paddingTop: spacing.md },
+  emptyListContent: {
+    flexGrow: 1,
+    paddingBottom: spacing.xxl,
+    paddingTop: spacing.md,
+  },
   dropsBlock: { marginBottom: spacing.lg },
   dropsHeader: {
     flexDirection: "row",
