@@ -235,8 +235,13 @@ async def admin_analytics(
         paid = paid_agg[0]
         paid_count = int(paid.get("count", 0))
         revenue = int(paid.get("revenue", 0))
-        fee = int(paid.get("fee", (revenue * PLATFORM_FEE_BPS) // 10000))
-        net = int(paid.get("net", revenue - fee))
+        # `$sum` always populates the key (with 0) for legacy paid orders
+        # that pre-date the platform-fee field — so a literal 0 is treated as
+        # "missing" and we fall back to the configured BPS rate.
+        fee_raw = int(paid.get("fee", 0))
+        fee = fee_raw if fee_raw > 0 else (revenue * PLATFORM_FEE_BPS) // 10000
+        net_raw = int(paid.get("net", 0))
+        net = net_raw if net_raw > 0 else max(revenue - fee, 0)
     else:
         paid_count = revenue = fee = net = 0
 
