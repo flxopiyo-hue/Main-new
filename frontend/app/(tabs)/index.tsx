@@ -15,6 +15,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ChipsRow } from "@/src/components/ChipsRow";
 import { HeartButton } from "@/src/components/HeartButton";
+import { OutfitDrawer } from "@/src/components/OutfitDrawer";
+import { OutfitPill } from "@/src/components/OutfitPill";
 import { useToast } from "@/src/components/Toast";
 import { api, Collection, Item } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
@@ -45,6 +47,7 @@ export default function Discover() {
   const [wishedIds, setWishedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [outfitOpen, setOutfitOpen] = useState(false);
 
   const audienceLabel =
     user?.gender === "male" ? "men" : user?.gender === "female" ? "women" : null;
@@ -277,6 +280,8 @@ export default function Discover() {
           }
         />
       )}
+      <OutfitPill onPress={() => setOutfitOpen(true)} />
+      <OutfitDrawer visible={outfitOpen} onClose={() => setOutfitOpen(false)} />
     </SafeAreaView>
   );
 }

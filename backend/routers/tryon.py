@@ -15,7 +15,16 @@ from core.config import EMERGENT_LLM_KEY, MAX_TRYON_ANGLES, NANO_BANANA_MODEL
 from core.db import db
 from core.images import strip_data_prefix, watermark_image
 from core.security import get_current_user
-from models import TryOnImage, TryOnIn, TryOnOut, TryOnShareOut
+from models import (
+    LAYER_ORDER,
+    OutfitTryOnIn,
+    TryOnImage,
+    TryOnIn,
+    TryOnOut,
+    TryOnShareOut,
+    garment_type_label,
+    infer_garment_type,
+)
 
 logger = logging.getLogger("aurafit.tryon")
 router = APIRouter()
@@ -198,6 +207,118 @@ async def _generate_single_angle(
     return images[0]["data"]
 
 
+def _build_outfit_rules(items: List[Dict[str, Any]]) -> List[str]:
+    """Generate human-readable styling rules to feed to Gemini based on the
+    composition of an outfit.
+    """
+    types = {it.get("garment_type") or infer_garment_type(it) for it in items}
+    rules: List[str] = []
+    has_belt = "belt" in types
+    has_top = bool(types & {"shirt", "blouse"})
+    has_shorts = "shorts" in types
+    has_socks = "socks" in types
+    has_vest_under = "vest_under" in types
+    has_tie = "tie" in types
+    has_outerwear = "outerwear" in types
+    has_waistcoat = "waistcoat" in types
+
+    if has_belt and has_top:
+        rules.append("The shirt is fully tucked into the trousers/shorts, with the belt visible around the waist.")
+    if has_vest_under and has_top:
+        rules.append("The undershirt (vest) sits next to the skin, completely hidden beneath the shirt.")
+    if has_waistcoat and has_top:
+        rules.append("The waistcoat is buttoned over the shirt; the shirt sleeves and collar are visible.")
+    if has_tie and has_top:
+        rules.append("The necktie sits over the shirt collar, knotted at the neck. If a jacket is present, the tie is partially visible between the lapels.")
+    if has_outerwear:
+        rules.append("The jacket/outerwear is worn unbuttoned or open, layered OVER the shirt/waistcoat/tie. Outerwear is the outermost upper layer.")
+    if has_shorts and has_socks:
+        rules.append("The shorts end above the knee; the socks are visible on the lower legs above the shoes.")
+    if "shoes" in types:
+        rules.append("The shoes are worn on the feet; if socks are part of the outfit, the socks tuck into the shoes.")
+    if "scarf" in types:
+        rules.append("The scarf is draped around the neck, visible over the shirt and under the jacket.")
+    if "hat" in types:
+        rules.append("The hat is worn on the head, not held in the hand.")
+    return rules
+
+
+async def _generate_outfit_angle(
+    *,
+    body_b64: str,
+    items: List[Dict[str, Any]],
+    user: Dict[str, Any],
+    angle: str,
+    persona: str,
+) -> Optional[str]:
+    """Render the person wearing a composed outfit (multiple garments) at one angle.
+
+    `items` are expected to already be sorted by LAYER_ORDER (innermost first).
+    """
+    angle_hint = ANGLE_INSTRUCTIONS.get(angle, ANGLE_INSTRUCTIONS["front"])
+
+    # Build the per-garment description block.
+    garment_lines: List[str] = []
+    for idx, it in enumerate(items, start=1):
+        gtype = it.get("garment_type") or infer_garment_type(it)
+        gname = it.get("name", "garment")
+        # Photos 2..N — keep their order aligned with this list.
+        garment_lines.append(
+            f"  · Garment {idx} (photo {idx + 1}): a {garment_type_label(gtype)} called '{gname}'."
+        )
+
+    rules = _build_outfit_rules(items)
+    rules_text = (
+        "Layering & styling rules to obey strictly:\n"
+        + "\n".join(f"  - {r}" for r in rules)
+        if rules
+        else "No special layering rules apply."
+    )
+
+    system_msg = (
+        "You are a fashion virtual try-on generator that composes multiple garments "
+        "onto one person. You will receive a person photo followed by N garment photos "
+        "in INNERMOST-FIRST layer order. Compose them onto the person as a single "
+        "coherent outfit, respecting the styling rules provided. Preserve the person's "
+        "identity (face, skin tone, hair) and body proportions. Produce ONE photorealistic "
+        "image on a clean, neutral studio backdrop."
+    )
+    chat = (
+        LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"outfit-{user['id']}-{angle}-{uuid.uuid4()}",
+            system_message=system_msg,
+        )
+        .with_model("gemini", NANO_BANANA_MODEL)
+        .with_params(modalities=["image", "text"])
+    )
+
+    msg = UserMessage(
+        text=(
+            f"Generate a virtual outfit try-on at the {angle.replace('_', ' ').upper()} angle.\n"
+            f"{persona}\n"
+            f"The outfit consists of {len(items)} garment(s), layered from skin outward:\n"
+            + "\n".join(garment_lines)
+            + "\n\n"
+            + rules_text
+            + "\n\n"
+            + angle_hint
+            + " Photorealistic, full body, studio quality, fashion editorial. "
+            "Return a single image."
+        ),
+        file_contents=[ImageContent(body_b64)]
+        + [ImageContent(it["image_b64"]) for it in items],
+    )
+    try:
+        _text, images = await chat.send_message_multimodal_response(msg)
+    except Exception as e:
+        logger.warning("Outfit angle %s failed: %s", angle, e)
+        return None
+    if not images:
+        return None
+    return images[0]["data"]
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -306,6 +427,137 @@ async def generate_tryon(
     return TryOnOut(
         id=tryon_id,
         item_id=item["id"],
+        result_image_b64=front_image.image_b64,
+        images=angle_images,
+        fit_summary=fit_summary,
+        created_at=now,
+    )
+
+
+@router.post("/tryon/outfit", response_model=TryOnOut)
+async def generate_outfit_tryon(
+    body: OutfitTryOnIn, user: Dict[str, Any] = Depends(get_current_user)
+) -> TryOnOut:
+    """Compose multiple garments onto the user, respecting the layering hierarchy.
+
+    Garments are sorted innermost → outermost via LAYER_ORDER before being sent
+    to Gemini Nano Banana. The same multi-angle infrastructure as the single-item
+    try-on is reused so the response shape is identical.
+    """
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(status_code=500, detail="LLM key not configured")
+
+    # Fetch all items in one round-trip and preserve user-supplied order before
+    # we re-sort by layer.
+    items: List[Dict[str, Any]] = []
+    async for doc in db.items.find({"id": {"$in": body.item_ids}}, {"_id": 0}):
+        items.append(doc)
+    if not items:
+        raise HTTPException(status_code=404, detail="No items found for the given ids")
+    if len(items) > 8:
+        raise HTTPException(status_code=400, detail="Maximum 8 items per outfit")
+
+    # Sort innermost → outermost (stable: ties broken by user-supplied order).
+    id_position = {iid: i for i, iid in enumerate(body.item_ids)}
+    items.sort(
+        key=lambda it: (
+            LAYER_ORDER.get(
+                it.get("garment_type") or infer_garment_type(it), 100
+            ),
+            id_position.get(it["id"], 999),
+        )
+    )
+
+    # Body photo resolution (same logic as single-item try-on).
+    body_b64: Optional[str] = None
+    if body.body_photo_b64:
+        body_b64 = strip_data_prefix(body.body_photo_b64)
+    elif body.use_profile_photo:
+        profile = await db.profiles.find_one({"user_id": user["id"]}, {"_id": 0})
+        if profile and profile.get("front_photo_b64"):
+            body_b64 = profile["front_photo_b64"]
+    if not body_b64:
+        raise HTTPException(
+            status_code=400,
+            detail="No body photo. Provide body_photo_b64 or set a profile front photo.",
+        )
+
+    # Persona prompt.
+    gender = user.get("gender")
+    age = user.get("age")
+    persona_bits: List[str] = []
+    if gender == "male":
+        persona_bits.append("the person is male")
+    elif gender == "female":
+        persona_bits.append("the person is female")
+    if age:
+        persona_bits.append(f"approximately {age} years old")
+    persona = (", ".join(persona_bits) + ". ") if persona_bits else ""
+
+    # Validate & de-dupe angles.
+    seen: set[str] = set()
+    angles: List[str] = []
+    if "front" in body.angles or not body.angles:
+        angles.append("front")
+        seen.add("front")
+    for a in body.angles:
+        if a in ANGLE_INSTRUCTIONS and a not in seen:
+            angles.append(a)
+            seen.add(a)
+        if len(angles) >= MAX_TRYON_ANGLES:
+            break
+
+    coros = [
+        _generate_outfit_angle(
+            body_b64=body_b64,
+            items=items,
+            user=user,
+            angle=a,
+            persona=persona,
+        )
+        for a in angles
+    ]
+    results = await asyncio.gather(*coros, return_exceptions=False)
+
+    angle_images: List[TryOnImage] = []
+    for ang, img_b64 in zip(angles, results):
+        if img_b64:
+            angle_images.append(TryOnImage(angle=ang, image_b64=img_b64))  # type: ignore[arg-type]
+    if not angle_images:
+        raise HTTPException(
+            status_code=502, detail="AI did not return any images. Please try again."
+        )
+
+    front_image = next((a for a in angle_images if a.angle == "front"), angle_images[0])
+
+    # Bump try-on counter on every item in the outfit (one per try-on per item).
+    for it in items:
+        await db.items.update_one({"id": it["id"]}, {"$inc": {"try_ons": 1}})
+
+    tryon_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+    fit_summary = (
+        f"Outfit composed from {len(items)} pieces: "
+        + ", ".join(it["name"] for it in items)
+    )
+    await db.tryons.insert_one(
+        {
+            "id": tryon_id,
+            "user_id": user["id"],
+            # Use the first item as the headline item for legacy /history rendering;
+            # the full list lives under `item_ids`.
+            "item_id": items[0]["id"],
+            "item_ids": [it["id"] for it in items],
+            "result_image_b64": front_image.image_b64,
+            "images": [a.model_dump() for a in angle_images],
+            "fit_summary": fit_summary,
+            "is_outfit": True,
+            "created_at": now,
+        }
+    )
+    return TryOnOut(
+        id=tryon_id,
+        item_id=items[0]["id"],
         result_image_b64=front_image.image_b64,
         images=angle_images,
         fit_summary=fit_summary,

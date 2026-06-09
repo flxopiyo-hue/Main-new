@@ -15,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppButton } from "@/src/components/AppButton";
 import { HeartButton } from "@/src/components/HeartButton";
+import { OutfitDrawer } from "@/src/components/OutfitDrawer";
 import { useToast } from "@/src/components/Toast";
 import {
   api,
@@ -28,6 +29,7 @@ import {
 import { useAuth } from "@/src/lib/auth";
 import { formatPrice, indicativePrice } from "@/src/lib/currency";
 import { dataUriFromBase64 } from "@/src/lib/images";
+import { useOutfit } from "@/src/lib/outfit";
 import { shareBase64Image } from "@/src/lib/share";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
@@ -56,6 +58,12 @@ export default function ItemDetail() {
   const [generatingMulti, setGeneratingMulti] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [buying, setBuying] = useState(false);
+  const [outfitOpen, setOutfitOpen] = useState(false);
+
+  const addToOutfit = useOutfit((s) => s.add);
+  const removeFromOutfit = useOutfit((s) => s.remove);
+  const isInOutfit = useOutfit((s) => s.isInOutfit);
+  const outfitCount = useOutfit((s) => s.items.length);
 
   const load = useCallback(async () => {
     try {
@@ -373,6 +381,57 @@ export default function ItemDetail() {
             onPress={() => runTryOn(["front", "side", "back"])}
             loading={generatingMulti}
           />
+          {item ? (
+            <>
+              <View style={{ height: spacing.sm }} />
+              <View style={styles.outfitRow}>
+                <TouchableOpacity
+                  testID="item-outfit-toggle-btn"
+                  onPress={() => {
+                    if (isInOutfit(item.id)) {
+                      removeFromOutfit(item.id);
+                      toast.show("Removed from outfit", "success");
+                    } else {
+                      addToOutfit(item);
+                      toast.show(`Added to outfit · ${outfitCount + 1} piece(s)`, "success");
+                    }
+                  }}
+                  style={[
+                    styles.outfitToggle,
+                    isInOutfit(item.id) ? styles.outfitToggleActive : null,
+                  ]}
+                  activeOpacity={0.85}
+                >
+                  <Feather
+                    name={isInOutfit(item.id) ? "check" : "plus"}
+                    size={14}
+                    color={isInOutfit(item.id) ? colors.primaryFg : colors.primary}
+                  />
+                  <Text
+                    style={[
+                      styles.outfitToggleLabel,
+                      isInOutfit(item.id) ? styles.outfitToggleLabelActive : null,
+                    ]}
+                  >
+                    {isInOutfit(item.id) ? "In Outfit" : "Add to Outfit"}
+                  </Text>
+                </TouchableOpacity>
+                {outfitCount > 0 ? (
+                  <TouchableOpacity
+                    testID="item-outfit-open-btn"
+                    onPress={() => setOutfitOpen(true)}
+                    style={styles.outfitOpen}
+                    activeOpacity={0.85}
+                  >
+                    <Feather name="layers" size={14} color={colors.primaryFg} />
+                    <Text style={styles.outfitOpenLabel}>
+                      {outfitCount} piece{outfitCount === 1 ? "" : "s"}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            </>
+          ) : null}
           {hasTryOn ? (
             <>
               <View style={{ height: spacing.sm }} />
@@ -414,6 +473,7 @@ export default function ItemDetail() {
           <View style={{ height: spacing.xxl }} />
         </View>
       </ScrollView>
+      <OutfitDrawer visible={outfitOpen} onClose={() => setOutfitOpen(false)} />
     </View>
   );
 }
@@ -506,6 +566,42 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
     fontSize: 11,
     letterSpacing: 1.2,
+    textTransform: "uppercase",
+  },
+  outfitRow: { flexDirection: "row", gap: spacing.sm },
+  outfitToggle: {
+    flex: 1,
+    height: 48,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.surface,
+  },
+  outfitToggleActive: { backgroundColor: colors.primary },
+  outfitToggleLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 12,
+    letterSpacing: 1.4,
+    color: colors.primary,
+    textTransform: "uppercase",
+  },
+  outfitToggleLabelActive: { color: colors.primaryFg },
+  outfitOpen: {
+    height: 48,
+    paddingHorizontal: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.primary,
+  },
+  outfitOpenLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 11,
+    letterSpacing: 1.4,
+    color: colors.primaryFg,
     textTransform: "uppercase",
   },
   subhead: { marginTop: spacing.lg, marginBottom: spacing.sm },

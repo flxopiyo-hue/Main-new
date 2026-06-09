@@ -22,7 +22,7 @@ from core.security import (
     require_role,
     try_get_user_from_creds,
 )
-from models import ItemIn, ItemOut, ItemPatchIn, item_to_out
+from models import ItemIn, ItemOut, ItemPatchIn, infer_garment_type, item_to_out
 
 router = APIRouter()
 
@@ -38,6 +38,9 @@ async def create_item(
     listing_currency = (
         body.currency or user.get("preferred_currency") or DEFAULT_CURRENCY
     )
+    garment_type = body.garment_type or infer_garment_type(
+        {"name": body.name, "category": body.category}
+    )
     doc = {
         "id": item_id,
         "seller_id": user["id"],
@@ -47,6 +50,7 @@ async def create_item(
         "category": body.category,
         "price_cents": body.price_cents,
         "currency": listing_currency,
+        "garment_type": garment_type,
         "image_b64": strip_data_prefix(body.image_b64),
         "sizes": [s.model_dump() for s in body.sizes],
         "colors": [c.model_dump() for c in body.colors],

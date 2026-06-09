@@ -22,6 +22,7 @@ import { useFonts } from "expo-font";
 
 import { ToastProvider } from "@/src/components/Toast";
 import { AuthProvider } from "@/src/lib/auth";
+import { OutfitProvider } from "@/src/lib/outfit";
 import { colors } from "@/src/lib/theme";
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 
@@ -52,17 +53,19 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <KeyboardProvider>
           <AuthProvider>
-            <ToastProvider>
-              <View style={styles.root}>
-                <StatusBar style="dark" />
-                <Stack
-                  screenOptions={{
-                    headerShown: false,
-                    contentStyle: { backgroundColor: colors.background },
-                  }}
-                />
-              </View>
-            </ToastProvider>
+            <OutfitProvider>
+              <ToastProvider>
+                <View style={styles.root}>
+                  <StatusBar style="dark" />
+                  <Stack
+                    screenOptions={{
+                      headerShown: false,
+                      contentStyle: { backgroundColor: colors.background },
+                    }}
+                  />
+                </View>
+              </ToastProvider>
+            </OutfitProvider>
           </AuthProvider>
         </KeyboardProvider>
       </SafeAreaProvider>

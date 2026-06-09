@@ -23,6 +23,24 @@ export type CurrencyCode =
   | "GHS"
   | "EGP";
 export type TryOnAngle = "front" | "three_quarter" | "side" | "back";
+export type GarmentType =
+  | "vest_under"
+  | "shirt"
+  | "dress"
+  | "skirt"
+  | "trousers"
+  | "shorts"
+  | "belt"
+  | "tie"
+  | "scarf"
+  | "waistcoat"
+  | "outerwear"
+  | "socks"
+  | "shoes"
+  | "hat"
+  | "bag"
+  | "jewelry"
+  | "other";
 
 export interface User {
   id: string;
@@ -80,6 +98,7 @@ export interface Item {
   category: string;
   price_cents: number;
   currency: CurrencyCode;
+  garment_type: GarmentType;
   image_b64: string;
   sizes: SizeOption[];
   colors: ColorOption[];
@@ -289,6 +308,12 @@ export const api = {
     body_photo_b64?: string;
     angles?: TryOnAngle[];
   }) => request<TryOnResult>("/tryon", { method: "POST", body }),
+  tryOnOutfit: (body: {
+    item_ids: string[];
+    use_profile_photo?: boolean;
+    body_photo_b64?: string;
+    angles?: TryOnAngle[];
+  }) => request<TryOnResult>("/tryon/outfit", { method: "POST", body }),
   tryOnHistory: () => request<TryOnResult[]>("/tryon/history"),
   shareTryOn: (
     id: string,

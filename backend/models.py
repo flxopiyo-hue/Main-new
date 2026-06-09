@@ -28,6 +28,133 @@ Currency = Literal[
 TryOnAngle = Literal["front", "three_quarter", "side", "back"]
 ConnectStatus = Literal["unstarted", "pending", "active"]
 
+# ---------------------------------------------------------------------------
+# Garment taxonomy (used for outfit composition + layering rules)
+# ---------------------------------------------------------------------------
+# Names follow British/East-African convention where they differ from US:
+#   • vest_under   = tank/undershirt worn UNDER a shirt (Kenyan "vest")
+#   • waistcoat    = a US "vest" — sleeveless garment worn OVER a shirt
+GarmentType = Literal[
+    "vest_under",
+    "shirt",
+    "dress",
+    "skirt",
+    "trousers",
+    "shorts",
+    "belt",
+    "tie",
+    "scarf",
+    "waistcoat",
+    "outerwear",
+    "socks",
+    "shoes",
+    "hat",
+    "bag",
+    "jewelry",
+    "other",
+]
+
+# Lower numbers sit closer to the body; outerwear/shoes overlay everything else.
+LAYER_ORDER: Dict[str, int] = {
+    "vest_under": 10,
+    "shirt": 20,
+    "dress": 25,
+    "skirt": 30,
+    "trousers": 30,
+    "shorts": 30,
+    "belt": 40,
+    "waistcoat": 45,
+    "tie": 50,
+    "scarf": 52,
+    "outerwear": 55,
+    "socks": 60,
+    "shoes": 65,
+    "hat": 70,
+    "bag": 90,
+    "jewelry": 92,
+    "other": 100,
+}
+
+
+def infer_garment_type(item: Dict[str, Any]) -> str:
+    """Best-effort classification when the seller didn't set `garment_type` explicitly.
+
+    Falls back to a coarse `category`→type mapping. Sellers can always override
+    via the explicit field in `ItemIn`. Keyword matches are ordered most-specific
+    first so e.g. "Belted Trench Coat" classifies as outerwear, not as a belt.
+    """
+    explicit = item.get("garment_type")
+    if explicit:
+        return explicit
+    name = (item.get("name") or "").lower()
+    category = (item.get("category") or "").lower()
+    # Outerwear keywords beat "belt" so "Belted Trench Coat" → outerwear.
+    if (
+        "blazer" in name
+        or "jacket" in name
+        or "trench" in name
+        or "coat" in name
+        or "parka" in name
+        or "bomber" in name
+    ):
+        return "outerwear"
+    if "waistcoat" in name:
+        return "waistcoat"
+    if "necktie" in name or "bow tie" in name or "bowtie" in name:
+        return "tie"
+    # "tie" by itself — only match when isolated to avoid false hits in "tied", "satie", etc.
+    if name == "tie" or " tie" in f" {name} " or name.endswith(" tie"):
+        return "tie"
+    if "belt" in name:
+        return "belt"
+    if "sock" in name:
+        return "socks"
+    if "scarf" in name:
+        return "scarf"
+    if "vest" in name or "tank" in name or "undershirt" in name or "singlet" in name:
+        return "vest_under"
+    if "shorts" in name or "bermuda" in name:
+        return "shorts"
+    if "skirt" in name:
+        return "skirt"
+    if "hat" in name or "cap" in name or "beanie" in name or "fedora" in name:
+        return "hat"
+    # Category fallback
+    if category == "shirts":
+        return "shirt"
+    if category == "dresses":
+        return "dress"
+    if category == "pants":
+        return "trousers"
+    if category == "outerwear":
+        return "outerwear"
+    if category == "shoes":
+        return "shoes"
+    return "other"
+
+
+def garment_type_label(gtype: str) -> str:
+    """Human-friendly label used in AI prompts and UI."""
+    return {
+        "vest_under": "undershirt (vest, worn next to skin)",
+        "shirt": "shirt",
+        "dress": "dress",
+        "skirt": "skirt",
+        "trousers": "trousers",
+        "shorts": "shorts",
+        "belt": "belt",
+        "waistcoat": "waistcoat (worn over the shirt)",
+        "tie": "necktie",
+        "scarf": "scarf",
+        "outerwear": "jacket / outerwear",
+        "socks": "socks",
+        "shoes": "shoes",
+        "hat": "hat",
+        "bag": "bag",
+        "jewelry": "jewellery",
+        "other": "garment",
+    }.get(gtype, gtype)
+
 
 # ---------------------------------------------------------------------------
 # Auth
@@ -133,6 +260,8 @@ class ItemIn(BaseModel):
     price_cents: int = Field(ge=0)
     # When omitted, server falls back to the seller's preferred_currency.
     currency: Optional[Currency] = None
+    # When omitted, server infers from category + name keywords.
+    garment_type: Optional[GarmentType] = None
     image_b64: str  # primary garment image
     sizes: List[SizeOption]
     colors: List[ColorOption] = []
@@ -148,6 +277,7 @@ class ItemOut(BaseModel):
     category: str
     price_cents: int
     currency: Currency = "USD"  # listing currency
+    garment_type: GarmentType = "other"  # layered try-on classification
     image_b64: str
     sizes: List[SizeOption]
     colors: List[ColorOption]
@@ -167,6 +297,14 @@ class TryOnIn(BaseModel):
     use_profile_photo: bool = True  # use stored front photo
     body_photo_b64: Optional[str] = None  # override if provided
     # Angles to render. Default keeps existing single-angle behavior.
+    angles: List[TryOnAngle] = Field(default_factory=lambda: ["front"])
+
+
+class OutfitTryOnIn(BaseModel):
+    """Compose multiple garments onto the user, respecting layering rules."""
+    item_ids: List[str] = Field(min_length=1, max_length=8)
+    use_profile_photo: bool = True
+    body_photo_b64: Optional[str] = None
     angles: List[TryOnAngle] = Field(default_factory=lambda: ["front"])
 
 
@@ -311,6 +449,7 @@ def user_to_out(doc: Dict[str, Any]) -> UserOut:
 
 
 def item_to_out(doc: Dict[str, Any]) -> ItemOut:
+    gtype = doc.get("garment_type") or infer_garment_type(doc)
     return ItemOut(
         id=doc["id"],
         seller_id=doc["seller_id"],
@@ -320,6 +459,7 @@ def item_to_out(doc: Dict[str, Any]) -> ItemOut:
         category=doc["category"],
         price_cents=doc["price_cents"],
         currency=doc.get("currency", "USD"),
+        garment_type=gtype,
         image_b64=doc["image_b64"],
         sizes=[SizeOption(**s) for s in doc.get("sizes", [])],
         colors=[ColorOption(**c) for c in doc.get("colors", [])],
