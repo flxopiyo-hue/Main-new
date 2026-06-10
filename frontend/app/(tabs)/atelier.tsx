@@ -14,6 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useToast } from "@/src/components/Toast";
 import { api, Item } from "@/src/lib/api";
+import { formatPrice } from "@/src/lib/currency";
 import { dataUriFromBase64 } from "@/src/lib/images";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
@@ -57,6 +58,14 @@ export default function Atelier() {
           <Text style={[tp.h2, styles.title]}>Inventory</Text>
         </View>
         <View style={styles.headerActions}>
+          <TouchableOpacity
+            testID="atelier-dashboard-btn"
+            onPress={() => router.push("/seller")}
+            style={styles.secondaryBtn}
+          >
+            <Feather name="layout" size={16} color={colors.primary} />
+            <Text style={styles.secondaryLabel}>Dashboard</Text>
+          </TouchableOpacity>
           <TouchableOpacity
             testID="atelier-new-drop-btn"
             onPress={() => router.push("/seller/new-collection")}
@@ -154,7 +163,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
     textTransform: "uppercase",
   },
-  headerActions: { flexDirection: "row", gap: 8 },
+  headerActions: { flexDirection: "row", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", maxWidth: "60%" },
   secondaryBtn: {
     flexDirection: "row",
     alignItems: "center",

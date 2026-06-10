@@ -158,10 +158,21 @@ export interface Order {
 
 export type FitFeedback = "small" | "perfect" | "large";
 
-export interface WishlistEntry {
-  item: Item;
-  added_at: string;
-  restocked: boolean;
+export interface OrderSeller {
+  id: string;
+  full_name: string;
+  company_name?: string | null;
+  location?: Location | null;
+  payout_summary?: string | null;
+}
+
+export interface OrderDetail extends Order {
+  seller_id: string;
+  platform_fee_cents: number;
+  seller_net_cents: number;
+  item_image_b64?: string | null;
+  item_garment_type?: string | null;
+  seller?: OrderSeller | null;
 }
 
 export interface ItemAnalytics {
@@ -185,17 +196,23 @@ export interface SellerAnalytics {
   total_revenue_cents: number;
   total_platform_fee_cents: number;
   total_net_cents: number;
-  connect_status: "unstarted" | "pending" | "active";
+  connect_status: ConnectStatusCode;
   platform_fee_bps: number;
   items: ItemAnalytics[];
 }
 
 export interface ConnectStatus {
   stripe_account_id?: string | null;
-  connect_status: "unstarted" | "pending" | "active";
+  connect_status: ConnectStatusCode;
   onboarding_url?: string | null;
   platform_fee_bps: number;
   note?: string | null;
+}
+
+export interface WishlistEntry {
+  item: Item;
+  added_at: string;
+  restocked: boolean;
 }
 
 export interface Collection {
@@ -374,8 +391,19 @@ export const api = {
 
   // Seller analytics + inventory + connect
   sellerAnalytics: () => request<SellerAnalytics>("/seller/analytics"),
+  sellerOrders: (params: { status?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.status) qs.append("status", params.status);
+    const suffix = qs.toString();
+    return request<Order[]>(`/seller/orders${suffix ? `?${suffix}` : ""}`);
+  },
+  updatePayoutDetails: (body: BankDetails) =>
+    request<User>("/seller/payout-details", { method: "PATCH", body }),
+  updateSellerProfile: (body: { company_name?: string; location?: Location }) =>
+    request<User>("/seller/profile", { method: "PATCH", body }),
   connectStatus: () => request<ConnectStatus>("/seller/connect/status"),
-  connectSetup: () => request<ConnectStatus>("/seller/connect/setup", { method: "POST" }),
+  connectSetup: (body: { return_url?: string } = {}) =>
+    request<ConnectStatus>("/seller/connect/setup", { method: "POST", body }),
   patchItem: (id: string, body: { sizes?: SizeOption[] }) =>
     request<Item>(`/items/${id}`, { method: "PATCH", body }),
 
@@ -392,9 +420,10 @@ export const api = {
   deleteCollection: (id: string) =>
     request<{ ok: boolean }>(`/collections/${id}`, { method: "DELETE" }),
 
-  // Order fit feedback
-  orderFeedback: (id: string, fit: FitFeedback) =>
-    request<Order>(`/orders/${id}/feedback`, { method: "POST", body: { fit } }),
+  // Order fit feedback + detail
+  orderDetail: (id: string) => request<OrderDetail>(`/orders/${id}`),
+  orderFeedback: (id: string, body: { fit: FitFeedback; comment?: string }) =>
+    request<OrderDetail>(`/orders/${id}/feedback`, { method: "POST", body }),
 
   // Payments
   checkout: (body: { item_id: string; size: string; color?: string; origin_url: string }) =>

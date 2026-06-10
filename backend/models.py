@@ -391,8 +391,28 @@ class OrderOut(BaseModel):
     created_at: datetime
 
 
+class OrderSellerOut(BaseModel):
+    """Lightweight seller card for the order detail screen."""
+
+    id: str
+    full_name: str
+    company_name: Optional[str] = None
+    location: Optional[Location] = None
+    payout_summary: Optional[str] = None  # masked bank/M-Pesa summary
+
+
+class OrderDetailOut(OrderOut):
+    seller_id: str
+    platform_fee_cents: int = 0
+    seller_net_cents: int = 0
+    item_image_b64: Optional[str] = None
+    item_garment_type: Optional[str] = None
+    seller: Optional[OrderSellerOut] = None
+
+
 class FitFeedbackIn(BaseModel):
     fit: FitFeedback
+    comment: Optional[str] = Field(default=None, max_length=600)
 
 
 # ---------------------------------------------------------------------------
@@ -439,6 +459,21 @@ class ConnectStatusOut(BaseModel):
     onboarding_url: Optional[str] = None
     platform_fee_bps: int = PLATFORM_FEE_BPS
     note: Optional[str] = None
+
+
+class PayoutDetailsIn(BaseModel):
+    bank_name: Optional[str] = Field(default=None, max_length=80)
+    branch: Optional[str] = Field(default=None, max_length=80)
+    account_name: Optional[str] = Field(default=None, max_length=120)
+    account_number: Optional[str] = Field(default=None, max_length=40)
+    swift_code: Optional[str] = Field(default=None, max_length=20)
+    mpesa_paybill: Optional[str] = Field(default=None, max_length=20)
+    mpesa_till: Optional[str] = Field(default=None, max_length=20)
+
+
+class SellerCompanyIn(BaseModel):
+    company_name: Optional[str] = Field(default=None, max_length=120)
+    location: Optional[Location] = None
 
 
 # ---------------------------------------------------------------------------

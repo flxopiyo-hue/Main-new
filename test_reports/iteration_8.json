@@ -1,0 +1,56 @@
+{
+  "summary": "Iteration 8 (Order Detail + Seller Dashboard + Stripe Connect graceful key) PASSED end-to-end. Backend 21/21 pytest green: GET /api/orders/{id} for buyer/seller/admin returns the full OrderDetailOut shape (seller card with company_name='Maison Lumière', location Nairobi/Kenya, payout_summary 'Equity Bank ••• 6789 · M-Pesa Paybill 247247'); 403 for a different buyer; 404 for unknown id. POST /api/orders/{id}/feedback persists fit_feedback across perfect→small(+comment)→large flips, blocks seller (403) and non-paid orders (400). GET /api/seller/orders returns 9 orders, status=paid filter narrows correctly, buyer gets 403. PATCH /api/seller/payout-details merges fields, EMPTY STRING DELETES THE FIELD (verified mpesa_paybill removal then restoration), buyer 403. PATCH /api/seller/profile updates company_name+location and round-trips back to Maison Lumière/Nairobi, buyer 403. POST /api/seller/connect/setup in MOCKED proxy mode returns connect_status='active' with stable stripe_account_id (idempotent); buyer 403. GET /api/seller/connect/status returns 'active' for seed seller. Frontend: buyer sees 9 orders on Profile; tapping a PAID order detail shows order-id-label, PAID status pill, item-name, size, total, seller card (Maison Lumière Atelier + Nairobi), order-feedback-block. Submitted fit=perfect with comment, toast appears, button label flips SUBMIT→UPDATE FEEDBACK, after reload UPDATE FEEDBACK persists and 'True to size' chip is active (bg=#0A0A0A primary) while comment is intentionally empty. Pending order correctly hides order-feedback-block. Seller-side same screen: order-revenue-split renders Gross $169 / Platform fee $13.52 / Net $155.48 (8% fee bps), order-buyer-feedback echoes buyer rating, NO feedback block. Seller dashboard /seller renders KPIs (Gross KSh 676 / 4 orders, Net KSh 622 / 8% platform fee, Listings live 6 / 20 try-ons, Conversion 12.9% / 1 wishlist), seller-connect-active panel, 9 total orders, 6 recent-order rows that navigate to /order/{id} on tap, seller-edit-payout-btn opens modal with all 5 testIDs and SAVE flow (bank→KCB shown then restored). NEW ITEM and FULL ANALYTICS CTAs route correctly. Atelier tab regression initially BROKE due to a missing import of formatPrice causing ReferenceError → atelier-dashboard-btn invisible. APPLIED FIX: added `import { formatPrice } from '@/src/lib/currency'` in /app/frontend/app/(tabs)/atelier.tsx; after Metro restart atelier-dashboard-btn is now visible and routes to /seller. Profile-side regressions: buyer profile has NO profile-seller-dashboard-link; admin sign-in still lands on /admin. Deprecated console warnings persist from iteration 7: 'shadow*' style props and props.pointerEvents — already tracked, no regression. Stripe Connect is MOCKED via the Emergent proxy key (sk_test_emergent); real Connect path is gated behind _is_real_stripe_key and only activates when a real platform secret is plugged in.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "app/(tabs)/atelier.tsx",
+        "issue": "Missing `formatPrice` import caused a ReferenceError in FlatList renderItem, hiding the new Dashboard header button (testID atelier-dashboard-btn). Fixed by the testing agent — added `import { formatPrice } from \"@/src/lib/currency\"` (line 17). Verified after `supervisorctl restart expo`.",
+        "testID": "atelier-dashboard-btn",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "shadow* style props",
+        "issue": "Console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' — still present across multiple screens (carry-over from iteration 7). Reference: most StyleSheet.create blocks in /app/frontend/src/components."
+      },
+      {
+        "component": "props.pointerEvents prop",
+        "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents' — still present (carry-over from iteration 7). Reference: AppInput / KeyboardAware wrappers."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration8_order_detail.py",
+    "/app/test_reports/pytest/iteration8_results.xml"
+  ],
+  "action_items": [
+    "(Optional polish) Sweep remaining deprecated shadow* style props → boxShadow; migrate pointerEvents JSX prop → style.pointerEvents.",
+    "(Optional polish) Consider exposing fit_feedback_comment back on the OrderDetailOut response so the buyer can edit it after reload (today the comment is intentionally write-only — UI shows the rating but resets the comment field).",
+    "(Optional) Seller dashboard KPI labels still display KSh totals across all currencies (preferred_currency) while individual order rows display in the order's own currency (e.g. €45, $169). This is per spec but worth noting if a future iteration unifies the FX display."
+  ],
+  "critical_code_review_comments": [
+    "routers/orders.py _order_doc_to_detail correctly computes platform_fee_cents/seller_net_cents fallback when missing, and backfills seller_id from the item if older orders lack it — robust.",
+    "routers/seller.py _is_real_stripe_key heuristic (>30 chars, starts with sk_test_/sk_live_, != 'sk_test_emergent') is sensible; mock path always sets connect_status='active' and reuses stripe_account_id for idempotency.",
+    "PATCH /api/seller/payout-details correctly DELETES empty-string fields via existing.pop(k, None) — matches spec.",
+    "OrderDetailOut intentionally omits fit_feedback_comment from the response (only fit_feedback is exposed). The frontend correctly does NOT try to render the comment after a reload.",
+    "app/order/[id].tsx role gating is clean: buyer-only feedback block + buyer-only try-on/reorder buttons; revenue-split is gated on (isSeller || isAdmin) && paid; buyer-feedback echo is seller-only.",
+    "app/seller/index.tsx PayoutSheet useEffect resets local state when modal opens with fresh `initial` — prevents stale form data after save/cancel.",
+    "BUG (now fixed by testing agent): app/(tabs)/atelier.tsx used formatPrice without importing it, blowing up FlatList renderItem on render."
+  ],
+  "updated_files": [
+    "/app/frontend/app/(tabs)/atelier.tsx (added missing `formatPrice` import)",
+    "/app/backend/tests/test_iteration8_order_detail.py (new pytest suite, 21 tests)",
+    "/app/test_reports/pytest/iteration8_results.xml (new pytest junit)",
+    "/app/test_reports/iteration_8.json (this report)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Backend pytest creates one fresh test buyer per run (TEST_other_buyer_<hex>@drape.demo via /api/auth/register, with gender='other', age=30) to validate the 403 'Not your order' path on GET /api/orders/{id}. No items, no orders are mutated other than the seed buyer's paid order having its fit_feedback flipped (perfect → small → large) — the final state is fit_feedback='large' and fit_feedback_comment='runs tight' on order 3ebdbffe-eee4-4749-ad31-987c9355a636. Bank details and seller profile are restored to seed defaults at end of each suite (Equity Bank / 0123456789 / paybill 247247 / Maison Lumière / Nairobi, Kenya).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Buyer @ buyer@aurafit.demo currently has order 3ebdbffe-eee4-4749-ad31-987c9355a636 in PAID status with fit_feedback='large' + fit_feedback_comment='runs tight' (left intentionally to test the 'UPDATE FEEDBACK' chip-prefill flow on reload). Seller @ atelier@aurafit.demo has connect_status='active' and stripe_account_id 'acct_demo_…'. Frontend file /app/frontend/app/(tabs)/atelier.tsx now imports formatPrice from @/src/lib/currency — if Metro is in CI mode, a `sudo supervisorctl restart expo` is required for new imports to take effect (a hot-reload won't pick them up). The new pytest file /app/backend/tests/test_iteration8_order_detail.py is idempotent and safe to re-run; it always restores seed bank/profile state at the end of each class.",
+  "rca_of_issue": "Atelier-tab regression RCA: /app/frontend/app/(tabs)/atelier.tsx referenced formatPrice() inside FlatList renderItem at line 119 but never imported it. In Metro/Hermes runtime this surfaces as a ReferenceError inside renderItem, which throws on each row and causes React to bail out of rendering the surrounding component tree — in this case the new header three-action row containing testID atelier-dashboard-btn never mounted. Mitigation applied: added `import { formatPrice } from '@/src/lib/currency'` to the imports block (line 17). Reproduction: open /(tabs)/atelier as the seller — before the fix the entire screen renders an empty FlatList with no header buttons + console error 'ReferenceError: formatPrice is not defined at renderItem'."
+}

@@ -68,7 +68,7 @@ export default function Profile() {
 
   const submitFeedback = async (orderId: string, fit: FitFeedback) => {
     try {
-      const updated = await api.orderFeedback(orderId, fit);
+      const updated = await api.orderFeedback(orderId, { fit });
       setOrders((curr) =>
         curr.map((o) => (o.id === orderId ? { ...o, fit_feedback: updated.fit_feedback } : o)),
       );
@@ -303,7 +303,13 @@ export default function Profile() {
               <Text style={tp.bodyMuted}>No orders yet.</Text>
             ) : (
               orders.map((o) => (
-                <View key={o.id} style={styles.orderRow} testID={`order-${o.id}`}>
+                <TouchableOpacity
+                  key={o.id}
+                  style={styles.orderRow}
+                  testID={`order-${o.id}`}
+                  onPress={() => router.push(`/order/${o.id}`)}
+                  activeOpacity={0.85}
+                >
                   <View style={styles.orderTop}>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.orderName}>{o.item_name}</Text>
@@ -355,7 +361,8 @@ export default function Profile() {
                       })}
                     </View>
                   ) : null}
-                </View>
+                  <Text style={styles.orderDetailLink}>VIEW DETAIL →</Text>
+                </TouchableOpacity>
               ))
             )}
           </View>
@@ -364,16 +371,31 @@ export default function Profile() {
         {user?.role === "seller" ? (
           <View style={styles.section}>
             <TouchableOpacity
-              testID="profile-analytics-link"
-              onPress={() => router.push("/seller/analytics")}
+              testID="profile-seller-dashboard-link"
+              onPress={() => router.push("/seller")}
               style={styles.analyticsCard}
               activeOpacity={0.85}
             >
               <View style={{ flex: 1 }}>
-                <Text style={tp.caption}>Atelier insights</Text>
+                <Text style={tp.caption}>Atelier control center</Text>
+                <Text style={[tp.h3, { marginTop: 4 }]}>Seller dashboard</Text>
+                <Text style={[tp.bodyMuted, { marginTop: 4 }]}>
+                  Revenue · orders · payouts · Stripe Connect
+                </Text>
+              </View>
+              <Feather name="layout" size={28} color={colors.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="profile-analytics-link"
+              onPress={() => router.push("/seller/analytics")}
+              style={[styles.analyticsCard, { marginTop: spacing.md }]}
+              activeOpacity={0.85}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={tp.caption}>Per-item insights</Text>
                 <Text style={[tp.h3, { marginTop: 4 }]}>Analytics</Text>
                 <Text style={[tp.bodyMuted, { marginTop: 4 }]}>
-                  Views · try-ons · wishlists · revenue
+                  Views · try-ons · wishlists · conversion
                 </Text>
               </View>
               <Feather name="bar-chart-2" size={28} color={colors.primary} />
@@ -535,6 +557,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
+  },
+  orderDetailLink: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 11,
+    letterSpacing: 1.2,
+    color: colors.primary,
+    marginTop: spacing.sm,
+    textAlign: "right",
   },
   currencyHeader: {
     flexDirection: "row",
