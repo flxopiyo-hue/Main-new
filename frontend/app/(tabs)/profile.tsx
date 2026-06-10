@@ -298,6 +298,26 @@ export default function Profile() {
 
         {user?.role === "buyer" ? (
           <View style={styles.section}>
+            <TouchableOpacity
+              testID="profile-manage-loved-ones-btn"
+              onPress={() => router.push("/profiles")}
+              style={styles.analyticsCard}
+              activeOpacity={0.85}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={tp.caption}>Body profiles</Text>
+                <Text style={[tp.h3, { marginTop: 4 }]}>Loved ones</Text>
+                <Text style={[tp.bodyMuted, { marginTop: 4 }]}>
+                  Shop on behalf of family · switch profiles any time
+                </Text>
+              </View>
+              <Feather name="users" size={28} color={colors.primary} />
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {user?.role === "buyer" ? (
+          <View style={styles.section}>
             <Text style={[tp.caption, { marginBottom: spacing.md }]}>Orders</Text>
             {orders.length === 0 ? (
               <Text style={tp.bodyMuted}>No orders yet.</Text>
