@@ -9,7 +9,7 @@ const TOKEN_KEY = "aurafit.token";
 export type Role = "buyer" | "seller" | "admin";
 export type Gender = "male" | "female" | "other" | "prefer_not_to_say";
 export type ConnectStatusCode = "unstarted" | "pending" | "active";
-export type Audience = "men" | "women" | "unisex";
+export type Audience = "men" | "women" | "unisex" | "kids";
 export type CurrencyCode =
   | "USD"
   | "KES"
@@ -210,6 +210,43 @@ export interface ConnectStatus {
   note?: string | null;
 }
 
+export type ProfileAudience = "adult" | "kid";
+
+export interface LovedOne {
+  id: string;
+  user_id: string;
+  name: string;
+  audience: ProfileAudience;
+  gender?: Gender | null;
+  age?: number | null;
+  relation?: string | null;
+  measurements: Measurements;
+  preferred_size?: string | null;
+  has_front_photo: boolean;
+  has_side_photo: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProfileSummary {
+  id: string; // "self" or LovedOne uuid
+  is_self: boolean;
+  name: string;
+  audience: ProfileAudience;
+  gender?: Gender | null;
+  age?: number | null;
+  has_front_photo: boolean;
+  has_side_photo: boolean;
+  preferred_size?: string | null;
+}
+
+export interface ActiveProfile {
+  profile_id: string;
+  profile: ProfileSummary;
+}
+
+export type KidAgeGroup = "0-2" | "3-5" | "6-9" | "10-13" | "14-17";
+
 export interface WishlistEntry {
   item: Item;
   added_at: string;
@@ -337,6 +374,7 @@ export const api = {
     size?: string;
     color?: string;
     audience?: string;
+    kid_age_group?: KidAgeGroup;
     q?: string;
   } = {}) => {
     const qs = new URLSearchParams();
@@ -366,12 +404,14 @@ export const api = {
     item_id: string;
     use_profile_photo?: boolean;
     body_photo_b64?: string;
+    profile_id?: string;
     angles?: TryOnAngle[];
   }) => request<TryOnResult>("/tryon", { method: "POST", body }),
   tryOnOutfit: (body: {
     item_ids: string[];
     use_profile_photo?: boolean;
     body_photo_b64?: string;
+    profile_id?: string;
     angles?: TryOnAngle[];
   }) => request<TryOnResult>("/tryon/outfit", { method: "POST", body }),
   tryOnHistory: () => request<TryOnResult[]>("/tryon/history"),
@@ -459,6 +499,40 @@ export const api = {
   adminListItems: () => request<Item[]>("/admin/items"),
   adminDeleteItem: (itemId: string) =>
     request<{ ok: boolean }>(`/admin/items/${itemId}`, { method: "DELETE" }),
+
+  // Loved-ones (alternate body profiles) + active profile switcher
+  listLovedOnes: () => request<LovedOne[]>("/loved-ones"),
+  createLovedOne: (body: {
+    name: string;
+    audience: ProfileAudience;
+    gender?: Gender | null;
+    age?: number | null;
+    relation?: string;
+    measurements?: Measurements;
+    preferred_size?: string | null;
+    front_photo_b64?: string;
+    side_photo_b64?: string;
+  }) => request<LovedOne>("/loved-ones", { method: "POST", body }),
+  updateLovedOne: (
+    id: string,
+    body: Partial<{
+      name: string;
+      audience: ProfileAudience;
+      gender: Gender | null;
+      age: number | null;
+      relation: string;
+      measurements: Measurements;
+      preferred_size: string | null;
+      front_photo_b64: string;
+      side_photo_b64: string;
+    }>,
+  ) => request<LovedOne>(`/loved-ones/${id}`, { method: "PATCH", body }),
+  deleteLovedOne: (id: string) =>
+    request<{ ok: boolean }>(`/loved-ones/${id}`, { method: "DELETE" }),
+  listProfiles: () => request<ProfileSummary[]>("/profiles/all"),
+  getActiveProfile: () => request<ActiveProfile>("/profiles/active"),
+  setActiveProfile: (profile_id: string) =>
+    request<ActiveProfile>("/profiles/active", { method: "POST", body: { profile_id } }),
 };
 
 export const BACKEND_URL = BASE_URL;

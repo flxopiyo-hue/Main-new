@@ -26,8 +26,14 @@ const AUDIENCES: { key: Audience; label: string }[] = [
   { key: "women", label: "Women" },
   { key: "men", label: "Men" },
   { key: "unisex", label: "Unisex" },
+  { key: "kids", label: "Kids" },
 ];
-const SIZE_LABELS = ["XS", "S", "M", "L", "XL", "XXL"];
+const ADULT_SIZE_LABELS = ["XS", "S", "M", "L", "XL", "XXL"];
+const KID_SIZE_LABELS = [
+  "NB", "3M", "6M", "12M", "18M", "24M",
+  "2T", "3T", "4T",
+  "5", "6", "7", "8", "10", "12", "14", "16",
+];
 const PRESET_COLORS: ColorOption[] = [
   { name: "Black", hex: "#0A0A0A" },
   { name: "White", hex: "#FFFFFF" },
@@ -263,9 +269,11 @@ export default function NewItem() {
           ))}
         </View>
 
-        <Text style={[tp.caption, styles.label]}>Sizes & Dimensions (cm)</Text>
+        <Text style={[tp.caption, styles.label]}>
+          Sizes & Dimensions (cm){audience === "kids" ? " · Kid sizes" : ""}
+        </Text>
         <View style={styles.sizeRow}>
-          {SIZE_LABELS.map((s) => {
+          {(audience === "kids" ? KID_SIZE_LABELS : ADULT_SIZE_LABELS).map((s) => {
             const on = !!sizes[s];
             return (
               <TouchableOpacity

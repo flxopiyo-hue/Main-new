@@ -68,6 +68,7 @@ async def list_items(
     color: Optional[str] = None,
     seller_id: Optional[str] = None,
     audience: Optional[str] = None,
+    kid_age_group: Optional[str] = None,
     q: Optional[str] = None,
     creds: Optional[HTTPAuthorizationCredentials] = Depends(auth_scheme),
 ) -> List[ItemOut]:
@@ -95,6 +96,15 @@ async def list_items(
             elif g == "female":
                 query["audience"] = {"$in": ["women", "unisex"]}
             # other / prefer_not_to_say → show everything (no filter)
+
+    # Kid age-group filter: maps an age-band to the kid US-size set so the
+    # buyer sees items with matching size labels.
+    if kid_age_group:
+        from models import KID_SIZE_SETS_BY_AGE_GROUP
+
+        size_set = KID_SIZE_SETS_BY_AGE_GROUP.get(kid_age_group)
+        if size_set:
+            query["sizes.label"] = {"$in": size_set}
 
     docs = await db.items.find(query, {"_id": 0}).sort("created_at", -1).to_list(200)
     return [item_to_out(d) for d in docs]

@@ -337,12 +337,30 @@ async def generate_tryon(
         raise HTTPException(status_code=404, detail="Item not found")
 
     body_b64: Optional[str] = None
+    photo_user = user
     if body.body_photo_b64:
         body_b64 = strip_data_prefix(body.body_photo_b64)
     elif body.use_profile_photo:
-        profile = await db.profiles.find_one({"user_id": user["id"]}, {"_id": 0})
-        if profile and profile.get("front_photo_b64"):
-            body_b64 = profile["front_photo_b64"]
+        # Resolve which profile's photo to use.
+        pid = body.profile_id
+        if pid and pid != "self":
+            lo = await db.body_profiles.find_one(
+                {"id": pid, "user_id": user["id"]}, {"_id": 0}
+            )
+            if not lo:
+                raise HTTPException(status_code=404, detail="Profile not found")
+            if lo.get("front_photo_b64"):
+                body_b64 = lo["front_photo_b64"]
+                # Override persona with loved-one demographics.
+                photo_user = {
+                    **user,
+                    "gender": lo.get("gender"),
+                    "age": lo.get("age"),
+                }
+        if not body_b64:
+            profile = await db.profiles.find_one({"user_id": user["id"]}, {"_id": 0})
+            if profile and profile.get("front_photo_b64"):
+                body_b64 = profile["front_photo_b64"]
     if not body_b64:
         raise HTTPException(
             status_code=400,
@@ -352,8 +370,8 @@ async def generate_tryon(
     garment_b64 = item["image_b64"]
 
     # Personalize the prompt with user demographics for better try-on.
-    gender = user.get("gender")
-    age = user.get("age")
+    gender = photo_user.get("gender")
+    age = photo_user.get("age")
     persona_bits: List[str] = []
     if gender == "male":
         persona_bits.append("the person is male")
@@ -470,12 +488,28 @@ async def generate_outfit_tryon(
 
     # Body photo resolution (same logic as single-item try-on).
     body_b64: Optional[str] = None
+    photo_user = user
     if body.body_photo_b64:
         body_b64 = strip_data_prefix(body.body_photo_b64)
     elif body.use_profile_photo:
-        profile = await db.profiles.find_one({"user_id": user["id"]}, {"_id": 0})
-        if profile and profile.get("front_photo_b64"):
-            body_b64 = profile["front_photo_b64"]
+        pid = body.profile_id
+        if pid and pid != "self":
+            lo = await db.body_profiles.find_one(
+                {"id": pid, "user_id": user["id"]}, {"_id": 0}
+            )
+            if not lo:
+                raise HTTPException(status_code=404, detail="Profile not found")
+            if lo.get("front_photo_b64"):
+                body_b64 = lo["front_photo_b64"]
+                photo_user = {
+                    **user,
+                    "gender": lo.get("gender"),
+                    "age": lo.get("age"),
+                }
+        if not body_b64:
+            profile = await db.profiles.find_one({"user_id": user["id"]}, {"_id": 0})
+            if profile and profile.get("front_photo_b64"):
+                body_b64 = profile["front_photo_b64"]
     if not body_b64:
         raise HTTPException(
             status_code=400,
@@ -483,8 +517,8 @@ async def generate_outfit_tryon(
         )
 
     # Persona prompt.
-    gender = user.get("gender")
-    age = user.get("age")
+    gender = photo_user.get("gender")
+    age = photo_user.get("age")
     persona_bits: List[str] = []
     if gender == "male":
         persona_bits.append("the person is male")

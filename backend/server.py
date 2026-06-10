@@ -30,6 +30,7 @@ from routers import (
     auth,
     collections,
     items,
+    loved_ones,
     orders,
     payments,
     profile,
@@ -57,6 +58,7 @@ async def root() -> dict:
 # determines OpenAPI tag ordering and is grouped by concern.
 api_router.include_router(auth.router)
 api_router.include_router(profile.router)
+api_router.include_router(loved_ones.router)
 api_router.include_router(items.router)
 api_router.include_router(wishlist.router)
 api_router.include_router(tryon.router)

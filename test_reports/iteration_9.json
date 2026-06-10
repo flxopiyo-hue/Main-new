@@ -1,0 +1,48 @@
+{
+  "summary": "Iteration 9 — Audience Profiles + Single-currency + Bottom-nav fix. Backend 18/19 pytest pass (1 test-only assertion mismatch with seed). All frontend P0/P1 flows verified end-to-end: bottom-nav labels fully visible (Discover/Try On/Atelier/Profile), buyer cards show single currency (KSh only, no '≈' indicative price), active-profile chip works, loved-one CRUD (kid + adult) works, age-group filter chips render only for kid profile, manage profiles screen lists & deletes loved-ones, seller new-item form swaps to kid US size set (NB..16 all 17 sizes) when audience=kids and back to XS..XXL when audience=women. Backend /api/tryon accepts profile_id (404 on bogus uuid; no schema rejection on 'self').",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/items (no params) as buyer@aurafit.demo",
+        "issue": "Spec says buyer demo has gender=female so server should infer audience=women|unisex. Actual: buyer seed has gender=None, so /api/items returns all audiences (men+women+unisex). Backend code is correct; the seed buyer just doesn't have a gender. Either fix the seed to set gender=female, OR update the spec/test expectation. Not a regression vs iteration 8."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Bottom tab bar",
+        "issues": [
+          "Spec asks for UPPERCASE labels 'DISCOVER / TRY ON / PROFILE'. Buyer tab bar renders uppercase correctly. Seller tab bar (atelier flow) renders title-case 'Discover / Try On / Atelier / Profile'. Both are FULLY VISIBLE (no clipping) so the P0 fix is verified — just a minor casing inconsistency between buyer & seller layouts."
+        ]
+      }
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration9_audience_profiles.py",
+    "/app/test_reports/pytest/iteration9_audience_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Seed buyer@aurafit.demo with gender=female so default /api/items inference exercises the women+unisex branch as documented.",
+    "(Optional / cosmetic) Make seller bottom-nav label casing match buyer (uppercase): Atelier vs ATELIER."
+  ],
+  "critical_code_review_comments": [
+    "loved_ones.py is well-structured; CRUD + active switcher + auto-fallback on delete are all covered. Good use of {'_id': 0} projection.",
+    "items.py kid_age_group filter correctly maps to KID_SIZE_SETS_BY_AGE_GROUP and ANDs into sizes.label via $in. Route ordering for /items/mine before /items/{id} preserved.",
+    "tryon.py profile_id handling: resolves loved-one or falls back to self; persona is overridden with loved-one demographics — good. Returns 404 for stranger profile_id as expected."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "94% (18/19 — 1 test-only seed mismatch, not a backend bug)",
+    "frontend": "100% (all P0 + P1 flows verified)"
+  },
+  "seed_data_creation": "Test created loved-ones Mateo (kid, male, 8) and Riya (adult, female, 28) under buyer@aurafit.demo. The pytest module auto-cleans them via DELETE /api/loved-ones/{id} + reset active to 'self'. UI-side leftovers from playwright runs may remain — recommend the main agent re-run a quick cleanup or the buyer can delete via Manage profiles.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Login form uses testID 'login-submit-btn' (not 'sign-in-submit'). Welcome page CTA is 'I ALREADY HAVE AN ACCOUNT'. To reach the seller new-item form, navigate via the Atelier tab (the seller's home '/' is a discover-like view named 'Hello, Maison.'); a reliable shortcut is page.goto('/seller/new-item'). Bottom-nav labels are rendered via expo-router tabs; the JS check using exact uppercase text may fail (seller renders title-case). Verify visually via screenshot.",
+  "rca_of_issue": "The single backend pytest failure (test_items_no_param_infers_audience) is not a backend regression: the items.py audience-inference branch is correct, but the buyer@aurafit.demo seed has gender=None which short-circuits the gender→audience mapping. The endpoint returns the full audience mix (men+women+unisex). Either update the seed to gender='female' to match the spec, or relax the test expectation. No fix needed for backend code."
+}

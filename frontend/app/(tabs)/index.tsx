@@ -13,15 +13,17 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { ActiveProfileChip } from "@/src/components/ActiveProfileChip";
 import { ChipsRow } from "@/src/components/ChipsRow";
 import { HeartButton } from "@/src/components/HeartButton";
 import { OutfitDrawer } from "@/src/components/OutfitDrawer";
 import { OutfitPill } from "@/src/components/OutfitPill";
 import { useToast } from "@/src/components/Toast";
-import { api, Collection, Item } from "@/src/lib/api";
+import { api, Collection, Item, KidAgeGroup } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
 import { formatPriceIn } from "@/src/lib/currency";
 import { dataUriFromBase64 } from "@/src/lib/images";
+import { useProfiles } from "@/src/lib/profiles";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
 const CATEGORIES = [
@@ -38,19 +40,35 @@ const HERO =
 
 export default function Discover() {
   const { user } = useAuth();
+  const { active } = useProfiles();
   const toast = useToast();
   const [items, setItems] = useState<Item[]>([]);
   const [collections, setCollections] = useState<Collection[]>([]);
   const [category, setCategory] = useState<string | null>(null);
   const [sizeFilter, setSizeFilter] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [kidAgeGroup, setKidAgeGroup] = useState<KidAgeGroup | null>(null);
   const [wishedIds, setWishedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [outfitOpen, setOutfitOpen] = useState(false);
 
-  const audienceLabel =
-    user?.gender === "male" ? "men" : user?.gender === "female" ? "women" : null;
+  // Active profile drives the audience filter:
+  //   self    -> infer from user.gender (backend default)
+  //   loved adult -> override by gender of loved one
+  //   loved kid   -> "kids"
+  const activeAudience: "men" | "women" | "kids" | "all" | undefined = (() => {
+    if (!active) return undefined;
+    const p = active.profile;
+    if (p.audience === "kid") return "kids";
+    if (p.is_self) return undefined; // backend infers from buyer gender
+    if (p.gender === "male") return "men";
+    if (p.gender === "female") return "women";
+    return undefined;
+  })();
+  const isKidActive = active?.profile.audience === "kid";
+
+  const audienceLabel = activeAudience ?? (showAll ? "all" : null);
 
   const load = useCallback(async () => {
     try {
@@ -58,7 +76,8 @@ export default function Discover() {
         api.listItems({
           category: category ?? undefined,
           size: sizeFilter ?? undefined,
-          audience: showAll ? "all" : undefined,
+          audience: showAll ? "all" : activeAudience,
+          kid_age_group: isKidActive ? kidAgeGroup ?? undefined : undefined,
         }),
         user?.role === "buyer" ? api.wishlistIds() : Promise.resolve({ item_ids: [] }),
       ]);
@@ -70,7 +89,16 @@ export default function Discover() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [category, sizeFilter, showAll, toast, user?.role]);
+  }, [
+    category,
+    sizeFilter,
+    showAll,
+    activeAudience,
+    isKidActive,
+    kidAgeGroup,
+    toast,
+    user?.role,
+  ]);
 
   useFocusEffect(
     useCallback(() => {
@@ -153,7 +181,7 @@ export default function Discover() {
     <SafeAreaView style={styles.root} edges={["top"]}>
       {/* Sticky header */}
       <View style={styles.header}>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={tp.caption}>DRAPE</Text>
           <Text style={[tp.h2, styles.headerTitle]}>Hello, {user?.full_name.split(" ")[0]}.</Text>
         </View>
@@ -165,7 +193,28 @@ export default function Discover() {
           <Feather name="search" size={20} color={colors.primary} />
         </TouchableOpacity>
       </View>
+      {user?.role === "buyer" ? (
+        <View style={styles.profileChipWrap}>
+          <ActiveProfileChip testIDPrefix="discover-profile-chip" />
+        </View>
+      ) : null}
       <ChipsRow chips={CATEGORIES} active={category} onPress={setCategory} testIDPrefix="cat" />
+      {isKidActive ? (
+        <View style={styles.ageGroupWrap}>
+          <ChipsRow
+            chips={[
+              { key: "0-2", label: "0–2" },
+              { key: "3-5", label: "3–5" },
+              { key: "6-9", label: "6–9" },
+              { key: "10-13", label: "10–13" },
+              { key: "14-17", label: "14–17" },
+            ]}
+            active={kidAgeGroup}
+            onPress={(k) => setKidAgeGroup(k as KidAgeGroup | null)}
+            testIDPrefix="age-group"
+          />
+        </View>
+      ) : null}
       {audienceLabel ? (
         <View style={styles.audienceBanner} testID="discover-audience-banner">
           <Feather name="user" size={14} color={colors.primary} />
@@ -313,6 +362,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.muted,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+  },
+  profileChipWrap: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
+  },
+  ageGroupWrap: {
+    paddingTop: 4,
+    paddingBottom: 4,
   },
   audienceText: {
     flex: 1,

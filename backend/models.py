@@ -18,7 +18,9 @@ from core.config import DEFAULT_CURRENCY, PLATFORM_FEE_BPS
 # ---------------------------------------------------------------------------
 Role = Literal["buyer", "seller", "admin"]
 Gender = Literal["male", "female", "other", "prefer_not_to_say"]
-Audience = Literal["men", "women", "unisex"]
+Audience = Literal["men", "women", "unisex", "kids"]
+KidAgeGroup = Literal["0-2", "3-5", "6-9", "10-13", "14-17"]
+ProfileAudience = Literal["adult", "kid"]
 FitFeedback = Literal["small", "perfect", "large"]
 # Supported listing/display currencies. KES = Kenyan Shilling (default for new accounts).
 Currency = Literal[
@@ -27,6 +29,24 @@ Currency = Literal[
 # Try-on viewing angles. Front is the only required one (uses uploaded body photo).
 TryOnAngle = Literal["front", "three_quarter", "side", "back"]
 ConnectStatus = Literal["unstarted", "pending", "active"]
+
+# Kid US-style size labels used when audience="kids". Sellers pick from this
+# set (instead of XS-XXL) in the new-item form. Buyers can filter by age group
+# (which maps to a subset of these sizes via KID_SIZE_SETS_BY_AGE_GROUP).
+KID_SIZES: List[str] = [
+    "NB", "3M", "6M", "12M", "18M", "24M",
+    "2T", "3T", "4T",
+    "5", "6", "7", "8", "10", "12", "14", "16",
+]
+
+KID_SIZE_SETS_BY_AGE_GROUP: Dict[str, List[str]] = {
+    "0-2":  ["NB", "3M", "6M", "12M", "18M", "24M", "2T"],
+    "3-5":  ["3T", "4T", "5"],
+    "6-9":  ["6", "7", "8"],
+    "10-13": ["10", "12"],
+    "14-17": ["14", "16"],
+}
+
 
 # ---------------------------------------------------------------------------
 # Garment taxonomy (used for outfit composition + layering rules)
@@ -269,6 +289,73 @@ class EstimateMeasurementsIn(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Loved-one body profiles (shop on behalf of family/gift recipients)
+# ---------------------------------------------------------------------------
+class LovedOneIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    audience: ProfileAudience
+    gender: Optional[Gender] = None
+    age: Optional[int] = Field(default=None, ge=0, le=99)  # required for kids client-side
+    relation: Optional[str] = Field(default=None, max_length=40)  # "son", "partner", "friend"
+    measurements: Optional[Measurements] = None
+    preferred_size: Optional[str] = None
+    front_photo_b64: Optional[str] = None
+    side_photo_b64: Optional[str] = None
+
+
+class LovedOnePatch(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=80)
+    audience: Optional[ProfileAudience] = None
+    gender: Optional[Gender] = None
+    age: Optional[int] = Field(default=None, ge=0, le=99)
+    relation: Optional[str] = Field(default=None, max_length=40)
+    measurements: Optional[Measurements] = None
+    preferred_size: Optional[str] = None
+    front_photo_b64: Optional[str] = None
+    side_photo_b64: Optional[str] = None
+
+
+class LovedOneOut(BaseModel):
+    id: str
+    user_id: str
+    name: str
+    audience: ProfileAudience
+    gender: Optional[Gender] = None
+    age: Optional[int] = None
+    relation: Optional[str] = None
+    measurements: Measurements
+    preferred_size: Optional[str] = None
+    has_front_photo: bool = False
+    has_side_photo: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+
+class ProfileSummary(BaseModel):
+    """Either the buyer's own 'self' profile or a loved-one profile, used in
+    the unified profile switcher."""
+
+    id: str  # "self" for the user's own profile, UUID for loved ones
+    is_self: bool
+    name: str  # "Me", "<LovedOne name>"
+    audience: ProfileAudience
+    gender: Optional[Gender] = None
+    age: Optional[int] = None
+    has_front_photo: bool = False
+    has_side_photo: bool = False
+    preferred_size: Optional[str] = None
+
+
+class ActiveProfileIn(BaseModel):
+    profile_id: str  # "self" or a LovedOne uuid
+
+
+class ActiveProfileOut(BaseModel):
+    profile_id: str  # "self" or a LovedOne uuid
+    profile: ProfileSummary
+
+
+# ---------------------------------------------------------------------------
 # Items
 # ---------------------------------------------------------------------------
 class SizeOption(BaseModel):
@@ -328,6 +415,9 @@ class TryOnIn(BaseModel):
     item_id: str
     use_profile_photo: bool = True  # use stored front photo
     body_photo_b64: Optional[str] = None  # override if provided
+    # Optional: switch to a loved-one profile's photos instead of the user's own.
+    # "self" or null → use the buyer's main profile. UUID → use that loved one.
+    profile_id: Optional[str] = None
     # Angles to render. Default keeps existing single-angle behavior.
     angles: List[TryOnAngle] = Field(default_factory=lambda: ["front"])
 
@@ -337,7 +427,22 @@ class OutfitTryOnIn(BaseModel):
     item_ids: List[str] = Field(min_length=1, max_length=8)
     use_profile_photo: bool = True
     body_photo_b64: Optional[str] = None
+    profile_id: Optional[str] = None
     angles: List[TryOnAngle] = Field(default_factory=lambda: ["front"])
+
+
+class GarmentTryOnIn(BaseModel):
+    """BYO Garment: buyer uploads a clothing photo and tries it on themselves
+    or a loved one. No item/seller involved — purely a Try-On preview."""
+
+    garment_b64: str  # base64 of the garment to render
+    garment_type: Optional[GarmentType] = "other"
+    use_profile_photo: bool = True
+    body_photo_b64: Optional[str] = None
+    profile_id: Optional[str] = None
+    angles: List[TryOnAngle] = Field(default_factory=lambda: ["front"])
+    # Optional human label saved into history for the buyer ("Blue Aloha shirt")
+    label: Optional[str] = Field(default=None, max_length=60)
 
 
 class TryOnImage(BaseModel):

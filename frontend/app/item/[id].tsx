@@ -30,6 +30,7 @@ import { useAuth } from "@/src/lib/auth";
 import { formatPriceIn } from "@/src/lib/currency";
 import { dataUriFromBase64 } from "@/src/lib/images";
 import { useOutfit } from "@/src/lib/outfit";
+import { useProfiles } from "@/src/lib/profiles";
 import { shareBase64Image } from "@/src/lib/share";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
@@ -89,6 +90,7 @@ export default function ItemDetail() {
     load();
   }, [load]);
 
+  const { active: activeProfile } = useProfiles();
   const runTryOn = useCallback(
     async (angles: TryOnAngle[] = ["front"]) => {
       if (!item) return;
@@ -96,15 +98,26 @@ export default function ItemDetail() {
       if (multi) setGeneratingMulti(true);
       else setGenerating(true);
       try {
-        const profile = await api.getProfile();
-        if (!profile.has_front_photo) {
-          toast.show("Add a front photo in your profile first", "error");
-          router.push("/onboarding/measurements");
+        // Resolve which profile's photo will be used.
+        const targetProfileId = activeProfile?.profile_id ?? "self";
+        const hasFront =
+          targetProfileId === "self"
+            ? (await api.getProfile()).has_front_photo
+            : activeProfile?.profile.has_front_photo ?? false;
+        if (!hasFront) {
+          if (targetProfileId === "self") {
+            toast.show("Add a front photo in your profile first", "error");
+            router.push("/onboarding/measurements");
+          } else {
+            toast.show("Add a front photo for this profile first", "error");
+            router.push("/profiles");
+          }
           return;
         }
         const result = await api.tryOn({
           item_id: item.id,
           use_profile_photo: true,
+          profile_id: targetProfileId,
           angles,
         });
         const imgs =
@@ -122,7 +135,7 @@ export default function ItemDetail() {
         setGeneratingMulti(false);
       }
     },
-    [item, toast],
+    [item, toast, activeProfile?.profile_id, activeProfile?.profile.has_front_photo],
   );
 
   useEffect(() => {
