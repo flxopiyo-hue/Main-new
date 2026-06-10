@@ -24,13 +24,13 @@ import { dataUriFromBase64, pickImageFromCamera, pickImageFromLibrary } from "@/
 import { useProfiles } from "@/src/lib/profiles";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
-const GARMENT_TYPES: { key: string; label: string }[] = [
-  { key: "top", label: "Top" },
-  { key: "dress", label: "Dress" },
-  { key: "bottom", label: "Bottom" },
-  { key: "outerwear", label: "Outerwear" },
-  { key: "shoes", label: "Shoes" },
-  { key: "accessory", label: "Accessory" },
+const GARMENT_TYPES: { key: string; label: string; backendType: string }[] = [
+  { key: "top", label: "Top", backendType: "shirt" },
+  { key: "dress", label: "Dress", backendType: "dress" },
+  { key: "bottom", label: "Bottom", backendType: "trousers" },
+  { key: "outerwear", label: "Outerwear", backendType: "outerwear" },
+  { key: "shoes", label: "Shoes", backendType: "shoes" },
+  { key: "accessory", label: "Accessory", backendType: "other" },
 ];
 
 export default function BYOTryOnScreen() {
@@ -71,9 +71,10 @@ export default function BYOTryOnScreen() {
     }
     setGenerating(true);
     try {
+      const mapped = GARMENT_TYPES.find((g) => g.key === garmentType);
       const res = await api.tryOnGarment({
         garment_b64: garmentB64,
-        garment_type: garmentType,
+        garment_type: mapped?.backendType ?? "other",
         label: label.trim() || undefined,
         use_profile_photo: true,
         profile_id: active?.profile_id ?? "self",
