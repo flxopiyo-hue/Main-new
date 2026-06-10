@@ -172,6 +172,7 @@ export interface OrderDetail extends Order {
   seller_net_cents: number;
   item_image_b64?: string | null;
   item_garment_type?: string | null;
+  fit_feedback_comment?: string | null;
   seller?: OrderSeller | null;
 }
 

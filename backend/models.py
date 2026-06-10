@@ -407,6 +407,7 @@ class OrderDetailOut(OrderOut):
     seller_net_cents: int = 0
     item_image_b64: Optional[str] = None
     item_garment_type: Optional[str] = None
+    fit_feedback_comment: Optional[str] = None
     seller: Optional[OrderSellerOut] = None
 
 

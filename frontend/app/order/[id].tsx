@@ -59,6 +59,7 @@ export default function OrderDetailScreen() {
       const o = await api.orderDetail(id);
       setOrder(o);
       setFit(o.fit_feedback ?? null);
+      setComment(o.fit_feedback_comment ?? "");
     } catch (e: any) {
       toast.show(e?.message ?? "Order not found", "error");
       router.back();

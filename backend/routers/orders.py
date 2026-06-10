@@ -106,6 +106,7 @@ async def _order_doc_to_detail(d: Dict[str, Any]) -> OrderDetailOut:
         seller_net_cents=net,
         item_image_b64=(item or {}).get("image_b64") if item else None,
         item_garment_type=(item or {}).get("garment_type") if item else None,
+        fit_feedback_comment=d.get("fit_feedback_comment"),
         seller=seller_card,
     )
 
