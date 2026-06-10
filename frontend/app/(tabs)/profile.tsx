@@ -313,6 +313,21 @@ export default function Profile() {
               </View>
               <Feather name="users" size={28} color={colors.primary} />
             </TouchableOpacity>
+            <TouchableOpacity
+              testID="profile-manage-addresses-btn"
+              onPress={() => router.push("/addresses")}
+              style={[styles.analyticsCard, { marginTop: spacing.md }]}
+              activeOpacity={0.85}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={tp.caption}>Delivery</Text>
+                <Text style={[tp.h3, { marginTop: 4 }]}>Saved addresses</Text>
+                <Text style={[tp.bodyMuted, { marginTop: 4 }]}>
+                  Home · work · gifts — picked at checkout
+                </Text>
+              </View>
+              <Feather name="map-pin" size={28} color={colors.primary} />
+            </TouchableOpacity>
           </View>
         ) : null}
 

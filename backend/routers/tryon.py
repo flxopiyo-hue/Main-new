@@ -16,6 +16,7 @@ from core.db import db
 from core.images import strip_data_prefix, watermark_image
 from core.security import get_current_user
 from models import (
+    GarmentTryOnIn,
     LAYER_ORDER,
     OutfitTryOnIn,
     TryOnImage,
@@ -595,6 +596,130 @@ async def generate_outfit_tryon(
         result_image_b64=front_image.image_b64,
         images=angle_images,
         fit_summary=fit_summary,
+        created_at=now,
+    )
+
+
+# ---------------------------------------------------------------------------
+# BYO Garment — buyer uploads a clothing photo and we render it on the active
+# profile. No item, no seller, no checkout — pure try-on preview.
+# ---------------------------------------------------------------------------
+@router.post("/tryon/garment", response_model=TryOnOut)
+async def generate_byo_garment_tryon(
+    body: GarmentTryOnIn, user: Dict[str, Any] = Depends(get_current_user)
+) -> TryOnOut:
+    if user.get("role") != "buyer":
+        raise HTTPException(status_code=403, detail="Only buyers can use BYO Try-On")
+    if not body.garment_b64:
+        raise HTTPException(status_code=400, detail="Garment photo is required")
+
+    # Resolve body photo (same logic as item try-on).
+    body_b64: Optional[str] = None
+    photo_user = user
+    if body.body_photo_b64:
+        body_b64 = strip_data_prefix(body.body_photo_b64)
+    elif body.use_profile_photo:
+        pid = body.profile_id
+        if pid and pid != "self":
+            lo = await db.body_profiles.find_one(
+                {"id": pid, "user_id": user["id"]}, {"_id": 0}
+            )
+            if not lo:
+                raise HTTPException(status_code=404, detail="Profile not found")
+            if lo.get("front_photo_b64"):
+                body_b64 = lo["front_photo_b64"]
+                photo_user = {
+                    **user,
+                    "gender": lo.get("gender"),
+                    "age": lo.get("age"),
+                }
+        if not body_b64:
+            profile = await db.profiles.find_one({"user_id": user["id"]}, {"_id": 0})
+            if profile and profile.get("front_photo_b64"):
+                body_b64 = profile["front_photo_b64"]
+    if not body_b64:
+        raise HTTPException(
+            status_code=400,
+            detail="No body photo. Add a front photo to your active profile first.",
+        )
+
+    garment_b64 = strip_data_prefix(body.garment_b64)
+    gtype = body.garment_type or "other"
+    label = body.label or "Your garment"
+
+    # Build a synthetic 'item' shape so we can reuse _generate_single_angle.
+    pseudo_item: Dict[str, Any] = {
+        "id": f"byo-{uuid.uuid4()}",
+        "name": label,
+        "category": "shirts",  # neutral default
+        "audience": "unisex",
+        "garment_type": gtype,
+    }
+
+    # Persona prompt (mirrors the item try-on path).
+    gender = photo_user.get("gender")
+    age = photo_user.get("age")
+    persona_bits: List[str] = []
+    if gender == "male":
+        persona_bits.append("the person is male")
+    elif gender == "female":
+        persona_bits.append("the person is female")
+    if age:
+        persona_bits.append(f"approximately {age} years old")
+    persona = (", ".join(persona_bits) + ". ") if persona_bits else ""
+
+    angles = body.angles or ["front"]
+
+    # Render each angle in parallel.
+    coros = [
+        _generate_single_angle(
+            body_b64=body_b64,
+            garment_b64=garment_b64,
+            item=pseudo_item,
+            user=photo_user,
+            angle=angle,
+            persona=persona,
+        )
+        for angle in angles
+    ]
+    results = await asyncio.gather(*coros, return_exceptions=True)
+    angle_images: List[TryOnImage] = []
+    for angle, res in zip(angles, results):
+        if isinstance(res, Exception) or not res:
+            logger.warning("BYO try-on angle %s failed: %s", angle, res)
+            continue
+        angle_images.append(TryOnImage(angle=angle, image_b64=res))
+    if not angle_images:
+        raise HTTPException(
+            status_code=502, detail="AI did not return any images. Please try again."
+        )
+    front_image = next(
+        (a for a in angle_images if a.angle == "front"), angle_images[0]
+    )
+
+    tryon_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+    await db.tryons.insert_one(
+        {
+            "id": tryon_id,
+            "user_id": user["id"],
+            # No real item — store the label and garment for the history view.
+            "item_id": None,
+            "item_name": label,
+            "is_byo": True,
+            "byo_garment_b64": garment_b64,
+            "result_image_b64": front_image.image_b64,
+            "images": [a.model_dump() for a in angle_images],
+            "fit_summary": None,
+            "created_at": now,
+        }
+    )
+    return TryOnOut(
+        id=tryon_id,
+        item_id=pseudo_item["id"],
+        result_image_b64=front_image.image_b64,
+        images=angle_images,
+        fit_summary=None,
         created_at=now,
     )
 

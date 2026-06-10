@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { ActiveProfileChip } from "@/src/components/ActiveProfileChip";
 import { useToast } from "@/src/components/Toast";
 import { api, Item, TryOnResult } from "@/src/lib/api";
 import { dataUriFromBase64 } from "@/src/lib/images";
@@ -50,6 +51,26 @@ export default function TryOnHub() {
         <Text style={[tp.bodyMuted, styles.sub]}>
           Pick a piece — we&apos;ll dress your photo with AI.
         </Text>
+        <View style={{ marginTop: spacing.md }}>
+          <ActiveProfileChip testIDPrefix="tryon-profile-chip" />
+        </View>
+        <TouchableOpacity
+          testID="tryon-byo-cta"
+          style={styles.byoCta}
+          onPress={() => router.push("/tryon/byo")}
+          activeOpacity={0.85}
+        >
+          <View style={styles.byoIconWrap}>
+            <Feather name="upload-cloud" size={20} color={colors.primaryFg} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.byoTitle}>Try your own garment</Text>
+            <Text style={styles.byoSub} numberOfLines={2}>
+              Upload a photo of any clothing item — we&apos;ll render it on the active profile.
+            </Text>
+          </View>
+          <Feather name="chevron-right" size={20} color={colors.primary} />
+        </TouchableOpacity>
       </View>
       {loading ? (
         <View style={styles.center}>
@@ -174,4 +195,23 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xl,
     alignItems: "center",
   },
+  byoCta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    marginTop: spacing.lg,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.surface,
+  },
+  byoIconWrap: {
+    width: 40,
+    height: 40,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  byoTitle: { fontFamily: fonts.bodySemi, fontSize: 14, color: colors.primary },
+  byoSub: { fontFamily: fonts.body, fontSize: 12, color: colors.mutedFg, marginTop: 2 },
 });

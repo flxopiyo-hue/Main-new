@@ -29,6 +29,7 @@ import {
 import { useAuth } from "@/src/lib/auth";
 import { formatPriceIn } from "@/src/lib/currency";
 import { dataUriFromBase64 } from "@/src/lib/images";
+import { AddressPickerSheet } from "@/src/components/AddressPickerSheet";
 import { useOutfit } from "@/src/lib/outfit";
 import { useProfiles } from "@/src/lib/profiles";
 import { shareBase64Image } from "@/src/lib/share";
@@ -158,12 +159,19 @@ export default function ItemDetail() {
     }
   };
 
-  const buy = async () => {
+  const [addressSheetOpen, setAddressSheetOpen] = useState(false);
+
+  const startBuy = () => {
     if (!item || !selectedSize) return;
     if (user?.role !== "buyer") {
       toast.show("Sign in as a buyer to purchase", "error");
       return;
     }
+    setAddressSheetOpen(true);
+  };
+
+  const buyWithAddress = async (addressId: string) => {
+    if (!item || !selectedSize) return;
     setBuying(true);
     try {
       const { url } = await api.checkout({
@@ -171,6 +179,7 @@ export default function ItemDetail() {
         size: selectedSize.label,
         color: selectedColor?.name,
         origin_url: BACKEND_URL,
+        address_id: addressId,
       });
       await WebBrowser.openBrowserAsync(url);
       // After return, navigate to orders
@@ -467,7 +476,7 @@ export default function ItemDetail() {
           <AppButton
             testID="item-buy-btn"
             label={`Buy · ${formatPriceIn(item.price_cents, item.currency, user?.preferred_currency)}`}
-            onPress={buy}
+            onPress={startBuy}
             loading={buying}
             disabled={!selectedSize || selectedSize.available_qty <= 0}
           />
@@ -475,6 +484,14 @@ export default function ItemDetail() {
         </View>
       </ScrollView>
       <OutfitDrawer visible={outfitOpen} onClose={() => setOutfitOpen(false)} />
+      <AddressPickerSheet
+        visible={addressSheetOpen}
+        onClose={() => setAddressSheetOpen(false)}
+        onConfirm={(addr) => {
+          setAddressSheetOpen(false);
+          buyWithAddress(addr.id);
+        }}
+      />
     </View>
   );
 }

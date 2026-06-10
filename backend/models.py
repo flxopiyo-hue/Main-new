@@ -356,6 +356,67 @@ class ActiveProfileOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Delivery addresses (multi-address book per buyer)
+# ---------------------------------------------------------------------------
+AddressLabel = Literal["home", "office", "parents", "other"]
+
+
+class AddressIn(BaseModel):
+    label: AddressLabel = "home"
+    custom_label: Optional[str] = Field(default=None, max_length=40)  # used when label="other"
+    recipient_name: str = Field(min_length=1, max_length=80)
+    phone: str = Field(min_length=4, max_length=24)
+    alt_phone: Optional[str] = Field(default=None, max_length=24)  # landline or home number
+    building_estate: Optional[str] = Field(default=None, max_length=80)
+    house_number: Optional[str] = Field(default=None, max_length=24)
+    street: Optional[str] = Field(default=None, max_length=120)
+    area: Optional[str] = Field(default=None, max_length=80)
+    city: str = Field(min_length=1, max_length=60)
+    postal_code: Optional[str] = Field(default=None, max_length=20)
+    country: str = Field(min_length=2, max_length=60)
+    delivery_notes: Optional[str] = Field(default=None, max_length=400)
+    is_default: bool = False
+
+
+class AddressPatch(BaseModel):
+    label: Optional[AddressLabel] = None
+    custom_label: Optional[str] = Field(default=None, max_length=40)
+    recipient_name: Optional[str] = Field(default=None, min_length=1, max_length=80)
+    phone: Optional[str] = Field(default=None, min_length=4, max_length=24)
+    alt_phone: Optional[str] = Field(default=None, max_length=24)
+    building_estate: Optional[str] = Field(default=None, max_length=80)
+    house_number: Optional[str] = Field(default=None, max_length=24)
+    street: Optional[str] = Field(default=None, max_length=120)
+    area: Optional[str] = Field(default=None, max_length=80)
+    city: Optional[str] = Field(default=None, min_length=1, max_length=60)
+    postal_code: Optional[str] = Field(default=None, max_length=20)
+    country: Optional[str] = Field(default=None, min_length=2, max_length=60)
+    delivery_notes: Optional[str] = Field(default=None, max_length=400)
+    is_default: Optional[bool] = None
+
+
+class AddressOut(BaseModel):
+    id: str
+    user_id: str
+    label: AddressLabel
+    custom_label: Optional[str] = None
+    recipient_name: str
+    phone: str
+    alt_phone: Optional[str] = None
+    building_estate: Optional[str] = None
+    house_number: Optional[str] = None
+    street: Optional[str] = None
+    area: Optional[str] = None
+    city: str
+    postal_code: Optional[str] = None
+    country: str
+    delivery_notes: Optional[str] = None
+    is_default: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+
+# ---------------------------------------------------------------------------
 # Items
 # ---------------------------------------------------------------------------
 class SizeOption(BaseModel):
@@ -474,6 +535,7 @@ class CheckoutIn(BaseModel):
     size: str
     color: Optional[str] = None
     origin_url: str  # frontend base url for redirect targets
+    address_id: Optional[str] = None  # required at endpoint level — graceful 400 if missing
 
 
 class CheckoutOut(BaseModel):
@@ -514,6 +576,7 @@ class OrderDetailOut(OrderOut):
     item_garment_type: Optional[str] = None
     fit_feedback_comment: Optional[str] = None
     seller: Optional[OrderSellerOut] = None
+    shipping_address: Optional[Dict[str, Any]] = None
 
 
 class FitFeedbackIn(BaseModel):

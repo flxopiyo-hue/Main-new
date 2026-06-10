@@ -245,6 +245,46 @@ export interface ActiveProfile {
   profile: ProfileSummary;
 }
 
+export type AddressLabel = "home" | "office" | "parents" | "other";
+
+export interface Address {
+  id: string;
+  user_id: string;
+  label: AddressLabel;
+  custom_label?: string | null;
+  recipient_name: string;
+  phone: string;
+  alt_phone?: string | null;
+  building_estate?: string | null;
+  house_number?: string | null;
+  street?: string | null;
+  area?: string | null;
+  city: string;
+  postal_code?: string | null;
+  country: string;
+  delivery_notes?: string | null;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AddressInput {
+  label: AddressLabel;
+  custom_label?: string;
+  recipient_name: string;
+  phone: string;
+  alt_phone?: string;
+  building_estate?: string;
+  house_number?: string;
+  street?: string;
+  area?: string;
+  city: string;
+  postal_code?: string;
+  country: string;
+  delivery_notes?: string;
+  is_default?: boolean;
+}
+
 export type KidAgeGroup = "0-2" | "3-5" | "6-9" | "10-13" | "14-17";
 
 export interface WishlistEntry {
@@ -414,6 +454,15 @@ export const api = {
     profile_id?: string;
     angles?: TryOnAngle[];
   }) => request<TryOnResult>("/tryon/outfit", { method: "POST", body }),
+  tryOnGarment: (body: {
+    garment_b64: string;
+    garment_type?: string;
+    label?: string;
+    use_profile_photo?: boolean;
+    body_photo_b64?: string;
+    profile_id?: string;
+    angles?: TryOnAngle[];
+  }) => request<TryOnResult>("/tryon/garment", { method: "POST", body }),
   tryOnHistory: () => request<TryOnResult[]>("/tryon/history"),
   shareTryOn: (
     id: string,
@@ -467,7 +516,13 @@ export const api = {
     request<OrderDetail>(`/orders/${id}/feedback`, { method: "POST", body }),
 
   // Payments
-  checkout: (body: { item_id: string; size: string; color?: string; origin_url: string }) =>
+  checkout: (body: {
+    item_id: string;
+    size: string;
+    color?: string;
+    origin_url: string;
+    address_id: string;
+  }) =>
     request<{ session_id: string; url: string }>("/payments/checkout", { method: "POST", body }),
   paymentStatus: (sessionId: string) =>
     request<{ session_id: string; status: string; item_name: string; amount_cents: number }>(
@@ -533,6 +588,18 @@ export const api = {
   getActiveProfile: () => request<ActiveProfile>("/profiles/active"),
   setActiveProfile: (profile_id: string) =>
     request<ActiveProfile>("/profiles/active", { method: "POST", body: { profile_id } }),
+
+  // Delivery addresses (multi-address book)
+  listAddresses: () => request<Address[]>("/addresses"),
+  createAddress: (body: AddressInput) =>
+    request<Address>("/addresses", { method: "POST", body }),
+  getAddress: (id: string) => request<Address>(`/addresses/${id}`),
+  updateAddress: (id: string, body: Partial<AddressInput>) =>
+    request<Address>(`/addresses/${id}`, { method: "PATCH", body }),
+  setDefaultAddress: (id: string) =>
+    request<Address>(`/addresses/${id}/default`, { method: "POST" }),
+  deleteAddress: (id: string) =>
+    request<{ ok: boolean }>(`/addresses/${id}`, { method: "DELETE" }),
 };
 
 export const BACKEND_URL = BASE_URL;

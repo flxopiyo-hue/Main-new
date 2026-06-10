@@ -36,6 +36,18 @@ async def create_checkout(
     item = await db.items.find_one({"id": body.item_id}, {"_id": 0})
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
+
+    # Resolve delivery address — must belong to the buyer.
+    if not body.address_id:
+        raise HTTPException(
+            status_code=400, detail="Delivery address is required"
+        )
+    addr = await db.addresses.find_one(
+        {"id": body.address_id, "user_id": user["id"]}, {"_id": 0}
+    )
+    if not addr:
+        raise HTTPException(status_code=404, detail="Address not found")
+
     amount_dollars = item["price_cents"] / 100.0
     # Use the item's listing currency for Stripe (defaults to USD for legacy items).
     listing_currency = (item.get("currency") or "USD").lower()
@@ -55,6 +67,7 @@ async def create_checkout(
             "size": body.size,
             "color": body.color or "",
             "currency": listing_currency,
+            "address_id": body.address_id,
         },
     )
     try:
@@ -67,6 +80,13 @@ async def create_checkout(
     now = datetime.now(timezone.utc)
     platform_fee_cents = (item["price_cents"] * PLATFORM_FEE_BPS) // 10000
     seller_net_cents = item["price_cents"] - platform_fee_cents
+    # Snapshot the address onto the order so future address edits/deletes don't
+    # break shipping history.
+    shipping_snapshot = {k: addr.get(k) for k in (
+        "label", "custom_label", "recipient_name", "phone", "alt_phone",
+        "building_estate", "house_number", "street", "area", "city",
+        "postal_code", "country", "delivery_notes",
+    )}
     await db.orders.insert_one(
         {
             "id": order_id,
@@ -82,6 +102,8 @@ async def create_checkout(
             "seller_net_cents": seller_net_cents,
             "status": "pending",
             "session_id": session.session_id,
+            "address_id": body.address_id,
+            "shipping_address": shipping_snapshot,
             "created_at": now,
         }
     )

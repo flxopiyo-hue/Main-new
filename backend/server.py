@@ -26,6 +26,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from core.db import close_db
 from routers import (
+    addresses,
     admin,
     auth,
     collections,
@@ -59,6 +60,7 @@ async def root() -> dict:
 api_router.include_router(auth.router)
 api_router.include_router(profile.router)
 api_router.include_router(loved_ones.router)
+api_router.include_router(addresses.router)
 api_router.include_router(items.router)
 api_router.include_router(wishlist.router)
 api_router.include_router(tryon.router)

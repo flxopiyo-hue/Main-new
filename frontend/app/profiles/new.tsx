@@ -232,7 +232,7 @@ export default function NewLovedOneScreen() {
           onChangeText={setAge}
           keyboardType="number-pad"
           placeholder={audience === "kid" ? "8" : "32"}
-          error={ageInvalid && age ? "0–17 for children" : undefined}
+          errorText={ageInvalid && age ? "0–17 for children" : undefined}
         />
 
         <Text style={[tp.caption, styles.label]}>Quick dimensions (optional)</Text>

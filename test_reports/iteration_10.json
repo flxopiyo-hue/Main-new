@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 10 — BYO Try-On + multi-address delivery book. Backend: 13/13 pytest cases passing (BYO validation/role gating, full address CRUD including default-promotion semantics & cross-tenant isolation, checkout requires address_id with shipping_address snapshot on the order). Frontend: AddressPickerSheet enforces selection with inline-add when none exist; all spec testIDs render on the BYO screen and addresses form; checkout POST captured with address_id in body. ONE CRITICAL FE↔BE BUG: BYO garment_type values in the Try-On UI ('top', 'bottom', 'accessory') are not in the backend GarmentType Literal — picking those chips yields 422 from /api/tryon/garment.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "BYO garment_type chips",
+        "issue": "FE chips 'top', 'bottom', 'accessory' (testIDs byo-type-top/bottom/accessory) send values that fail backend Pydantic validation. Backend GarmentType only allows: vest_under, shirt, dress, skirt, trousers, shorts, belt, tie, scarf, waistcoat, outerwear, socks, shoes, hat, bag, jewelry, other. Selecting Top/Bottom/Accessory + tapping 'Try It On' returns HTTP 422. Reference: /app/frontend/app/tryon/byo.tsx:27-34 and /app/backend/models.py:57-75.",
+        "testID": "byo-type-top, byo-type-bottom, byo-type-accessory",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration10_byo_addresses.py",
+    "/app/test_reports/pytest/iteration10_results.xml"
+  ],
+  "action_items": [
+    "Fix BYO garment_type mismatch: either (a) map FE keys to canonical backend values inside /app/frontend/app/tryon/byo.tsx generate() (e.g. top→shirt, bottom→trousers, accessory→other) before calling api.tryOnGarment, OR (b) extend backend GarmentType Literal in /app/backend/models.py with 'top','bottom','accessory' aliases. Option (a) is recommended (keeps backend taxonomy stable).",
+    "Smoke verified by code review (not exercised end-to-end this run): admin login → /admin and seller dashboard. These were not deep-tested per instructions."
+  ],
+  "critical_code_review_comments": [
+    "addresses.py update_address has a hard-to-read ternary on line 135 that conditionally nulls empty strings except for required keys — consider extracting the required-key whitelist to a constant for clarity. Functionally correct, just brittle.",
+    "tryon.py BYO endpoint correctly persists is_byo=True, item_id=None, item_name=<label>, byo_garment_b64 in db.tryons (lines 702-716). Verified via code review.",
+    "payments.py snapshot_shipping correctly copies all canonical address fields onto the order doc (lines 85-89). Verified end-to-end via order detail GET in tests."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration10_byo_addresses.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100%",
+    "frontend": "94%"
+  },
+  "seed_data_creation": "Test creates and cleans up its own addresses per test (autouse cleanup fixture). Buyer ends the FE test session with 1-2 addresses; tests are self-contained.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend tests live in /app/backend/tests/test_iteration10_byo_addresses.py and can be re-run via `pytest backend/tests/test_iteration10_byo_addresses.py -v`. Buyer is 'buyer@aurafit.demo' / 'demo-buyer-2026'. Tabs in (tabs)/_layout.tsx do NOT have testIDs; navigate via Expo Router URLs /tryon, /profile, /addresses, /tryon/byo. AddressFields renders 'address-new-custom-label' only when label='other' is selected. Sheet preselected radio uses testID `checkout-address-<addr_id>`. POST /api/payments/checkout MUST include address_id in body — verified via network interception. The one open bug is the BYO garment_type FE↔BE taxonomy mismatch; everything else is green.",
+  "rca_of_issue": "BYO garment_type bug RCA: /app/frontend/app/tryon/byo.tsx defines GARMENT_TYPES with keys ['top','dress','bottom','outerwear','shoes','accessory']. The state value (garmentType) is sent as-is to POST /api/tryon/garment in the `garment_type` field. The backend Pydantic model GarmentTryOnIn (models.py:495-506) uses the GarmentType Literal which does NOT include 'top', 'bottom', or 'accessory'. Reproduction: from Try-On tab → tap 'Try your own garment' → pick a garment → leave default 'Top' selected → tap 'Try It On'. Backend responds 422 literal_error. Mitigation (recommended): in byo.tsx generate(), translate UI key→backend key before sending: const FE_TO_BE = { top:'shirt', dress:'dress', bottom:'trousers', outerwear:'outerwear', shoes:'shoes', accessory:'other' }; pass FE_TO_BE[garmentType] as garment_type."
+}
