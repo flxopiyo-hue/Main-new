@@ -20,7 +20,7 @@ import { OutfitPill } from "@/src/components/OutfitPill";
 import { useToast } from "@/src/components/Toast";
 import { api, Collection, Item } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
-import { formatPrice, indicativePrice } from "@/src/lib/currency";
+import { formatPriceIn } from "@/src/lib/currency";
 import { dataUriFromBase64 } from "@/src/lib/images";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
@@ -141,19 +141,9 @@ export default function Discover() {
           <Text style={styles.cardName} numberOfLines={2}>
             {item.name}
           </Text>
-          <Text style={styles.cardPrice}>{formatPrice(item.price_cents, item.currency)}</Text>
-          {(() => {
-            const approx = indicativePrice(
-              item.price_cents,
-              item.currency,
-              user?.preferred_currency,
-            );
-            return approx ? (
-              <Text style={styles.cardPriceApprox} numberOfLines={1}>
-                {approx}
-              </Text>
-            ) : null;
-          })()}
+          <Text style={styles.cardPrice}>
+            {formatPriceIn(item.price_cents, item.currency, user?.preferred_currency)}
+          </Text>
         </View>
       </TouchableOpacity>
     );

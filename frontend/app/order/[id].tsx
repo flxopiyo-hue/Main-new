@@ -18,7 +18,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useToast } from "@/src/components/Toast";
 import { api, FitFeedback, OrderDetail } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
-import { formatPrice } from "@/src/lib/currency";
+import { formatPriceIn } from "@/src/lib/currency";
 import { dataUriFromBase64 } from "@/src/lib/images";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
@@ -164,7 +164,7 @@ export default function OrderDetailScreen() {
             <View style={styles.metaCell}>
               <Text style={styles.metaLabel}>Total</Text>
               <Text style={styles.metaValue} testID="order-total">
-                {formatPrice(order.amount_cents, order.currency)}
+                {formatPriceIn(order.amount_cents, order.currency, user?.preferred_currency)}
               </Text>
             </View>
           </View>
@@ -220,19 +220,19 @@ export default function OrderDetailScreen() {
                 <View style={styles.metaCell}>
                   <Text style={styles.metaLabel}>Gross</Text>
                   <Text style={styles.metaValue}>
-                    {formatPrice(order.amount_cents, order.currency)}
+                    {formatPriceIn(order.amount_cents, order.currency, user?.preferred_currency)}
                   </Text>
                 </View>
                 <View style={styles.metaCell}>
                   <Text style={styles.metaLabel}>Platform fee</Text>
                   <Text style={styles.metaValue} testID="order-platform-fee">
-                    {formatPrice(order.platform_fee_cents, order.currency)}
+                    {formatPriceIn(order.platform_fee_cents, order.currency, user?.preferred_currency)}
                   </Text>
                 </View>
                 <View style={styles.metaCell}>
                   <Text style={styles.metaLabel}>Net to atelier</Text>
                   <Text style={[styles.metaValue, { color: colors.success }]} testID="order-net">
-                    {formatPrice(order.seller_net_cents, order.currency)}
+                    {formatPriceIn(order.seller_net_cents, order.currency, user?.preferred_currency)}
                   </Text>
                 </View>
               </View>

@@ -95,6 +95,29 @@ export function indicativePrice(
 }
 
 /**
+ * Format an amount **directly** in the buyer's preferred currency, converting
+ * via mid-market FX from the item's listing currency if they differ. Returns a
+ * single string (e.g. "KSh 16,700") — never a dual display. Use this anywhere
+ * a buyer sees a price in their preferred display currency.
+ */
+export function formatPriceIn(
+  amount_cents: number | undefined | null,
+  fromCurrency: string | null | undefined,
+  toCurrency: string | null | undefined,
+): string {
+  if (amount_cents == null) return "—";
+  const from = getCurrencyMeta(fromCurrency);
+  const to = getCurrencyMeta(toCurrency ?? fromCurrency);
+  if (from.code === to.code) return formatPrice(amount_cents, from.code);
+  const usd = amount_cents / 100 / from.perUsd;
+  const target = usd * to.perUsd;
+  const formatted = target
+    .toFixed(to.decimals)
+    .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `${to.symbol} ${formatted}`.replace(/\s+,/, ",");
+}
+
+/**
  * Convert a user-entered amount (e.g. "129" or "16,500.50") in the given
  * currency into integer minor units. Used by the seller "new item" form.
  */

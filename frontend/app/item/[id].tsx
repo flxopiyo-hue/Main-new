@@ -27,7 +27,7 @@ import {
   TryOnImageOut,
 } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
-import { formatPrice, indicativePrice } from "@/src/lib/currency";
+import { formatPriceIn } from "@/src/lib/currency";
 import { dataUriFromBase64 } from "@/src/lib/images";
 import { useOutfit } from "@/src/lib/outfit";
 import { shareBase64Image } from "@/src/lib/share";
@@ -269,20 +269,8 @@ export default function ItemDetail() {
             {item.name}
           </Text>
           <Text style={styles.price} testID="item-price">
-            {formatPrice(item.price_cents, item.currency)}
+            {formatPriceIn(item.price_cents, item.currency, user?.preferred_currency)}
           </Text>
-          {(() => {
-            const approx = indicativePrice(
-              item.price_cents,
-              item.currency,
-              user?.preferred_currency,
-            );
-            return approx ? (
-              <Text style={styles.priceApprox} testID="item-price-approx">
-                {approx}
-              </Text>
-            ) : null;
-          })()}
           {item.description ? (
             <Text style={[tp.body, { marginTop: spacing.md }]}>{item.description}</Text>
           ) : null}
@@ -465,7 +453,7 @@ export default function ItemDetail() {
           <View style={{ height: spacing.md }} />
           <AppButton
             testID="item-buy-btn"
-            label={`Buy · ${formatPrice(item.price_cents, item.currency)}`}
+            label={`Buy · ${formatPriceIn(item.price_cents, item.currency, user?.preferred_currency)}`}
             onPress={buy}
             loading={buying}
             disabled={!selectedSize || selectedSize.available_qty <= 0}

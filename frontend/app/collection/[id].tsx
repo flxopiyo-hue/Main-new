@@ -14,13 +14,15 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useToast } from "@/src/components/Toast";
 import { api, Collection, Item } from "@/src/lib/api";
-import { formatPrice } from "@/src/lib/currency";
+import { useAuth } from "@/src/lib/auth";
+import { formatPriceIn } from "@/src/lib/currency";
 import { dataUriFromBase64 } from "@/src/lib/images";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
 export default function CollectionDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const toast = useToast();
+  const { user } = useAuth();
   const [collection, setCollection] = useState<Collection | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
@@ -108,7 +110,9 @@ export default function CollectionDetail() {
             <Text style={styles.cardName} numberOfLines={2}>
               {item.name}
             </Text>
-            <Text style={styles.cardPrice}>{formatPrice(item.price_cents, item.currency)}</Text>
+            <Text style={styles.cardPrice}>
+              {formatPriceIn(item.price_cents, item.currency, user?.preferred_currency)}
+            </Text>
           </TouchableOpacity>
         )}
       />

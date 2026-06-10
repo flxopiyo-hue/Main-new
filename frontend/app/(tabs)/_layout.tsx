@@ -12,6 +12,13 @@ export default function TabsLayout() {
   const { user } = useAuth();
   const isSeller = user?.role === "seller";
 
+  // Compute a tab bar tall enough to comfortably hold a 22px icon and an
+  // uppercase 10px label without cropping. The bar still honours the
+  // device's safe-area inset so the iOS home indicator never collides with
+  // the labels.
+  const bottomInset = Math.max(insets.bottom, Platform.OS === "ios" ? 8 : 10);
+  const barHeight = 80 + bottomInset;
+
   return (
     <Tabs
       screenOptions={({ route }) => ({
@@ -19,28 +26,35 @@ export default function TabsLayout() {
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: "#A3A3A3",
         tabBarShowLabel: true,
+        tabBarHideOnKeyboard: true,
         tabBarLabelStyle: {
           fontFamily: fonts.bodyMedium,
           fontSize: 10,
+          lineHeight: 14,
           letterSpacing: 1.5,
           textTransform: "uppercase",
-          marginBottom: Platform.OS === "ios" ? 0 : 4,
+          marginTop: 2,
+          marginBottom: 0,
+        },
+        tabBarItemStyle: {
+          paddingTop: 8,
+          paddingBottom: 4,
         },
         tabBarStyle: {
           backgroundColor: colors.surface,
           borderTopWidth: 1,
           borderTopColor: colors.border,
-          height: 64 + insets.bottom,
-          paddingTop: 8,
-          paddingBottom: insets.bottom > 0 ? insets.bottom : 8,
+          height: barHeight,
+          paddingTop: 6,
+          paddingBottom: bottomInset,
         },
-        tabBarIcon: ({ color }) => {
+        tabBarIcon: ({ color, focused }) => {
           let icon: keyof typeof Feather.glyphMap = "grid";
           if (route.name === "index") icon = "compass";
           if (route.name === "tryon") icon = "camera";
           if (route.name === "atelier") icon = "package";
           if (route.name === "profile") icon = "user";
-          return <Feather name={icon} size={20} color={color} />;
+          return <Feather name={icon} size={focused ? 22 : 20} color={color} />;
         },
       })}
     >

@@ -24,7 +24,7 @@ import {
   WishlistEntry,
 } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
-import { CURRENCIES, formatPrice } from "@/src/lib/currency";
+import { CURRENCIES, formatPriceIn } from "@/src/lib/currency";
 import { dataUriFromBase64 } from "@/src/lib/images";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
@@ -287,7 +287,7 @@ export default function Profile() {
                       {w.item.name}
                     </Text>
                     <Text style={styles.wishPrice}>
-                      {formatPrice(w.item.price_cents, w.item.currency)}
+                      {formatPriceIn(w.item.price_cents, w.item.currency, user?.preferred_currency)}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -320,7 +320,7 @@ export default function Profile() {
                     </View>
                     <View style={styles.orderRight}>
                       <Text style={styles.orderAmount}>
-                        {formatPrice(o.amount_cents, o.currency)}
+                        {formatPriceIn(o.amount_cents, o.currency, user?.preferred_currency)}
                       </Text>
                       <View
                         style={[
