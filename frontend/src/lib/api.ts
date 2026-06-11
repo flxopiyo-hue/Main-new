@@ -98,12 +98,66 @@ export interface Profile {
 
 export interface SizeOption {
   label: string;
+  // Tops / jackets / outerwear / sweaters
   chest_cm?: number | null;
+  shoulder_cm?: number | null;
+  sleeve_cm?: number | null;
+  length_cm?: number | null;
+  // Bottoms (trousers / shorts / skirts)
   waist_cm?: number | null;
   hips_cm?: number | null;
-  length_cm?: number | null;
+  inseam_cm?: number | null;
+  rise_cm?: number | null;
+  // Dresses
+  bust_cm?: number | null;
   available_qty: number;
 }
+
+export type DimensionKey =
+  | "chest_cm" | "shoulder_cm" | "sleeve_cm" | "length_cm"
+  | "waist_cm" | "hips_cm" | "inseam_cm" | "rise_cm"
+  | "bust_cm";
+
+export interface SizeGuide {
+  garment_type: string;
+  dimension_keys: DimensionKey[];
+  sizes: { label: string; available_qty: number; dimensions: Record<DimensionKey, number | null> }[];
+  has_dimensions: boolean;
+}
+
+// Which dimensions matter for each garment_type — mirrors the backend.
+// Used in the seller new-item form to render only the relevant inputs.
+export const DIMENSION_KEYS_BY_TYPE: Record<string, DimensionKey[]> = {
+  shirt: ["chest_cm", "shoulder_cm", "sleeve_cm", "length_cm"],
+  vest_under: ["chest_cm", "shoulder_cm", "length_cm"],
+  waistcoat: ["chest_cm", "shoulder_cm", "length_cm"],
+  outerwear: ["chest_cm", "shoulder_cm", "sleeve_cm", "length_cm"],
+  dress: ["bust_cm", "waist_cm", "hips_cm", "length_cm"],
+  skirt: ["waist_cm", "hips_cm", "length_cm"],
+  trousers: ["waist_cm", "hips_cm", "inseam_cm", "rise_cm"],
+  shorts: ["waist_cm", "hips_cm", "inseam_cm"],
+  belt: ["waist_cm", "length_cm"],
+  tie: ["length_cm"],
+  scarf: ["length_cm"],
+  socks: [],
+  shoes: [],
+  hat: [],
+  bag: [],
+  jewelry: [],
+  other: [],
+};
+
+export const DIMENSION_LABELS: Record<DimensionKey, string> = {
+  chest_cm: "Chest",
+  shoulder_cm: "Shoulder",
+  sleeve_cm: "Sleeve",
+  length_cm: "Length",
+  waist_cm: "Waist",
+  hips_cm: "Hips",
+  inseam_cm: "Inseam",
+  rise_cm: "Rise",
+  bust_cm: "Bust",
+};
 
 export interface ColorOption {
   name: string;
@@ -496,6 +550,7 @@ export const api = {
     request<ConnectStatus>("/seller/connect/setup", { method: "POST", body }),
   patchItem: (id: string, body: { sizes?: SizeOption[] }) =>
     request<Item>(`/items/${id}`, { method: "PATCH", body }),
+  itemSizeGuide: (id: string) => request<SizeGuide>(`/items/${id}/size-guide`),
 
   // Feed (algorithmic discover)
   feed: () => request<Item[]>("/feed"),

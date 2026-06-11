@@ -15,7 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { AppButton } from "@/src/components/AppButton";
 import { AppInput } from "@/src/components/AppInput";
 import { useToast } from "@/src/components/Toast";
-import { api, Audience, ColorOption, CurrencyCode, SizeOption } from "@/src/lib/api";
+import { api, Audience, ColorOption, CurrencyCode, DIMENSION_KEYS_BY_TYPE, DIMENSION_LABELS, DimensionKey, SizeOption } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
 import { CURRENCIES, parseAmountToCents, priceInputPlaceholder } from "@/src/lib/currency";
 import { dataUriFromBase64, pickImageFromCamera, pickImageFromLibrary } from "@/src/lib/images";
@@ -34,6 +34,17 @@ const KID_SIZE_LABELS = [
   "2T", "3T", "4T",
   "5", "6", "7", "8", "10", "12", "14", "16",
 ];
+
+// Map our seller-facing category to the backend garment_type so we can render
+// only the relevant dimension inputs per size. Falls back to "other" (no dims).
+const CATEGORY_TO_GARMENT_TYPE: Record<string, string> = {
+  shirts: "shirt",
+  dresses: "dress",
+  pants: "trousers",
+  outerwear: "outerwear",
+  shoes: "shoes",
+  accessories: "other",
+};
 const PRESET_COLORS: ColorOption[] = [
   { name: "Black", hex: "#0A0A0A" },
   { name: "White", hex: "#FFFFFF" },
@@ -294,37 +305,43 @@ export default function NewItem() {
             );
           })}
         </View>
-        {Object.values(sizes).map((s) => (
-          <View key={s.label} style={styles.sizeDetail}>
-            <Text style={styles.sizeDetailLabel}>{s.label}</Text>
-            <View style={styles.sizeDetailGrid}>
-              <DimField
-                testID={`new-item-size-${s.label}-chest`}
-                label="Chest"
-                value={s.chest_cm}
-                onChange={(v) => updateSize(s.label, { chest_cm: v })}
-              />
-              <DimField
-                testID={`new-item-size-${s.label}-waist`}
-                label="Waist"
-                value={s.waist_cm}
-                onChange={(v) => updateSize(s.label, { waist_cm: v })}
-              />
-              <DimField
-                testID={`new-item-size-${s.label}-hips`}
-                label="Hips"
-                value={s.hips_cm}
-                onChange={(v) => updateSize(s.label, { hips_cm: v })}
-              />
-              <DimField
-                testID={`new-item-size-${s.label}-qty`}
-                label="Qty"
-                value={s.available_qty}
-                onChange={(v) => updateSize(s.label, { available_qty: v ?? 0 })}
-              />
+        {Object.values(sizes).map((s) => {
+          const gtype = CATEGORY_TO_GARMENT_TYPE[category] ?? "other";
+          const dimKeys = DIMENSION_KEYS_BY_TYPE[gtype] ?? [];
+          return (
+            <View key={s.label} style={styles.sizeDetail}>
+              <View style={styles.sizeDetailHeader}>
+                <Text style={styles.sizeDetailLabel}>{s.label}</Text>
+                {dimKeys.length === 0 ? (
+                  <Text style={styles.sizeDetailHint}>
+                    No body-fit measurements for this category
+                  </Text>
+                ) : null}
+              </View>
+              <View style={styles.sizeDetailGrid}>
+                {dimKeys.map((k) => (
+                  <DimField
+                    key={k}
+                    testID={`new-item-size-${s.label}-${k}`}
+                    label={DIMENSION_LABELS[k]}
+                    value={(s as Record<string, unknown>)[k] as number | undefined}
+                    onChange={(v) =>
+                      updateSize(s.label, { [k]: v } as Partial<SizeOption>)
+                    }
+                  />
+                ))}
+                <DimField
+                  testID={`new-item-size-${s.label}-qty`}
+                  label="Qty"
+                  value={s.available_qty}
+                  onChange={(v) =>
+                    updateSize(s.label, { available_qty: v ?? 0 })
+                  }
+                />
+              </View>
             </View>
-          </View>
-        ))}
+          );
+        })}
 
         <Text style={[tp.caption, styles.label]}>Colors</Text>
         <View style={styles.colorRow}>
@@ -481,13 +498,27 @@ const styles = StyleSheet.create({
   sizeChipLabelInactive: { color: colors.primary },
   sizeChipLabelActive: { color: colors.primaryFg },
   sizeDetail: { marginTop: spacing.md, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border },
+  sizeDetailHeader: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    marginBottom: spacing.sm,
+  },
   sizeDetailLabel: {
     fontFamily: fonts.heading,
     fontSize: 22,
     color: colors.primary,
-    marginBottom: spacing.sm,
   },
-  sizeDetailGrid: { flexDirection: "row", gap: spacing.md },
+  sizeDetailHint: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    letterSpacing: 0.6,
+    color: colors.mutedFg,
+    textTransform: "uppercase",
+    flexShrink: 1,
+    textAlign: "right",
+  },
+  sizeDetailGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md, rowGap: spacing.md },
   colorRow: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
   colorSwatch: { width: 40, height: 40, borderWidth: 1, borderColor: colors.border },
   colorSwatchActive: { borderColor: colors.primary, borderWidth: 2 },

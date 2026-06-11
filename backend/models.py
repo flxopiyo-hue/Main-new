@@ -421,11 +421,52 @@ class AddressOut(BaseModel):
 # ---------------------------------------------------------------------------
 class SizeOption(BaseModel):
     label: str  # "S", "M", "L" ...
+    # --- Tops / jackets / outerwear / sweaters ---
     chest_cm: Optional[float] = None
+    shoulder_cm: Optional[float] = None
+    sleeve_cm: Optional[float] = None
+    length_cm: Optional[float] = None
+    # --- Bottoms (trousers / shorts / skirts) ---
     waist_cm: Optional[float] = None
     hips_cm: Optional[float] = None
-    length_cm: Optional[float] = None
+    inseam_cm: Optional[float] = None
+    rise_cm: Optional[float] = None
+    # --- Dresses ---
+    bust_cm: Optional[float] = None
+    # --- Inventory ---
     available_qty: int = 0
+
+
+# Which physical measurements are meaningful for each garment_type. Used by
+# the seller upload form (decides which fields to render), the size-guide
+# sheet, and the Fit Match Score algorithm in iteration 12.
+DIMENSION_KEYS_BY_TYPE: Dict[str, List[str]] = {
+    # Tops & layering
+    "shirt": ["chest_cm", "shoulder_cm", "sleeve_cm", "length_cm"],
+    "vest_under": ["chest_cm", "shoulder_cm", "length_cm"],
+    "waistcoat": ["chest_cm", "shoulder_cm", "length_cm"],
+    "outerwear": ["chest_cm", "shoulder_cm", "sleeve_cm", "length_cm"],
+    # Dresses
+    "dress": ["bust_cm", "waist_cm", "hips_cm", "length_cm"],
+    "skirt": ["waist_cm", "hips_cm", "length_cm"],
+    # Bottoms
+    "trousers": ["waist_cm", "hips_cm", "inseam_cm", "rise_cm"],
+    "shorts": ["waist_cm", "hips_cm", "inseam_cm"],
+    # Accessories — no body-fit dimensions (size still optional).
+    "belt": ["waist_cm", "length_cm"],
+    "tie": ["length_cm"],
+    "scarf": ["length_cm"],
+    "socks": [],
+    "shoes": [],  # uses size labels (EU/US) — no per-size dimensions for now
+    "hat": [],
+    "bag": [],
+    "jewelry": [],
+    "other": [],
+}
+
+
+def dimension_keys_for(garment_type: Optional[str]) -> List[str]:
+    return DIMENSION_KEYS_BY_TYPE.get(garment_type or "other", [])
 
 
 class ColorOption(BaseModel):

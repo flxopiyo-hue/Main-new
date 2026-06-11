@@ -137,6 +137,38 @@ async def get_item(
     return item_to_out(doc)
 
 
+@router.get("/items/{item_id}/size-guide")
+async def item_size_guide(item_id: str) -> Dict[str, Any]:
+    """Return the per-size physical dimensions in a structured form for the
+    Size Guide sheet on Item Detail."""
+    from models import dimension_keys_for, infer_garment_type
+
+    doc = await db.items.find_one({"id": item_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Item not found")
+    gtype = doc.get("garment_type") or infer_garment_type(doc)
+    keys = dimension_keys_for(gtype)
+    sizes = doc.get("sizes", []) or []
+    rows: List[Dict[str, Any]] = []
+    for s in sizes:
+        rows.append(
+            {
+                "label": s.get("label", ""),
+                "available_qty": int(s.get("available_qty", 0)),
+                "dimensions": {k: s.get(k) for k in keys},
+            }
+        )
+    has_any_dims = any(
+        any(r["dimensions"].get(k) is not None for k in keys) for r in rows
+    )
+    return {
+        "garment_type": gtype,
+        "dimension_keys": keys,
+        "sizes": rows,
+        "has_dimensions": has_any_dims,
+    }
+
+
 @router.delete("/items/{item_id}")
 async def delete_item(
     item_id: str, user: Dict[str, Any] = Depends(get_current_user)
