@@ -293,6 +293,31 @@ frontend:
 agent_communication:
   - agent: "main"
     message: |
+      Iteration 12 + 13 implement strict RBAC, role-toggle UX, and the new
+      seller fulfillment workflow.
+
+      • Backend: `User.token_version` counter + JWT `tv` claim → role
+        toggles atomically invalidate every previously-issued JWT.
+      • `POST /auth/login` accepts `as_role`; if a buyer requests seller
+        mode but has no company_name, response carries
+        `needs_seller_onboarding=true` and the client routes to a 1-screen
+        onboarding form (which then calls /user/toggle-role to commit).
+      • `POST /user/toggle-role` swaps buyer↔seller, bumps token_version,
+        returns a fresh JWT + updated user. Admins are immune.
+      • `POST /seller/orders/{id}/fulfillment` drives a state machine:
+        paid → in_fulfillment → shipped (tracking required) → delivered.
+      • Frontend: dedicated `(seller)` route group with exactly 4 tabs
+        (Inventory · Analytics · Orders · Settings); buyer route group
+        keeps exactly 4 tabs (Discover · Try On · Atelier · Profile).
+        Login screen has an "I am Shopping/Selling" chip pair; buyer
+        Profile has a Switch-to-Seller card; seller Settings has a
+        Switch-to-Buyer card.
+      • Legacy URLs `/inventory`, `/add-item`, `/payouts`, `/seller/*`
+        bounce to the new locations.
+      • Backend: 14/14 passing (iteration 12) + 1/1 regression (iter 13).
+        Frontend: tab bar isolation confirmed clean on both sides.
+  - agent: "main"
+    message: |
       Iteration 11 implements the dedicated Seller Portal refactor.
       Sellers no longer see buyer tabs (Discover/Try-On/Atelier). The seller
       tab bar is INVENTORY · ADD ITEM · PAYOUTS · PROFILE. Backend gained
