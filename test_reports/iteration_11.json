@@ -1,0 +1,48 @@
+{
+  "summary": "Iteration 11 — Drape Seller Portal end-to-end. Backend: 14/14 pytest passing (auth for seller+buyer, /seller/analytics platform_fee_bps=1000, NEW /seller/payouts shape+totals+RBAC 403-for-buyer + 401-for-anon, POST /items echoes subcategory, GET /items/{id} persists subcategory, size-guide unchanged, 169 KES → 16.90 fee / 152.10 net math). Frontend: every spec acceptance test PASSED — seller login → /inventory, seller-only tab bar (INVENTORY · ADD ITEM · PAYOUTS · PROFILE) with zero buyer-tab leakage; inventory KPI cards (Gross Revenue / Platform Fees Deducted / 10% per transaction / Total Orders) render correctly with live data (KSh 676 gross, KSh 68 fee, 4 orders); /seller/new-item deep-link bounces to /add-item; wizard stepper (1 BASICS · 2 TAXONOMY · 3 SIZING) is visible, NEXT button is disabled (opacity=0.45, aria-disabled=true) until photo+title+price are all valid (verified: filling only title+price keeps it disabled); /payouts shows green CONNECTED pill, EDIT METHOD, PAYMENT TERMS 10%, lifetime gross/fees/net totals; buyer login redirects to /(tabs) with buyer-only tabs (DISCOVER · TRY ON · ATELIER · PROFILE) and zero seller-tab leakage; buyer Discover loads with items. Only minor UX nit observed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Inventory active listings price display",
+        "issue": "Seller portal /inventory listing cards render prices with a '$' prefix (e.g. 'Selvedge Denim $ 169.00') while the KPI tiles aggregate in KSh ('KSh 676'). The listings table appears to ignore the per-item currency code and always shows '$'. Buyer-side Discover correctly localises (KSh 29,656). Minor UX inconsistency only — does not block the spec. Reference: /app/frontend/app/(tabs)/inventory.tsx price-rendering helper.",
+        "testID": "n/a",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration11_seller_portal.py",
+    "/app/test_reports/pytest/iteration11_results.xml"
+  ],
+  "action_items": [
+    "(Optional, LOW) Normalize the inventory listings price formatting in /app/frontend/app/(tabs)/inventory.tsx to use the item's `currency` field (same helper Discover uses) instead of a hard-coded '$' so KES-listed pieces don't read as USD."
+  ],
+  "critical_code_review_comments": [
+    "/app/backend/routers/seller.py:188-243 — GET /seller/payouts is clean: enforces require_role('seller'), uses stored platform_fee_cents/seller_net_cents where present and falls back to (amount * PLATFORM_FEE_BPS)//10000 so historical orders with missing fields still settle to the 10% take. Totals are summed in a single pass — verified totals equal sum(rows) in test_payouts_totals_consistent.",
+    "/app/backend/routers/items.py:30-62 — POST /items persists `subcategory` with whitespace stripped and empties coerced to None. Verified via Create→GET roundtrip (TestItemSubcategory).",
+    "/app/backend/models.py — ItemIn.subcategory is Optional[str] with max_length=40, and ItemOut.subcategory is Optional[str] (defaults to None). Pydantic happily echoes the field; no schema gap.",
+    "/app/backend/core/config.py:31 — PLATFORM_FEE_BPS=1000 (10%). All three call sites (analytics, payouts, ConnectStatusOut) read from this single source of truth.",
+    "/app/frontend/app/(tabs)/_layout.tsx — Role-aware tab gating via `href: isSeller ? null : ...` is correct; verified at runtime that buyer tabs disappear for the seller and vice-versa. Tab labels rendered with uppercase letterSpacing (theme caption) match the spec.",
+    "/app/frontend/app/index.tsx and (auth)/login.tsx both branch on user.role for redirect (admin→/admin, seller→/inventory, else→/(tabs)). Consistent.",
+    "/app/frontend/app/(tabs)/add-item.tsx — Validation gate (`step1Valid` requires image+name+positive price) is wired to the NEXT button's `disabled` prop AND the `footerBtnDisabled` opacity style, so the button is both visually (opacity 0.45) and functionally disabled until valid. Confirmed at runtime.",
+    "/app/frontend/app/seller/new-item.tsx is a thin <Redirect href='/add-item' /> — deep-link no longer 404s. Verified."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration11_seller_portal.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (14/14)",
+    "frontend": "100% spec, 1 minor non-blocking price-formatting nit"
+  },
+  "seed_data_creation": "Tests create two ephemeral seller items (TEST_Polo Subcategory, TEST_NoSubcat) and DELETE them in teardown_class. No persistent data left behind.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend regression: `pytest backend/tests/test_iteration11_seller_portal.py -v`. Frontend selectors confirmed working: login-email-input, login-password-input, login-submit-btn, wizard-stepper, wizard-next-btn (uses aria-disabled and opacity for disabled state), wizard-name-input, wizard-price-input, wizard-desc-input, wizard-camera-btn, wizard-library-btn. Demo seller (atelier@aurafit.demo) has 6 seeded items + 4 paid orders → KSh 676 gross / KSh 68 fee / KSh 608 net on /payouts. Deep-link /seller/new-item correctly bounces to /add-item. Buyer/seller tab leakage was specifically asserted in both directions and is clean."
+}

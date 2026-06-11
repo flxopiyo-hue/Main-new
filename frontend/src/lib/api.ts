@@ -171,6 +171,7 @@ export interface Item {
   name: string;
   description: string;
   category: string;
+  subcategory?: string | null;
   price_cents: number;
   currency: CurrencyCode;
   garment_type: GarmentType;
@@ -180,6 +181,44 @@ export interface Item {
   audience: Audience;
   created_at: string;
 }
+
+export interface PayoutRow {
+  id: string;
+  item_id?: string;
+  item_name: string;
+  size: string;
+  color?: string | null;
+  currency: CurrencyCode;
+  amount_cents: number;
+  platform_fee_cents: number;
+  seller_net_cents: number;
+  status: string;
+  created_at: string;
+}
+
+export interface PayoutHistory {
+  platform_fee_bps: number;
+  connect_status: ConnectStatusCode;
+  payouts: PayoutRow[];
+  totals: {
+    count: number;
+    gross_cents: number;
+    platform_fee_cents: number;
+    net_cents: number;
+  };
+}
+
+// Curated subcategory taxonomy — shown as the Subcategory dropdown in the
+// seller upload wizard. Mirrors the buyer-facing taxonomy so search/filter
+// stays consistent. `null` means the category has no subcategories.
+export const SUBCATEGORIES_BY_CATEGORY: Record<string, string[]> = {
+  shirts: ["T-shirt", "Button-up", "Polo", "Knit", "Blouse"],
+  dresses: ["Mini", "Midi", "Maxi", "Gown"],
+  pants: ["Jeans", "Chinos", "Trousers", "Joggers", "Leggings"],
+  outerwear: ["Blazer", "Jacket", "Coat", "Vest/Waistcoat"],
+  shoes: ["Sneakers", "Heels", "Boots", "Flats"],
+  accessories: ["Belt", "Hat", "Bag", "Scarf", "Jewelry"],
+};
 
 export interface TryOnImageOut {
   angle: TryOnAngle;
@@ -484,6 +523,7 @@ export const api = {
     name: string;
     description: string;
     category: string;
+    subcategory?: string;
     price_cents: number;
     currency?: CurrencyCode;
     image_b64: string;
@@ -541,6 +581,7 @@ export const api = {
     const suffix = qs.toString();
     return request<Order[]>(`/seller/orders${suffix ? `?${suffix}` : ""}`);
   },
+  sellerPayouts: () => request<PayoutHistory>("/seller/payouts"),
   updatePayoutDetails: (body: BankDetails) =>
     request<User>("/seller/payout-details", { method: "PATCH", body }),
   updateSellerProfile: (body: { company_name?: string; location?: Location }) =>

@@ -48,6 +48,7 @@ async def create_item(
         "name": body.name,
         "description": body.description,
         "category": body.category,
+        "subcategory": (body.subcategory or "").strip() or None,
         "price_cents": body.price_cents,
         "currency": listing_currency,
         "garment_type": garment_type,

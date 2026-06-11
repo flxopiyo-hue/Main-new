@@ -28,6 +28,8 @@ export default function Login() {
       const u = await login(email.trim(), password);
       if (u.role === "admin") {
         router.replace("/admin");
+      } else if (u.role === "seller") {
+        router.replace("/inventory");
       } else {
         router.replace("/(tabs)");
       }

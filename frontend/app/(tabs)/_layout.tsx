@@ -7,6 +7,18 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/src/lib/auth";
 import { colors, fonts } from "@/src/lib/theme";
 
+/**
+ * Role-aware tab bar.
+ *
+ * Buyer  → Discover · Try On · Atelier (saved/queue) · Profile
+ * Seller → Inventory · Add Item · Payouts · Profile
+ *          (sellers never see Discover/Try-On — they're for shoppers.)
+ *
+ * We always declare every Tabs.Screen so expo-router stays happy with the
+ * underlying files; tabs that aren't relevant for the current role are
+ * hidden via `href: null` so they don't appear in the bottom bar and
+ * deep-links to them just no-op silently.
+ */
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
@@ -50,23 +62,58 @@ export default function TabsLayout() {
         },
         tabBarIcon: ({ color, focused }) => {
           let icon: keyof typeof Feather.glyphMap = "grid";
+          // Buyer tabs
           if (route.name === "index") icon = "compass";
           if (route.name === "tryon") icon = "camera";
           if (route.name === "atelier") icon = "package";
+          // Seller tabs
+          if (route.name === "inventory") icon = "grid";
+          if (route.name === "add-item") icon = "plus-square";
+          if (route.name === "payouts") icon = "credit-card";
+          // Shared
           if (route.name === "profile") icon = "user";
           return <Feather name={icon} size={focused ? 22 : 20} color={color} />;
         },
       })}
     >
-      <Tabs.Screen name="index" options={{ title: "Discover" }} />
-      <Tabs.Screen name="tryon" options={{ title: "Try On" }} />
+      {/* --- Buyer tabs (hidden when seller) --- */}
+      <Tabs.Screen
+        name="index"
+        options={{ title: "Discover", href: isSeller ? null : "/" }}
+      />
+      <Tabs.Screen
+        name="tryon"
+        options={{ title: "Try On", href: isSeller ? null : "/tryon" }}
+      />
       <Tabs.Screen
         name="atelier"
+        options={{ title: "Atelier", href: isSeller ? null : "/atelier" }}
+      />
+
+      {/* --- Seller tabs (hidden when buyer/admin) --- */}
+      <Tabs.Screen
+        name="inventory"
         options={{
-          title: "Atelier",
-          href: isSeller ? "/atelier" : null,
+          title: "Inventory",
+          href: isSeller ? "/inventory" : null,
         }}
       />
+      <Tabs.Screen
+        name="add-item"
+        options={{
+          title: "Add Item",
+          href: isSeller ? "/add-item" : null,
+        }}
+      />
+      <Tabs.Screen
+        name="payouts"
+        options={{
+          title: "Payouts",
+          href: isSeller ? "/payouts" : null,
+        }}
+      />
+
+      {/* --- Shared --- */}
       <Tabs.Screen name="profile" options={{ title: "Profile" }} />
     </Tabs>
   );

@@ -28,7 +28,7 @@ STRIPE_API_KEY: str = os.environ.get("STRIPE_API_KEY", "")
 # ---- Domain constants ----------------------------------------------------
 NANO_BANANA_MODEL: str = "gemini-3.1-flash-image-preview"
 VISION_MODEL: str = "gemini-2.5-flash"
-PLATFORM_FEE_BPS: int = 800  # 8% take rate
+PLATFORM_FEE_BPS: int = 1000  # 10% take rate (per seller portal spec)
 MAX_TRYON_ANGLES: int = 4
 DEFAULT_CURRENCY: str = "KES"  # Kenyan Shilling — product originates in Kenya
 

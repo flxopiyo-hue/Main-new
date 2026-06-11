@@ -181,6 +181,70 @@ async def seller_orders(
 
 
 # ---------------------------------------------------------------------------
+# Payout transaction history — one row per paid order, per the buyer's request
+# for "most accurate" granularity (no weekly aggregation).
+# ---------------------------------------------------------------------------
+@router.get("/seller/payouts")
+async def seller_payouts(
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Return every paid order for this seller as a payout transaction row.
+
+    Each row carries gross / platform_fee / net (using stored fields where
+    available so historical fee changes don't retroactively rewrite numbers).
+    Summary totals at the top mirror what the seller would actually see paid
+    out, in their listing currency.
+    """
+    await require_role("seller", user)
+    docs = (
+        await db.orders.find(
+            {"seller_id": user["id"], "status": "paid"}, {"_id": 0}
+        )
+        .sort("created_at", -1)
+        .to_list(500)
+    )
+    rows: List[Dict[str, Any]] = []
+    gross_total = 0
+    fee_total = 0
+    net_total = 0
+    for d in docs:
+        amount = int(d.get("amount_cents", 0))
+        fee = int(d.get("platform_fee_cents") or (amount * PLATFORM_FEE_BPS) // 10000)
+        net = int(d.get("seller_net_cents") or max(amount - fee, 0))
+        gross_total += amount
+        fee_total += fee
+        net_total += net
+        rows.append(
+            {
+                "id": d["id"],
+                "item_id": d.get("item_id"),
+                "item_name": d.get("item_name", ""),
+                "size": d.get("size", ""),
+                "color": d.get("color"),
+                "currency": d.get("currency", "USD"),
+                "amount_cents": amount,
+                "platform_fee_cents": fee,
+                "seller_net_cents": net,
+                "status": d.get("status", "paid"),
+                # Mirror the order created_at so the UI can render an ISO date.
+                "created_at": d["created_at"],
+            }
+        )
+    return {
+        "platform_fee_bps": PLATFORM_FEE_BPS,
+        "connect_status": user.get("connect_status", "unstarted"),
+        "payouts": rows,
+        "totals": {
+            "count": len(rows),
+            "gross_cents": gross_total,
+            "platform_fee_cents": fee_total,
+            "net_cents": net_total,
+        },
+    }
+
+
+
+# ---------------------------------------------------------------------------
 # Payout details (bank + M-Pesa)
 # ---------------------------------------------------------------------------
 @router.patch("/seller/payout-details", response_model=UserOut)

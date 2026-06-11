@@ -478,6 +478,7 @@ class ItemIn(BaseModel):
     name: str
     description: str = ""
     category: Literal["shirts", "dresses", "pants", "outerwear", "shoes", "accessories"]
+    subcategory: Optional[str] = Field(default=None, max_length=40)
     price_cents: int = Field(ge=0)
     # When omitted, server falls back to the seller's preferred_currency.
     currency: Optional[Currency] = None
@@ -496,6 +497,7 @@ class ItemOut(BaseModel):
     name: str
     description: str
     category: str
+    subcategory: Optional[str] = None
     price_cents: int
     currency: Currency = "USD"  # listing currency
     garment_type: GarmentType = "other"  # layered try-on classification
@@ -740,6 +742,7 @@ def item_to_out(doc: Dict[str, Any]) -> ItemOut:
         name=doc["name"],
         description=doc.get("description", ""),
         category=doc["category"],
+        subcategory=doc.get("subcategory"),
         price_cents=doc["price_cents"],
         currency=doc.get("currency", "USD"),
         garment_type=gtype,
