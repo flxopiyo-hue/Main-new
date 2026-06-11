@@ -69,11 +69,6 @@ export default function BuyerTabsLayout() {
       <Tabs.Screen name="tryon" options={{ title: "Try On" }} />
       <Tabs.Screen name="atelier" options={{ title: "Atelier" }} />
       <Tabs.Screen name="profile" options={{ title: "Profile" }} />
-      {/* Legacy redirect files — keep them hidden from the buyer tab bar.
-          They exist purely to bounce stale deep-links into /(seller). */}
-      <Tabs.Screen name="inventory" options={{ href: null }} />
-      <Tabs.Screen name="add-item" options={{ href: null }} />
-      <Tabs.Screen name="payouts" options={{ href: null }} />
     </Tabs>
   );
 }
