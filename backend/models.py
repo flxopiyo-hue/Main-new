@@ -592,7 +592,9 @@ class TryOnImage(BaseModel):
 
 class TryOnOut(BaseModel):
     id: str
-    item_id: str
+    # BYO (Bring-Your-Own) try-ons have no marketplace item attached, so
+    # this field is nullable. Catalog try-ons still always carry an id.
+    item_id: Optional[str] = None
     # Backward-compat: first angle's image (always "front" when present, else first).
     result_image_b64: str
     # New: every generated angle.

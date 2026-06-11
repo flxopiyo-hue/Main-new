@@ -743,7 +743,7 @@ async def tryon_history(
         out.append(
             TryOnOut(
                 id=d["id"],
-                item_id=d["item_id"],
+                item_id=d.get("item_id"),
                 result_image_b64=d.get("result_image_b64", imgs[0].image_b64 if imgs else ""),
                 images=imgs,
                 fit_summary=d.get("fit_summary"),

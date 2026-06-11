@@ -35,7 +35,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useToast } from "@/src/components/Toast";
-import { api, Item, SellerAnalytics } from "@/src/lib/api";
+import { api, Item, SellerAnalytics, CATEGORY_LABELS } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
 import { formatPrice, formatPriceIn } from "@/src/lib/currency";
 import { dataUriFromBase64 } from "@/src/lib/images";
@@ -298,7 +298,7 @@ function ListingCard({
       />
       <View style={{ flex: 1 }}>
         <Text style={tp.caption} numberOfLines={1}>
-          {item.category.toUpperCase()}
+          {(CATEGORY_LABELS[item.category] ?? item.category).toUpperCase()}
           {item.subcategory ? ` · ${item.subcategory}` : ""}
         </Text>
         <Text style={styles.cardName} numberOfLines={2}>
@@ -372,7 +372,7 @@ function TableView({
               {item.name}
             </Text>
             <Text style={[tp.bodyMuted, { fontSize: 11 }]} numberOfLines={1}>
-              {item.category}
+              {CATEGORY_LABELS[item.category] ?? item.category}
               {item.subcategory ? ` · ${item.subcategory}` : ""}
             </Text>
           </View>

@@ -215,16 +215,64 @@ export interface PayoutHistory {
   };
 }
 
+// Display-name remap so sellers see industry-standard category names
+// (Tops/Bottoms/...) while the backend keeps stable enum values.
+export const CATEGORY_LABELS: Record<string, string> = {
+  shirts: "Tops",
+  dresses: "Dresses",
+  pants: "Bottoms",
+  outerwear: "Outerwear",
+  shoes: "Shoes",
+  accessories: "Accessories",
+};
+
 // Curated subcategory taxonomy — shown as the Subcategory dropdown in the
 // seller upload wizard. Mirrors the buyer-facing taxonomy so search/filter
-// stays consistent. `null` means the category has no subcategories.
+// stays consistent. Expanded in iter 14 to cover more real-world styles.
 export const SUBCATEGORIES_BY_CATEGORY: Record<string, string[]> = {
-  shirts: ["T-shirt", "Button-up", "Polo", "Knit", "Blouse"],
-  dresses: ["Mini", "Midi", "Maxi", "Gown"],
-  pants: ["Jeans", "Chinos", "Trousers", "Joggers", "Leggings"],
-  outerwear: ["Blazer", "Jacket", "Coat", "Vest/Waistcoat"],
-  shoes: ["Sneakers", "Heels", "Boots", "Flats"],
-  accessories: ["Belt", "Hat", "Bag", "Scarf", "Jewelry"],
+  shirts: [
+    "T-shirt",
+    "Button-up",
+    "Polo",
+    "Knit",
+    "Blouse",
+    "Tank top",
+    "Hoodie",
+    "Sweatshirt",
+  ],
+  dresses: ["Mini", "Midi", "Maxi", "Gown", "Skirt"],
+  pants: [
+    "Jeans",
+    "Chinos",
+    "Trousers",
+    "Joggers",
+    "Leggings",
+    "Shorts",
+    "Cargo",
+  ],
+  outerwear: [
+    "Blazer",
+    "Jacket",
+    "Coat",
+    "Vest/Waistcoat",
+    "Parka",
+    "Trench",
+    "Bomber",
+    "Puffer",
+  ],
+  shoes: ["Sneakers", "Heels", "Boots", "Flats", "Sandals", "Loafers"],
+  accessories: ["Belt", "Hat", "Bag", "Scarf", "Jewelry", "Tie", "Watch", "Sunglasses"],
+};
+
+// Audience → categories the seller can pick from. Mirrors what shoppers
+// actually expect to see on each side of the marketplace. Men/Unisex hide
+// dresses (rarely listed for men); Women/Kids see everything. Sellers
+// can still find any category by switching audience.
+export const CATEGORIES_BY_AUDIENCE: Record<string, string[]> = {
+  women: ["shirts", "dresses", "pants", "outerwear", "shoes", "accessories"],
+  men: ["shirts", "pants", "outerwear", "shoes", "accessories"],
+  unisex: ["shirts", "pants", "outerwear", "shoes", "accessories"],
+  kids: ["shirts", "dresses", "pants", "outerwear", "shoes", "accessories"],
 };
 
 export interface TryOnImageOut {

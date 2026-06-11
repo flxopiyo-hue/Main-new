@@ -35,6 +35,8 @@ import { useToast } from "@/src/components/Toast";
 import {
   api,
   Audience,
+  CATEGORIES_BY_AUDIENCE,
+  CATEGORY_LABELS,
   ColorOption,
   CurrencyCode,
   DIMENSION_KEYS_BY_TYPE,
@@ -338,7 +340,21 @@ export default function AddItem() {
             audience={audience}
             category={category}
             subcategory={subcategory}
-            onChangeAudience={setAudience}
+            onChangeAudience={(a) => {
+              setAudience(a);
+              // If the currently-selected category isn't valid for the new
+              // audience (e.g. "dresses" was picked but the seller just
+              // switched to "men"), snap to the first available category
+              // and clear subcategory + sizes. This guarantees the seller
+              // never lands on an option they can't actually save.
+              const allowed = CATEGORIES_BY_AUDIENCE[a] ?? CATEGORIES;
+              if (!allowed.includes(category)) {
+                const next = (allowed[0] ?? "shirts") as Category;
+                setCategory(next);
+                setSubcategory(null);
+                setSizes({});
+              }
+            }}
             onChangeCategory={(c) => {
               setCategory(c);
               setSubcategory(null);
@@ -615,6 +631,11 @@ function StepTaxonomy({
   onChangeSubcategory,
 }: StepTaxonomyProps) {
   const subs = SUBCATEGORIES_BY_CATEGORY[category] ?? [];
+  // Restrict the visible categories to those that make sense for the
+  // chosen audience. Sellers who pick "Men" don't see Dresses (and vice
+  // versa). The parent component resets `category` when this list
+  // changes, so we never end up showing an option that isn't selectable.
+  const visibleCategories = (CATEGORIES_BY_AUDIENCE[audience] ?? CATEGORIES) as readonly Category[];
 
   return (
     <View>
@@ -644,9 +665,14 @@ function StepTaxonomy({
         ))}
       </View>
 
-      <Text style={[tp.caption, styles.label]}>Category</Text>
+      <Text style={[tp.caption, styles.label]}>
+        Category{" "}
+        <Text style={{ color: colors.mutedFg, textTransform: "none" }}>
+          ({visibleCategories.length} options for {audience})
+        </Text>
+      </Text>
       <View style={styles.catRow}>
-        {CATEGORIES.map((c) => (
+        {visibleCategories.map((c) => (
           <TouchableOpacity
             key={c}
             testID={`wizard-cat-${c}`}
@@ -659,7 +685,7 @@ function StepTaxonomy({
                 category === c ? styles.catLabelActive : styles.catLabelInactive,
               ]}
             >
-              {c}
+              {CATEGORY_LABELS[c] ?? c}
             </Text>
           </TouchableOpacity>
         ))}
@@ -667,7 +693,9 @@ function StepTaxonomy({
 
       <Text style={[tp.caption, styles.label]}>
         Subcategory{" "}
-        <Text style={{ color: colors.mutedFg, textTransform: "none" }}>(optional)</Text>
+        <Text style={{ color: colors.mutedFg, textTransform: "none" }}>
+          (helps shoppers find this {(CATEGORY_LABELS[category] ?? category).toLowerCase()})
+        </Text>
       </Text>
       {subs.length === 0 ? (
         <Text style={[tp.bodyMuted, { marginTop: 4 }]}>
