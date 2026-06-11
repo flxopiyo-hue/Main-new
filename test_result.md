@@ -293,6 +293,20 @@ frontend:
 agent_communication:
   - agent: "main"
     message: |
+      Iteration 11 implements the dedicated Seller Portal refactor.
+      Sellers no longer see buyer tabs (Discover/Try-On/Atelier). The seller
+      tab bar is INVENTORY · ADD ITEM · PAYOUTS · PROFILE. Backend gained
+      `GET /api/seller/payouts` (per-order payout rows + totals) and the
+      platform fee is now 10% (PLATFORM_FEE_BPS=1000). Item model carries
+      an optional `subcategory` field. New screens are responsive: cards on
+      narrow phones, full tables on tablets/web (>= 720 px).
+      Frontend follow-up nit fixed after testing: inventory listings now
+      use formatPriceIn so they're displayed in the seller's preferred
+      currency (with the original listing price shown as a small hint).
+      Test credentials unchanged from iter 7 — see
+      /app/memory/test_credentials.md.
+  - agent: "main"
+    message: |
       Iteration 7 implements the "Seller signup overhaul + Admin role" feature.
       Test credentials (in /app/memory/test_credentials.md):
         - admin@drape.app / drape-admin-2026   (admin)

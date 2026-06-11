@@ -37,7 +37,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useToast } from "@/src/components/Toast";
 import { api, Item, SellerAnalytics } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
-import { formatPrice } from "@/src/lib/currency";
+import { formatPrice, formatPriceIn } from "@/src/lib/currency";
 import { dataUriFromBase64 } from "@/src/lib/images";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
@@ -223,11 +223,16 @@ export default function Inventory() {
               </TouchableOpacity>
             </View>
           ) : isWide ? (
-            <TableView rows={rows} onDelete={remove} />
+            <TableView rows={rows} onDelete={remove} dispCurrency={dispCurrency} />
           ) : (
             <View>
               {rows.map((r) => (
-                <ListingCard key={r.item.id} row={r} onDelete={remove} />
+                <ListingCard
+                  key={r.item.id}
+                  row={r}
+                  onDelete={remove}
+                  dispCurrency={dispCurrency}
+                />
               ))}
             </View>
           )}
@@ -273,9 +278,11 @@ function KpiCard({
 function ListingCard({
   row,
   onDelete,
+  dispCurrency,
 }: {
   row: Row;
   onDelete: (id: string, name: string) => void;
+  dispCurrency: string;
 }) {
   const { item } = row;
   return (
@@ -298,7 +305,12 @@ function ListingCard({
           {item.name}
         </Text>
         <Text style={styles.cardPrice}>
-          {formatPrice(item.price_cents, item.currency)}
+          {formatPriceIn(item.price_cents, item.currency, dispCurrency)}
+          {item.currency !== dispCurrency ? (
+            <Text style={[tp.bodyMuted, { fontSize: 11 }]}>
+              {"  ·  "}listed {formatPrice(item.price_cents, item.currency)}
+            </Text>
+          ) : null}
         </Text>
         <View style={styles.cardMeta}>
           <Stat label="Stock" value={row.total_qty} testID={`stock-${item.id}`} />
@@ -321,9 +333,11 @@ function ListingCard({
 function TableView({
   rows,
   onDelete,
+  dispCurrency,
 }: {
   rows: Row[];
   onDelete: (id: string, name: string) => void;
+  dispCurrency: string;
 }) {
   return (
     <View style={styles.table} testID="inventory-table">
@@ -363,7 +377,7 @@ function TableView({
             </Text>
           </View>
           <Text style={[styles.cellPrice, styles.cellText]}>
-            {formatPrice(item.price_cents, item.currency)}
+            {formatPriceIn(item.price_cents, item.currency, dispCurrency)}
           </Text>
           <Text style={[styles.cellNumber, styles.cellText]}>{total_qty}</Text>
           <Text style={[styles.cellNumber, styles.cellText]}>{views}</Text>
