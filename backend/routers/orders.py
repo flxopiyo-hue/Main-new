@@ -33,6 +33,11 @@ def _order_doc_to_out(d: Dict[str, Any]) -> OrderOut:
         fit_feedback=d.get("fit_feedback"),
         session_id=d["session_id"],
         created_at=d["created_at"],
+        tracking_number=d.get("tracking_number"),
+        tracking_url=d.get("tracking_url"),
+        shipped_at=d.get("shipped_at"),
+        delivered_at=d.get("delivered_at"),
+        fulfillment_note=d.get("fulfillment_note"),
     )
 
 
@@ -109,6 +114,11 @@ async def _order_doc_to_detail(d: Dict[str, Any]) -> OrderDetailOut:
         fit_feedback_comment=d.get("fit_feedback_comment"),
         seller=seller_card,
         shipping_address=d.get("shipping_address"),
+        tracking_number=d.get("tracking_number"),
+        tracking_url=d.get("tracking_url"),
+        shipped_at=d.get("shipped_at"),
+        delivered_at=d.get("delivered_at"),
+        fulfillment_note=d.get("fulfillment_note"),
     )
 
 

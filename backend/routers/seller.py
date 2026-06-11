@@ -31,6 +31,7 @@ from core.db import db
 from core.security import get_current_user, require_role
 from models import (
     ConnectStatusOut,
+    FulfillmentIn,
     ItemAnalytics,
     OrderOut,
     PayoutDetailsIn,
@@ -421,3 +422,70 @@ async def connect_status(
         onboarding_url=None,
         note=note,
     )
+
+
+# ---------------------------------------------------------------------------
+# Fulfillment workflow
+# ---------------------------------------------------------------------------
+# State machine (any allowed transition; we never auto-revert):
+#   paid               → in_fulfillment (action="acknowledge")
+#   paid|in_fulfillment → shipped       (action="ship",      requires tracking_number)
+#   shipped            → delivered      (action="deliver")
+# ---------------------------------------------------------------------------
+@router.post("/seller/orders/{order_id}/fulfillment")
+async def update_fulfillment(
+    order_id: str,
+    body: FulfillmentIn,
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    from datetime import datetime as _dt, timezone as _tz
+
+    await require_role("seller", user)
+    order = await db.orders.find_one({"id": order_id, "seller_id": user["id"]})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    current = order.get("status") or "pending"
+    update: Dict[str, Any] = {}
+    now = _dt.now(_tz.utc)
+
+    if body.action == "acknowledge":
+        if current != "paid":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot acknowledge from status '{current}'",
+            )
+        update["status"] = "in_fulfillment"
+        update["acknowledged_at"] = now
+    elif body.action == "ship":
+        if current not in ("paid", "in_fulfillment"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot ship from status '{current}'",
+            )
+        if not body.tracking_number or not body.tracking_number.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="A tracking number is required to mark an order as shipped",
+            )
+        update["status"] = "shipped"
+        update["tracking_number"] = body.tracking_number.strip()
+        if body.tracking_url:
+            update["tracking_url"] = body.tracking_url.strip()
+        update["shipped_at"] = now
+    elif body.action == "deliver":
+        if current != "shipped":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot mark delivered from status '{current}'",
+            )
+        update["status"] = "delivered"
+        update["delivered_at"] = now
+
+    if body.note:
+        update["fulfillment_note"] = body.note.strip()
+
+    await db.orders.update_one({"id": order_id}, {"$set": update})
+    fresh = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    return {"status": "ok", "order": fresh}
+

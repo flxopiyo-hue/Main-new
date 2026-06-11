@@ -29,7 +29,7 @@ import { dataUriFromBase64 } from "@/src/lib/images";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
 export default function Profile() {
-  const { user, logout, refresh } = useAuth();
+  const { user, logout, refresh, toggleRole } = useAuth();
   const toast = useToast();
   const [profile, setProfile] = useState<ProfileT | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -37,6 +37,29 @@ export default function Profile() {
   const [loading, setLoading] = useState(true);
   const [currencyPickerOpen, setCurrencyPickerOpen] = useState(false);
   const [savingCurrency, setSavingCurrency] = useState<CurrencyCode | null>(null);
+  const [switching, setSwitching] = useState(false);
+
+  // Tap "Switch to Seller Mode". If the user has never been a seller we
+  // route them through the 1-screen onboarding to capture company + city.
+  // Otherwise we toggle immediately and bounce to the seller portal.
+  const handleSwitchToSeller = useCallback(async () => {
+    const hasSellerData =
+      !!user?.company_name && !!user?.location?.city && !!user?.location?.country;
+    if (!hasSellerData) {
+      router.push("/seller/onboarding");
+      return;
+    }
+    setSwitching(true);
+    try {
+      await toggleRole({ to: "seller" });
+      toast.show("Switched to Seller mode", "success");
+      router.replace("/(seller)");
+    } catch (e: any) {
+      toast.show(e?.message ?? "Could not switch", "error");
+    } finally {
+      setSwitching(false);
+    }
+  }, [user, toggleRole, toast]);
 
   const load = useCallback(async () => {
     try {
@@ -438,6 +461,38 @@ export default function Profile() {
           </View>
         ) : null}
 
+        {/* Switch to Seller Mode (buyers only) */}
+        {user?.role === "buyer" ? (
+          <View style={styles.switchSection} testID="profile-switch-card">
+            <View style={styles.switchHeader}>
+              <Feather name="briefcase" size={16} color={colors.primary} />
+              <Text style={[tp.caption, { color: colors.primary }]}>
+                Got pieces to sell?
+              </Text>
+            </View>
+            <Text style={[tp.bodyMuted, { marginTop: 8 }]}>
+              Become a seller and list garments in minutes. You can switch
+              back to shopping any time.
+            </Text>
+            <TouchableOpacity
+              testID="profile-switch-to-seller-btn"
+              onPress={handleSwitchToSeller}
+              disabled={switching}
+              style={[styles.switchBtn, switching && { opacity: 0.6 }]}
+              activeOpacity={0.85}
+            >
+              {switching ? (
+                <ActivityIndicator color={colors.primaryFg} />
+              ) : (
+                <>
+                  <Feather name="arrow-right" size={14} color={colors.primaryFg} />
+                  <Text style={styles.switchBtnLabel}>Switch to Seller Mode</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         <AppButton
           testID="profile-logout-btn"
           label="Sign Out"
@@ -638,4 +693,30 @@ const styles = StyleSheet.create({
   currencyLabel: { fontFamily: fonts.body, fontSize: 12, color: colors.mutedFg, marginTop: 2 },
   currencyTextActive: { color: colors.primaryFg },
   currencyLabelActive: { color: colors.primaryFg, opacity: 0.85 },
+  // Switch-to-seller card
+  switchSection: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.lg,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.surface,
+  },
+  switchHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
+  switchBtn: {
+    marginTop: spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    minHeight: 44,
+    backgroundColor: colors.primary,
+  },
+  switchBtnLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 12,
+    letterSpacing: 1.5,
+    color: colors.primaryFg,
+    textTransform: "uppercase",
+  },
 });

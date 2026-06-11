@@ -142,7 +142,7 @@ export default function Register() {
           location: { city: city.trim(), country: country.trim() },
           bank_details,
         });
-        router.replace("/inventory");
+        router.replace("/(seller)");
       }
     } catch (e: any) {
       toast.show(e?.message ?? "Registration failed", "error");

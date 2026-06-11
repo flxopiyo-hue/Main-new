@@ -1,3 +1,19 @@
+// Login screen with role chip selector.
+//
+// The user picks "Shopping" (buyer mode) or "Selling" (seller mode) before
+// hitting submit. The chip is purely an intent — it's forwarded to the API
+// as `as_role`, and the backend either:
+//
+//   • flips the user's stored role (atomically, bumping `token_version`),
+//   • or, if the user is targeting seller for the first time and the account
+//     is missing the seller essentials (company_name + location), the API
+//     responds with `needs_seller_onboarding: true`. We catch that flag and
+//     route to `/seller/onboarding` so the user can complete the missing
+//     fields without ever seeing a half-functional seller portal.
+//
+// Admins are unaffected by the chip selection — the backend keeps their role
+// frozen as `admin` regardless of the chip choice.
+
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useState } from "react";
@@ -11,11 +27,14 @@ import { useToast } from "@/src/components/Toast";
 import { useAuth } from "@/src/lib/auth";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
+type Intent = "buyer" | "seller";
+
 export default function Login() {
   const { login } = useAuth();
   const toast = useToast();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [intent, setIntent] = useState<Intent>("buyer");
   const [loading, setLoading] = useState(false);
 
   const submit = async () => {
@@ -25,11 +44,25 @@ export default function Login() {
     }
     setLoading(true);
     try {
-      const u = await login(email.trim(), password);
+      const { user: u, needsSellerOnboarding } = await login(
+        email.trim(),
+        password,
+        intent,
+      );
+      // Admins always go to /admin regardless of chip choice (server already
+      // ignored the `as_role` parameter for admin accounts).
       if (u.role === "admin") {
         router.replace("/admin");
-      } else if (u.role === "seller") {
-        router.replace("/inventory");
+        return;
+      }
+      if (needsSellerOnboarding) {
+        router.replace("/seller/onboarding");
+        return;
+      }
+      // Trust the *resolved* role on the user object — that's what survived
+      // the server-side toggle (if any).
+      if (u.role === "seller") {
+        router.replace("/(seller)");
       } else {
         router.replace("/(tabs)");
       }
@@ -62,7 +95,33 @@ export default function Login() {
         <Text style={[tp.bodyMuted, styles.sub]}>
           Sign in to continue your try-on session.
         </Text>
-        <View style={{ height: spacing.xl }} />
+
+        {/* Role intent chips */}
+        <View style={{ height: spacing.lg }} />
+        <Text style={[tp.caption, styles.label]}>I am</Text>
+        <View style={styles.chipRow}>
+          <IntentChip
+            testID="login-intent-buyer"
+            label="Shopping"
+            icon="shopping-bag"
+            active={intent === "buyer"}
+            onPress={() => setIntent("buyer")}
+          />
+          <IntentChip
+            testID="login-intent-seller"
+            label="Selling"
+            icon="briefcase"
+            active={intent === "seller"}
+            onPress={() => setIntent("seller")}
+          />
+        </View>
+        <Text style={[tp.bodyMuted, styles.chipHint]}>
+          {intent === "seller"
+            ? "Land in the Seller Portal — inventory, analytics, and orders to fulfill."
+            : "Land in the marketplace — browse pieces and try them on."}
+        </Text>
+
+        <View style={{ height: spacing.lg }} />
         <AppInput
           testID="login-email-input"
           label="Email"
@@ -94,6 +153,45 @@ export default function Login() {
   );
 }
 
+function IntentChip({
+  label,
+  icon,
+  active,
+  onPress,
+  testID,
+}: {
+  label: string;
+  icon: keyof typeof Feather.glyphMap;
+  active: boolean;
+  onPress: () => void;
+  testID: string;
+}) {
+  return (
+    <TouchableOpacity
+      testID={testID}
+      onPress={onPress}
+      activeOpacity={0.85}
+      style={[styles.chip, active ? styles.chipActive : styles.chipInactive]}
+      accessibilityRole="radio"
+      accessibilityState={{ selected: active }}
+    >
+      <Feather
+        name={icon}
+        size={14}
+        color={active ? colors.primaryFg : colors.primary}
+      />
+      <Text
+        style={[
+          styles.chipLabel,
+          active ? styles.chipLabelActive : styles.chipLabelInactive,
+        ]}
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
   flex: { flex: 1 },
@@ -110,6 +208,34 @@ const styles = StyleSheet.create({
   scroll: { paddingHorizontal: spacing.lg, paddingTop: spacing.xl, paddingBottom: spacing.xxl },
   title: { marginTop: spacing.md },
   sub: { marginTop: spacing.md, maxWidth: 320 },
+  label: { marginBottom: 8 },
+  chipRow: { flexDirection: "row", gap: 12 },
+  chip: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    minHeight: 48,
+    borderWidth: 1,
+  },
+  chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  chipInactive: { backgroundColor: colors.surface, borderColor: colors.border },
+  chipLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 12,
+    letterSpacing: 1.5,
+    textTransform: "uppercase",
+  },
+  chipLabelActive: { color: colors.primaryFg },
+  chipLabelInactive: { color: colors.primary },
+  chipHint: {
+    marginTop: 10,
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: colors.mutedFg,
+  },
   footer: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,

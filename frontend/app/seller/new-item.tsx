@@ -1,9 +1,5 @@
-// Legacy redirect: the old single-page `/seller/new-item` is now a 3-step
-// wizard at `/(tabs)/add-item`. Any deep-link or stale push to the old path
-// just bounces to the new wizard so the seller never sees a 404.
-
+// Legacy redirect — point to the new wizard inside the seller route group.
 import { Redirect } from "expo-router";
-
 export default function LegacyNewItem() {
-  return <Redirect href="/add-item" />;
+  return <Redirect href="/(seller)/add-item" />;
 }

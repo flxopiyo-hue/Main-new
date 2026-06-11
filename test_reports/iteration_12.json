@@ -1,0 +1,51 @@
+{
+  "summary": "Iteration 12 — Drape RBAC + role-toggle + fulfillment. Backend: 14/14 pytest passing — POST /auth/login w/ as_role behaves per spec (buyer default, buyer→seller w/o data returns role=buyer + needs_seller_onboarding=true, seller→buyer flips + new token, admin immune); POST /user/toggle-role validates company_name (400), forbids admins (403), invalidates old token via token_version bump (verified old token returns 401 on /auth/me, new token works); POST /seller/orders/{id}/fulfillment state machine acknowledge→ship→deliver all correct, ship without tracking → 400, acknowledge after shipped → 400. Frontend: login intent chips render and respond to taps; seller login lands in /(seller) with EXACTLY 4 tabs (INVENTORY · ANALYTICS · ORDERS · SETTINGS) and NO buyer tabs leak; seller Orders page renders, ship modal opens with tracking inputs; seller Settings shows Company card + Payouts shortcut + Currency chips + Switch-to-Buyer button. CRITICAL bug: after Switch-to-Buyer, the buyer tab bar shows 7 tabs (DISCOVER, TRY ON, ATELIER, PROFILE + leaked legacy PAYOUTS, ADD-ITEM, INVENTORY). The `href: null` declarations in /(tabs)/_layout.tsx are not hiding the legacy redirect screens on Expo Router web — strict seller-isolation spec is violated on the buyer side.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Buyer tab bar",
+        "issue": "Buyer mode /(tabs) tab bar renders 7 tabs instead of 4: DISCOVER · TRY ON · ATELIER · PROFILE plus the legacy redirect screens PAYOUTS, ADD-ITEM, INVENTORY. The Tabs.Screen entries for inventory/add-item/payouts are declared with `href: null` (see /app/frontend/app/(tabs)/_layout.tsx:74-76) but Expo Router web is still rendering them in the bottom tab strip. Violates spec: 'Buyer tabs: DISCOVER · TRY ON · ATELIER · PROFILE. NO seller tabs in the tab bar.'",
+        "testID": "buyer-tab-bar",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration12_rbac_toggle.py",
+    "/app/test_reports/pytest/iteration12_results.xml"
+  ],
+  "action_items": [
+    "FIX (HIGH): Remove the legacy `inventory`, `add-item`, `payouts` <Tabs.Screen> declarations from /app/frontend/app/(tabs)/_layout.tsx and instead delete those redirect files from app/(tabs)/ (move the redirect logic to a top-level /inventory.tsx, /add-item.tsx, /payouts.tsx file outside the (tabs) group — these legacy deep-links don't need to live inside the buyer tab navigator). Alternatively, use `options={{ href: null, tabBarItemStyle: { display: 'none' } }}` if Expo Router still requires the screens to be declared inside the group. Verified at runtime: the leak appears on the BUYER side only — seller portal /(seller) correctly shows only 4 tabs.",
+    "(Verification only) Confirm /seller/new-item still redirects to /(seller)/add-item and that the legacy /inventory deep-link still redirects somewhere sensible after the (tabs) cleanup."
+  ],
+  "critical_code_review_comments": [
+    "/app/backend/routers/auth.py:128-148 — login `as_role` logic is correct: admins are explicitly excluded from any role flip (`doc['role'] != 'admin'`), buyer→seller without seller-essentials short-circuits to `needs_onboarding=True` without mutating the doc, and any actual flip bumps token_version atomically with the role update. Verified end-to-end.",
+    "/app/backend/routers/users.py:34-89 — toggle-role validates admin (403), requires company_name + location for buyer→seller, and re-validates the merged doc before persisting. token_version is incremented in the same update, and a fresh JWT is minted post-update. Verified by test_seller_toggle_to_buyer_invalidates_old_token: old token returns 401 'Session expired' immediately after the toggle.",
+    "/app/backend/routers/seller.py:435-490 — fulfillment state machine cleanly rejects illegal transitions (paid→acknowledge OK, shipped→acknowledge → 400; ship without tracking_number → 400). shipped_at/delivered_at/acknowledged_at timestamps are set server-side via datetime.now(timezone.utc).",
+    "/app/backend/core/security.py:53-73 — get_current_user compares JWT `tv` claim against user.token_version and returns 401 'Session expired — please sign in again' on mismatch. This is the canonical pattern for stateless server-side invalidation.",
+    "/app/frontend/app/(seller)/_layout.tsx — strict RBAC at the entry: non-sellers are bounced (admin→/admin, buyer→/(tabs), anonymous→/welcome). Tabs.Screen list correctly contains only the 4 spec tabs (index/analytics/orders/settings) with add-item & payouts as off-bar children. Verified at runtime: no buyer-tab leakage in the seller portal.",
+    "/app/frontend/app/(tabs)/_layout.tsx — RBAC bounce is correct, but the `href: null` Tabs.Screen entries for inventory/add-item/payouts are still rendering as visible tabs on web. This is the HIGH-priority bug above.",
+    "/app/frontend/app/seller/onboarding.tsx — single screen, properly wires company_name + location into toggleRole({to:'seller', ...}). On success replaces route to /(seller). Bank_details are optional, sent as nulls when blank.",
+    "/app/frontend/app/(seller)/orders.tsx — full state-machine UI: Acknowledge visible only on `paid`, Ship visible on `paid|in_fulfillment` with modal requiring tracking_number (submit button disabled until value present), Deliver visible only on `shipped`. Filter chips correctly bucket the list.",
+    "/app/frontend/app/(seller)/settings.tsx — Switch-to-Buyer flow uses confirm() on web, calls toggleRole({to:'buyer'}), then router.replace('/(tabs)'). Toast + redirect verified."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration12_rbac_toggle.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (14/14)",
+    "frontend": "~85% — 1 HIGH issue: buyer tab bar shows 7 tabs instead of 4 (legacy redirect leak). All other spec items verified."
+  },
+  "seed_data_creation": "Test creates one ephemeral buyer (`TEST_toggle_<ts>@drape.demo`) to validate buyer→seller toggle with company_name; cleanup is implicit (orphan rows tagged TEST_). Demo buyer doc was reset (unset company_name/location, role=buyer) to remove pollution from previous iterations. The fulfillment tests progressed one paid order through to delivered then reset it back to status=paid so subsequent runs still have a paid order to work with.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend regression: `EXPO_BACKEND_URL=https://fit-finder-app-5.preview.emergentagent.com pytest backend/tests/test_iteration12_rbac_toggle.py -v`. Note env var is named EXPO_PUBLIC_BACKEND_URL in /app/frontend/.env (not EXPO_BACKEND_URL), the test reads either. The buyer demo (`buyer@aurafit.demo`) MUST stay clean — no company_name, no location — or test_buyer_as_seller_needs_onboarding & test_buyer_to_seller_without_company_name_400 will spuriously fail (seen first run). Reset via mongo: db.users.update_one({'email':'buyer@aurafit.demo'},{'$unset':{'company_name':'','location':'','bank_details':''},'$set':{'role':'buyer'}}). Frontend selectors verified working: login-intent-buyer/seller, seller-orders-filter-*, seller-order-*-acknowledge/ship/deliver, seller-orders-ship-number/url/submit/cancel, seller-settings-switch-btn, seller-settings-company, seller-onboarding-company/city/country/submit-btn, profile-switch-to-seller-btn.",
+  "rca_of_issue": "Buyer tab bar leak RCA: /app/frontend/app/(tabs)/_layout.tsx declares three legacy redirect screens (inventory, add-item, payouts) as <Tabs.Screen href={null}> entries. On native this hides them from the bar; on Expo Router web (the preview surface), `href: null` does NOT remove the screen from the rendered tab strip — the icon/label fall back to the file name and the tab appears at the right of the bar. Confirmed visually in /tmp/after_switch_buyer.png (7 tabs visible). Mitigation: move the redirect files OUT of app/(tabs)/ to a top-level redirect route (or use tabBarButton: () => null in addition to href:null). Reproduce: login as buyer (or login as seller then tap Switch to Buyer) and inspect the bottom tab bar in mobile-width viewport."
+}

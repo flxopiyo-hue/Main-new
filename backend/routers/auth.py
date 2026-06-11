@@ -21,6 +21,17 @@ from models import AuthOut, LoginIn, PreferencesIn, RegisterIn, UserOut, user_to
 router = APIRouter()
 
 
+def _is_seller_complete(doc: Dict[str, Any]) -> bool:
+    """A seller account can enter the seller portal only when it carries the
+    minimum data we require to fulfill orders: a company name + a city/
+    country location. Bank/M-Pesa details are encouraged but optional (the
+    UI nudges them through Settings)."""
+    if not (doc.get("company_name") or "").strip():
+        return False
+    loc = doc.get("location") or {}
+    return bool((loc.get("city") or "").strip() and (loc.get("country") or "").strip())
+
+
 @router.post("/auth/register", response_model=AuthOut)
 async def register(body: RegisterIn) -> AuthOut:
     existing = await db.users.find_one({"email": body.email.lower()})
@@ -100,8 +111,8 @@ async def register(body: RegisterIn) -> AuthOut:
             body.bank_details.model_dump(exclude_none=True) if body.bank_details else None
         )
     await db.users.insert_one(doc)
-    token = make_jwt(user_id, body.role)
-    return AuthOut(token=token, user=user_to_out(doc))
+    token = make_jwt(user_id, body.role, 0)
+    return AuthOut(token=token, user=user_to_out(doc), needs_seller_onboarding=False)
 
 
 @router.post("/auth/login", response_model=AuthOut)
@@ -109,8 +120,38 @@ async def login(body: LoginIn) -> AuthOut:
     doc = await db.users.find_one({"email": body.email.lower()})
     if not doc or not verify_password(body.password, doc["hashed_password"]):
         raise HTTPException(status_code=400, detail="Invalid email or password")
-    token = make_jwt(doc["id"], doc["role"])
-    return AuthOut(token=token, user=user_to_out(doc))
+
+    # Optional buyer↔seller flip at the login moment. Admins are immune —
+    # the admin flag is set out-of-band via seed.py and cannot be downgraded
+    # by hitting this endpoint with a custom `as_role`.
+    needs_onboarding = False
+    if body.as_role and doc["role"] != "admin" and body.as_role != doc["role"]:
+        if body.as_role == "seller" and not _is_seller_complete(doc):
+            # The user wants to log in as a seller but their account is
+            # incomplete. We DO NOT flip the role yet — we keep them as a
+            # buyer (or whatever they were) and signal the client to route
+            # to the onboarding form. After onboarding succeeds the client
+            # calls POST /user/toggle-role which performs the actual flip.
+            needs_onboarding = True
+        else:
+            await db.users.update_one(
+                {"id": doc["id"]},
+                {
+                    "$set": {"role": body.as_role},
+                    "$inc": {"token_version": 1},
+                },
+            )
+            doc = await db.users.find_one(
+                {"id": doc["id"]}, {"_id": 0, "hashed_password": 0}
+            )
+            assert doc is not None
+
+    token = make_jwt(doc["id"], doc["role"], int(doc.get("token_version") or 0))
+    return AuthOut(
+        token=token,
+        user=user_to_out(doc),
+        needs_seller_onboarding=needs_onboarding,
+    )
 
 
 @router.get("/auth/me", response_model=UserOut)

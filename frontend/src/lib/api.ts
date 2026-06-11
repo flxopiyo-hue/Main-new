@@ -74,7 +74,14 @@ export interface User {
   location?: Location | null;
   bank_details?: BankDetails | null;
   suspended?: boolean;
+  token_version?: number;
   created_at: string;
+}
+
+export interface AuthEnvelope {
+  token: string;
+  user: User;
+  needs_seller_onboarding?: boolean;
 }
 
 export interface Measurements {
@@ -234,6 +241,15 @@ export interface TryOnResult {
   created_at: string;
 }
 
+export type OrderStatus =
+  | "pending"
+  | "paid"
+  | "failed"
+  | "cancelled"
+  | "in_fulfillment"
+  | "shipped"
+  | "delivered";
+
 export interface Order {
   id: string;
   buyer_id: string;
@@ -243,10 +259,16 @@ export interface Order {
   color?: string | null;
   amount_cents: number;
   currency: CurrencyCode;
-  status: string;
+  status: OrderStatus;
   fit_feedback?: "small" | "perfect" | "large" | null;
   session_id: string;
   created_at: string;
+  // Fulfillment metadata (null until the seller advances the order)
+  tracking_number?: string | null;
+  tracking_url?: string | null;
+  shipped_at?: string | null;
+  delivered_at?: string | null;
+  fulfillment_note?: string | null;
 }
 
 export type FitFeedback = "small" | "perfect" | "large";
@@ -478,12 +500,26 @@ export const api = {
     company_name?: string;
     location?: Location;
     bank_details?: BankDetails;
-  }) => request<{ token: string; user: User }>("/auth/register", { method: "POST", body, auth: false }),
-  login: (body: { email: string; password: string }) =>
-    request<{ token: string; user: User }>("/auth/login", { method: "POST", body, auth: false }),
+  }) => request<AuthEnvelope>("/auth/register", { method: "POST", body, auth: false }),
+  login: (body: {
+    email: string;
+    password: string;
+    as_role?: "buyer" | "seller";
+  }) => request<AuthEnvelope>("/auth/login", { method: "POST", body, auth: false }),
   me: () => request<User>("/auth/me"),
   updatePreferences: (body: { preferred_currency?: CurrencyCode }) =>
     request<User>("/auth/preferences", { method: "PATCH", body }),
+
+  // Role toggle (POST /user/toggle-role) — returns a fresh JWT carrying the
+  // new role + bumped token_version. Caller MUST persist the new token and
+  // discard the previous one (which is now rejected server-side).
+  toggleRole: (body: {
+    to?: "buyer" | "seller";
+    company_name?: string;
+    location?: Location;
+    bank_details?: BankDetails;
+  } = {}) =>
+    request<AuthEnvelope>("/user/toggle-role", { method: "POST", body }),
 
   // Profile
   getProfile: () => request<Profile>("/profile"),
@@ -582,6 +618,19 @@ export const api = {
     return request<Order[]>(`/seller/orders${suffix ? `?${suffix}` : ""}`);
   },
   sellerPayouts: () => request<PayoutHistory>("/seller/payouts"),
+  sellerUpdateFulfillment: (
+    orderId: string,
+    body: {
+      action: "acknowledge" | "ship" | "deliver";
+      tracking_number?: string;
+      tracking_url?: string;
+      note?: string;
+    },
+  ) =>
+    request<{ status: "ok"; order: Order }>(
+      `/seller/orders/${encodeURIComponent(orderId)}/fulfillment`,
+      { method: "POST", body },
+    ),
   updatePayoutDetails: (body: BankDetails) =>
     request<User>("/seller/payout-details", { method: "PATCH", body }),
   updateSellerProfile: (body: { company_name?: string; location?: Location }) =>

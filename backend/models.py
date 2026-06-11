@@ -22,6 +22,14 @@ Audience = Literal["men", "women", "unisex", "kids"]
 KidAgeGroup = Literal["0-2", "3-5", "6-9", "10-13", "14-17"]
 ProfileAudience = Literal["adult", "kid"]
 FitFeedback = Literal["small", "perfect", "large"]
+# Fulfillment state machine for orders. `paid` is the initial state right
+# after Stripe checkout completes; `in_fulfillment` is set when the seller
+# acknowledges. `shipped` requires a tracking number/URL. `delivered` is
+# the terminal state.
+OrderStatus = Literal[
+    "pending", "paid", "failed", "cancelled",
+    "in_fulfillment", "shipped", "delivered",
+]
 # Supported listing/display currencies. KES = Kenyan Shilling (default for new accounts).
 Currency = Literal[
     "USD", "KES", "EUR", "GBP", "NGN", "ZAR", "INR", "UGX", "TZS", "RWF", "GHS", "EGP"
@@ -220,6 +228,12 @@ class RegisterIn(BaseModel):
 class LoginIn(BaseModel):
     email: EmailStr
     password: str
+    # When provided and != current role, server flips the user to that role
+    # before returning the token (only buyer ↔ seller — admins cannot toggle).
+    # If the destination role lacks required data (e.g. seller without
+    # company_name), the response carries `needs_seller_onboarding=True` so
+    # the client can route to the 1-screen onboarding form.
+    as_role: Optional[Literal["buyer", "seller"]] = None
 
 
 class PreferencesIn(BaseModel):
@@ -242,12 +256,34 @@ class UserOut(BaseModel):
     location: Optional[Location] = None
     bank_details: Optional[BankDetails] = None
     suspended: bool = False
+    # Token-versioning support — every increment invalidates outstanding JWTs
+    # (security middleware compares this against the JWT's `tv` claim).
+    token_version: int = 0
     created_at: datetime
 
 
 class AuthOut(BaseModel):
     token: str
     user: UserOut
+    # True iff `as_role=seller` but the account is missing required seller
+    # fields. The client is expected to detour through /seller/onboarding.
+    needs_seller_onboarding: bool = False
+
+
+class ToggleRoleIn(BaseModel):
+    """Body for POST /user/toggle-role. When `to` is omitted, the server
+    flips the user between buyer and seller (admins are rejected). When `to`
+    is provided, the server moves to that explicit role (so the client can
+    request a re-authentication after onboarding without depending on
+    current state)."""
+
+    to: Optional[Literal["buyer", "seller"]] = None
+    # When the target is seller and the account has no seller details yet
+    # the client passes them here so we can atomically complete onboarding
+    # and toggle. The endpoint validates the same way `register` does.
+    company_name: Optional[str] = Field(default=None, max_length=120)
+    location: Optional[Location] = None
+    bank_details: Optional[BankDetails] = None
 
 
 # ---------------------------------------------------------------------------
@@ -595,10 +631,17 @@ class OrderOut(BaseModel):
     color: Optional[str]
     amount_cents: int
     currency: Currency = "USD"
-    status: str  # pending / paid / failed / cancelled
+    status: str  # pending / paid / failed / cancelled / in_fulfillment / shipped / delivered
     fit_feedback: Optional[FitFeedback] = None
     session_id: str
     created_at: datetime
+    # Fulfillment metadata (populated as the seller progresses the order
+    # through the state machine). Buyers see this on the order detail screen.
+    tracking_number: Optional[str] = None
+    tracking_url: Optional[str] = None
+    shipped_at: Optional[datetime] = None
+    delivered_at: Optional[datetime] = None
+    fulfillment_note: Optional[str] = None
 
 
 class OrderSellerOut(BaseModel):
@@ -625,6 +668,23 @@ class OrderDetailOut(OrderOut):
 class FitFeedbackIn(BaseModel):
     fit: FitFeedback
     comment: Optional[str] = Field(default=None, max_length=600)
+
+
+class FulfillmentIn(BaseModel):
+    """Body for `POST /seller/orders/{id}/fulfillment` — drives the order
+    state machine. Sellers POST one of:
+      - `action: "acknowledge"` → paid → in_fulfillment
+      - `action: "ship"` + `tracking_number` (and optional `tracking_url`)
+                          → in_fulfillment | paid → shipped
+      - `action: "deliver"` → shipped → delivered (rare; couriers usually
+                              report delivery, but we expose this for manual
+                              marking when the seller knows).
+    """
+
+    action: Literal["acknowledge", "ship", "deliver"]
+    tracking_number: Optional[str] = Field(default=None, max_length=120)
+    tracking_url: Optional[str] = Field(default=None, max_length=400)
+    note: Optional[str] = Field(default=None, max_length=400)
 
 
 # ---------------------------------------------------------------------------
@@ -729,6 +789,7 @@ def user_to_out(doc: Dict[str, Any]) -> UserOut:
         location=Location(**raw_loc) if raw_loc else None,
         bank_details=BankDetails(**raw_bank) if raw_bank else None,
         suspended=bool(doc.get("suspended", False)),
+        token_version=int(doc.get("token_version") or 0),
         created_at=doc["created_at"],
     )
 

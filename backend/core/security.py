@@ -27,10 +27,19 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
-def make_jwt(user_id: str, role: str) -> str:
+def make_jwt(user_id: str, role: str, token_version: int = 0) -> str:
+    """Issue a JWT carrying the user's id, role, and current token_version.
+
+    The token_version claim ("tv") lets us perform server-side invalidation
+    for events like role-toggle: bump `user.token_version` in the DB and any
+    previously-issued JWTs (which still embed the old version) will be
+    rejected by `get_current_user`. New tokens minted post-bump carry the
+    new version so a freshly-issued token continues to work.
+    """
     payload = {
         "sub": user_id,
         "role": role,
+        "tv": token_version,
         "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRY_HOURS),
         "iat": datetime.now(timezone.utc),
     }
@@ -54,6 +63,13 @@ async def get_current_user(
     user = await db.users.find_one({"id": user_id}, {"_id": 0, "hashed_password": 0})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    # Reject tokens whose embedded `tv` no longer matches the current
+    # token_version on the user doc. This is how role-toggle, password
+    # rotation etc. invalidate older sessions without a stateful denylist.
+    token_tv = payload.get("tv", 0)
+    user_tv = int(user.get("token_version") or 0)
+    if token_tv != user_tv:
+        raise HTTPException(status_code=401, detail="Session expired — please sign in again")
     return user
 
 

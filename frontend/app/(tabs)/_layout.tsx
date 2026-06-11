@@ -1,5 +1,5 @@
 import { Feather } from "@expo/vector-icons";
-import { Tabs } from "expo-router";
+import { Redirect, Tabs } from "expo-router";
 import React from "react";
 import { Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -8,26 +8,24 @@ import { useAuth } from "@/src/lib/auth";
 import { colors, fonts } from "@/src/lib/theme";
 
 /**
- * Role-aware tab bar.
+ * Buyer-only tab navigator.
  *
- * Buyer  → Discover · Try On · Atelier (saved/queue) · Profile
- * Seller → Inventory · Add Item · Payouts · Profile
- *          (sellers never see Discover/Try-On — they're for shoppers.)
- *
- * We always declare every Tabs.Screen so expo-router stays happy with the
- * underlying files; tabs that aren't relevant for the current role are
- * hidden via `href: null` so they don't appear in the bottom bar and
- * deep-links to them just no-op silently.
+ * Strict RBAC: any non-buyer who lands here is bounced to their correct
+ * portal. Sellers go to `/(seller)`, admins to `/admin`, anonymous to
+ * `/welcome`. The seller portal lives in a SEPARATE route group
+ * (`/(seller)`) so no buyer screen module is ever imported into the
+ * seller bundle — deep-links to /tryon, /atelier, etc. while logged in
+ * as a seller resolve here and immediately redirect.
  */
-export default function TabsLayout() {
+export default function BuyerTabsLayout() {
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
-  const isSeller = user?.role === "seller";
+  const { user, loading } = useAuth();
 
-  // Compute a tab bar tall enough to comfortably hold a 22px icon and an
-  // uppercase 10px label without cropping. The bar still honours the
-  // device's safe-area inset so the iOS home indicator never collides with
-  // the labels.
+  if (loading) return null;
+  if (!user) return <Redirect href="/welcome" />;
+  if (user.role === "admin") return <Redirect href="/admin" />;
+  if (user.role === "seller") return <Redirect href="/(seller)" />;
+
   const bottomInset = Math.max(insets.bottom, Platform.OS === "ios" ? 8 : 10);
   const barHeight = 80 + bottomInset;
 
@@ -48,10 +46,7 @@ export default function TabsLayout() {
           marginTop: 2,
           marginBottom: 0,
         },
-        tabBarItemStyle: {
-          paddingTop: 8,
-          paddingBottom: 4,
-        },
+        tabBarItemStyle: { paddingTop: 8, paddingBottom: 4 },
         tabBarStyle: {
           backgroundColor: colors.surface,
           borderTopWidth: 1,
@@ -62,59 +57,23 @@ export default function TabsLayout() {
         },
         tabBarIcon: ({ color, focused }) => {
           let icon: keyof typeof Feather.glyphMap = "grid";
-          // Buyer tabs
           if (route.name === "index") icon = "compass";
           if (route.name === "tryon") icon = "camera";
           if (route.name === "atelier") icon = "package";
-          // Seller tabs
-          if (route.name === "inventory") icon = "grid";
-          if (route.name === "add-item") icon = "plus-square";
-          if (route.name === "payouts") icon = "credit-card";
-          // Shared
           if (route.name === "profile") icon = "user";
           return <Feather name={icon} size={focused ? 22 : 20} color={color} />;
         },
       })}
     >
-      {/* --- Buyer tabs (hidden when seller) --- */}
-      <Tabs.Screen
-        name="index"
-        options={{ title: "Discover", href: isSeller ? null : "/" }}
-      />
-      <Tabs.Screen
-        name="tryon"
-        options={{ title: "Try On", href: isSeller ? null : "/tryon" }}
-      />
-      <Tabs.Screen
-        name="atelier"
-        options={{ title: "Atelier", href: isSeller ? null : "/atelier" }}
-      />
-
-      {/* --- Seller tabs (hidden when buyer/admin) --- */}
-      <Tabs.Screen
-        name="inventory"
-        options={{
-          title: "Inventory",
-          href: isSeller ? "/inventory" : null,
-        }}
-      />
-      <Tabs.Screen
-        name="add-item"
-        options={{
-          title: "Add Item",
-          href: isSeller ? "/add-item" : null,
-        }}
-      />
-      <Tabs.Screen
-        name="payouts"
-        options={{
-          title: "Payouts",
-          href: isSeller ? "/payouts" : null,
-        }}
-      />
-
-      {/* --- Shared --- */}
+      <Tabs.Screen name="index" options={{ title: "Discover" }} />
+      <Tabs.Screen name="tryon" options={{ title: "Try On" }} />
+      <Tabs.Screen name="atelier" options={{ title: "Atelier" }} />
       <Tabs.Screen name="profile" options={{ title: "Profile" }} />
+      {/* Legacy redirect files — keep them hidden from the buyer tab bar.
+          They exist purely to bounce stale deep-links into /(seller). */}
+      <Tabs.Screen name="inventory" options={{ href: null }} />
+      <Tabs.Screen name="add-item" options={{ href: null }} />
+      <Tabs.Screen name="payouts" options={{ href: null }} />
     </Tabs>
   );
 }

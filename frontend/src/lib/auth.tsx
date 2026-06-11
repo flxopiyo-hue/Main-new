@@ -1,8 +1,22 @@
 // Drape auth context: holds current user + token, persists token via secureStore.
+//
+// New in iteration 12 (role switcher): `login` now accepts an optional
+// `asRole` argument so the user can pick their entry point on the login
+// screen. `toggleRole` flips the user between buyer ↔ seller, persists the
+// freshly-minted JWT, and returns the updated User so navigation guards
+// can re-route accordingly.
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
-import { api, BankDetails, Gender, Location, setToken as setTokenStorage, User } from "@/src/lib/api";
+import {
+  api,
+  AuthEnvelope,
+  BankDetails,
+  Gender,
+  Location,
+  setToken as setTokenStorage,
+  User,
+} from "@/src/lib/api";
 import { getDeviceRegion, suggestCurrencyForRegion } from "@/src/lib/locale";
 import { storage } from "@/src/utils/storage";
 
@@ -50,10 +64,19 @@ export type RegisterSellerOpts = {
   bank_details?: BankDetails;
 };
 
+export type LoginResult = {
+  user: User;
+  needsSellerOnboarding: boolean;
+};
+
 interface AuthValue {
   user: User | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<User>;
+  login: (
+    email: string,
+    password: string,
+    asRole?: "buyer" | "seller",
+  ) => Promise<LoginResult>;
   registerBuyer: (
     email: string,
     password: string,
@@ -65,6 +88,17 @@ interface AuthValue {
     password: string,
     fullName: string,
     opts: RegisterSellerOpts,
+  ) => Promise<User>;
+  // Flip between buyer ↔ seller. When switching TO seller the caller may
+  // need to pass the seller onboarding fields; the backend rejects the
+  // toggle if essentials are still missing.
+  toggleRole: (
+    opts?: {
+      to?: "buyer" | "seller";
+      company_name?: string;
+      location?: Location;
+      bank_details?: BankDetails;
+    },
   ) => Promise<User>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -96,13 +130,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })();
   }, [refresh]);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const { token, user: u } = await api.login({ email, password });
-    await setTokenStorage(token);
-    const synced = await syncCurrencyToLocale(u);
-    setUser(synced);
-    return synced;
-  }, []);
+  const login = useCallback(
+    async (
+      email: string,
+      password: string,
+      asRole?: "buyer" | "seller",
+    ): Promise<LoginResult> => {
+      const envelope: AuthEnvelope = await api.login({
+        email,
+        password,
+        as_role: asRole,
+      });
+      await setTokenStorage(envelope.token);
+      const synced = await syncCurrencyToLocale(envelope.user);
+      setUser(synced);
+      return { user: synced, needsSellerOnboarding: !!envelope.needs_seller_onboarding };
+    },
+    [],
+  );
 
   const registerBuyer = useCallback(
     async (
@@ -158,14 +203,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  const toggleRole = useCallback(
+    async (opts: {
+      to?: "buyer" | "seller";
+      company_name?: string;
+      location?: Location;
+      bank_details?: BankDetails;
+    } = {}) => {
+      const envelope = await api.toggleRole(opts);
+      await setTokenStorage(envelope.token);
+      setUser(envelope.user);
+      return envelope.user;
+    },
+    [],
+  );
+
   const logout = useCallback(async () => {
     await setTokenStorage(null);
     setUser(null);
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, login, registerBuyer, registerSeller, logout, refresh }),
-    [user, loading, login, registerBuyer, registerSeller, logout, refresh],
+    () => ({
+      user,
+      loading,
+      login,
+      registerBuyer,
+      registerSeller,
+      toggleRole,
+      logout,
+      refresh,
+    }),
+    [user, loading, login, registerBuyer, registerSeller, toggleRole, logout, refresh],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
