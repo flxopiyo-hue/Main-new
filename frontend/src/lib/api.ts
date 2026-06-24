@@ -177,12 +177,15 @@ export interface Item {
   seller_name: string;
   name: string;
   description: string;
+  brand_name?: string | null;
   category: string;
   subcategory?: string | null;
   price_cents: number;
   currency: CurrencyCode;
   garment_type: GarmentType;
   image_b64: string;
+  // Full photo gallery (primary first). Always at least 1 entry.
+  images?: string[];
   sizes: SizeOption[];
   colors: ColorOption[];
   audience: Audience;
@@ -606,11 +609,13 @@ export const api = {
   createItem: (body: {
     name: string;
     description: string;
+    brand_name?: string;
     category: string;
     subcategory?: string;
     price_cents: number;
     currency?: CurrencyCode;
     image_b64: string;
+    extra_images?: string[];
     sizes: SizeOption[];
     colors: ColorOption[];
     audience: Audience;

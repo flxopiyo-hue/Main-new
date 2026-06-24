@@ -135,9 +135,11 @@ export default function AddItem() {
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
-  // Step 1
-  const [image, setImage] = useState<{ base64: string } | null>(null);
+  // Step 1 — up to 5 photos (primary first). `brand_name` is optional but
+  // we surface it as a first-class field so buyers can search by it later.
+  const [photos, setPhotos] = useState<string[]>([]);
   const [name, setName] = useState("");
+  const [brandName, setBrandName] = useState("");
   const [priceInput, setPriceInput] = useState("");
   const [currency, setCurrency] = useState<CurrencyCode>(defaultCurrency);
   const [description, setDescription] = useState("");
@@ -157,13 +159,13 @@ export default function AddItem() {
   // -----------------------------------------------------------------------
   const step1Errors = useMemo(() => {
     const errs: Record<string, string> = {};
-    if (!image) errs.image = "Add a product photo";
+    if (photos.length === 0) errs.image = "Add at least one product photo";
     if (!name.trim()) errs.name = "Title is required";
     const cents = parseAmountToCents(priceInput, currency);
     if (!priceInput.trim()) errs.price = "Price is required";
     else if (!cents || cents <= 0) errs.price = "Price must be a positive number";
     return errs;
-  }, [image, name, priceInput, currency]);
+  }, [photos.length, name, priceInput, currency]);
 
   const step2Errors = useMemo(() => {
     const errs: Record<string, string> = {};
@@ -219,12 +221,32 @@ export default function AddItem() {
   // Handlers
   // -----------------------------------------------------------------------
   const pickImage = async (source: "camera" | "library") => {
+    if (photos.length >= 5) {
+      toast.show("Up to 5 photos per item", "error");
+      return;
+    }
     const res = source === "camera" ? await pickImageFromCamera() : await pickImageFromLibrary();
     if (!res) {
       toast.show("Permission denied or no image picked", "error");
       return;
     }
-    setImage({ base64: res.base64 });
+    setPhotos((curr) => [...curr, res.base64]);
+  };
+
+  // Remove a photo by index. Reordering is handled via dedicated chevron
+  // buttons on each thumbnail (kept simple for v1 — no drag-and-drop).
+  const removePhoto = (idx: number) => {
+    setPhotos((curr) => curr.filter((_, i) => i !== idx));
+  };
+
+  const movePhoto = (idx: number, dir: -1 | 1) => {
+    setPhotos((curr) => {
+      const next = [...curr];
+      const j = idx + dir;
+      if (j < 0 || j >= next.length) return curr;
+      [next[idx], next[j]] = [next[j], next[idx]];
+      return next;
+    });
   };
 
   const toggleSize = (label: string) => {
@@ -266,18 +288,21 @@ export default function AddItem() {
       return;
     }
     const priceCents = parseAmountToCents(priceInput, currency);
-    if (!image || !priceCents) return; // type guard
+    if (photos.length === 0 || !priceCents) return; // type guard
 
     setSaving(true);
     try {
+      const [primary, ...extras] = photos;
       await api.createItem({
         name: name.trim(),
         description: description.trim(),
+        brand_name: brandName.trim() || undefined,
         category,
         subcategory: subcategory ?? undefined,
         price_cents: priceCents,
         currency,
-        image_b64: image.base64,
+        image_b64: primary,
+        extra_images: extras,
         sizes: Object.values(sizes),
         colors: pickedColors,
         audience,
@@ -321,14 +346,18 @@ export default function AddItem() {
       >
         {step === 1 && (
           <StepBasics
-            image={image}
+            photos={photos}
             name={name}
+            brandName={brandName}
             priceInput={priceInput}
             currency={currency}
             description={description}
             errors={step1Errors}
             onPickImage={pickImage}
+            onRemovePhoto={removePhoto}
+            onMovePhoto={movePhoto}
             onChangeName={setName}
+            onChangeBrand={setBrandName}
             onChangePrice={setPriceInput}
             onChangeCurrency={setCurrency}
             onChangeDescription={setDescription}
@@ -484,71 +513,127 @@ function Stepper({ current }: { current: 1 | 2 | 3 }) {
 /* -------------------------------------------------------------------------- */
 
 interface StepBasicsProps {
-  image: { base64: string } | null;
+  photos: string[];
   name: string;
+  brandName: string;
   priceInput: string;
   currency: CurrencyCode;
   description: string;
   errors: Record<string, string>;
   onPickImage: (source: "camera" | "library") => void;
+  onRemovePhoto: (idx: number) => void;
+  onMovePhoto: (idx: number, dir: -1 | 1) => void;
   onChangeName: (v: string) => void;
+  onChangeBrand: (v: string) => void;
   onChangePrice: (v: string) => void;
   onChangeCurrency: (c: CurrencyCode) => void;
   onChangeDescription: (v: string) => void;
 }
 
 function StepBasics({
-  image,
+  photos,
   name,
+  brandName,
   priceInput,
   currency,
   description,
   errors,
   onPickImage,
+  onRemovePhoto,
+  onMovePhoto,
   onChangeName,
+  onChangeBrand,
   onChangePrice,
   onChangeCurrency,
   onChangeDescription,
 }: StepBasicsProps) {
+  const canAddMore = photos.length < 5;
   return (
     <View>
       <Text style={[tp.h2, styles.stepTitle]}>The basics</Text>
       <Text style={[tp.bodyMuted, styles.stepHint]}>
-        Photo, title, and price — the essentials a buyer sees first.
+        Up to 5 photos, title, brand, and price — the essentials a buyer sees first.
       </Text>
 
-      <Text style={[tp.caption, styles.label]}>Photo</Text>
-      {image ? (
-        <Image
-          source={{ uri: dataUriFromBase64(image.base64) }}
-          style={styles.itemImage}
-          resizeMode="cover"
-        />
-      ) : (
-        <View
-          style={[styles.itemImageEmpty, errors.image ? styles.fieldErrorBorder : null]}
-        >
-          <Feather name="image" size={28} color={colors.mutedFg} />
-          <Text style={styles.itemImageEmptyLabel}>Garment photo</Text>
-        </View>
-      )}
-      <View style={styles.imageActions}>
-        <TouchableOpacity
-          testID="wizard-camera-btn"
-          onPress={() => onPickImage("camera")}
-          style={styles.imageActionBtn}
-        >
-          <Feather name="camera" size={14} color={colors.primary} />
-          <Text style={styles.imageActionLabel}>Camera</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          testID="wizard-library-btn"
-          onPress={() => onPickImage("library")}
-          style={styles.imageActionBtn}
-        >
-          <Feather name="image" size={14} color={colors.primary} />
-          <Text style={styles.imageActionLabel}>Library</Text>
-        </TouchableOpacity>
+      <Text style={[tp.caption, styles.label]}>
+        Photos{" "}
+        <Text style={{ color: colors.mutedFg, textTransform: "none" }}>
+          ({photos.length}/5 · first is the cover)
+        </Text>
+      </Text>
+      {/* Gallery grid */}
+      <View style={styles.photoGrid} testID="wizard-photo-grid">
+        {photos.map((b64, i) => (
+          <View key={`p-${i}`} style={styles.photoSlot} testID={`wizard-photo-${i}`}>
+            <Image
+              source={{ uri: dataUriFromBase64(b64) }}
+              style={styles.photoImg}
+              resizeMode="cover"
+            />
+            {i === 0 ? (
+              <View style={styles.coverBadge}>
+                <Text style={styles.coverBadgeLabel}>COVER</Text>
+              </View>
+            ) : null}
+            <View style={styles.photoActions}>
+              {i > 0 ? (
+                <TouchableOpacity
+                  testID={`wizard-photo-${i}-up`}
+                  onPress={() => onMovePhoto(i, -1)}
+                  style={styles.photoActBtn}
+                  accessibilityLabel="Move photo earlier"
+                >
+                  <Feather name="chevron-left" size={14} color={colors.primaryFg} />
+                </TouchableOpacity>
+              ) : null}
+              {i < photos.length - 1 ? (
+                <TouchableOpacity
+                  testID={`wizard-photo-${i}-down`}
+                  onPress={() => onMovePhoto(i, 1)}
+                  style={styles.photoActBtn}
+                  accessibilityLabel="Move photo later"
+                >
+                  <Feather name="chevron-right" size={14} color={colors.primaryFg} />
+                </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity
+                testID={`wizard-photo-${i}-remove`}
+                onPress={() => onRemovePhoto(i)}
+                style={[styles.photoActBtn, { backgroundColor: "rgba(220,38,38,0.85)" }]}
+                accessibilityLabel="Remove photo"
+              >
+                <Feather name="x" size={14} color={colors.primaryFg} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        ))}
+
+        {canAddMore ? (
+          <View style={[styles.photoSlot, styles.photoSlotEmpty]}>
+            <View style={styles.photoEmptyInner}>
+              <Feather name="image" size={22} color={colors.mutedFg} />
+              <Text style={styles.photoEmptyLabel}>
+                {photos.length === 0 ? "Add cover" : `Add ${photos.length === 4 ? "last" : "more"}`}
+              </Text>
+              <View style={{ flexDirection: "row", gap: 6, marginTop: 6 }}>
+                <TouchableOpacity
+                  testID="wizard-photo-add-camera"
+                  onPress={() => onPickImage("camera")}
+                  style={styles.photoEmptyBtn}
+                >
+                  <Feather name="camera" size={12} color={colors.primary} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  testID="wizard-photo-add-library"
+                  onPress={() => onPickImage("library")}
+                  style={styles.photoEmptyBtn}
+                >
+                  <Feather name="image" size={12} color={colors.primary} />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        ) : null}
       </View>
       {errors.image ? <Text style={styles.fieldError}>{errors.image}</Text> : null}
 
@@ -560,6 +645,13 @@ function StepBasics({
         onChangeText={onChangeName}
         placeholder="Cropped Linen Shirt"
         errorText={errors.name}
+      />
+      <AppInput
+        testID="wizard-brand-input"
+        label="Brand (optional)"
+        value={brandName}
+        onChangeText={onChangeBrand}
+        placeholder="Maison Lumière"
       />
       <AppInput
         testID="wizard-price-input"
@@ -1010,6 +1102,77 @@ const styles = StyleSheet.create({
   stepHint: { marginBottom: spacing.lg },
   label: { marginTop: spacing.md, marginBottom: spacing.sm },
   itemImage: { width: "100%", aspectRatio: 3 / 4, backgroundColor: colors.muted },
+  // Photo gallery grid (Step 1)
+  photoGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  photoSlot: {
+    width: "31.5%",
+    aspectRatio: 3 / 4,
+    backgroundColor: colors.muted,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: "hidden",
+    position: "relative",
+  },
+  photoSlotEmpty: {
+    alignItems: "center",
+    justifyContent: "center",
+    borderStyle: "dashed",
+  },
+  photoEmptyInner: {
+    alignItems: "center",
+    justifyContent: "center",
+    padding: spacing.sm,
+  },
+  photoEmptyLabel: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 10,
+    letterSpacing: 1.2,
+    color: colors.mutedFg,
+    textTransform: "uppercase",
+    marginTop: 4,
+  },
+  photoEmptyBtn: {
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.surface,
+  },
+  photoImg: { width: "100%", height: "100%" },
+  coverBadge: {
+    position: "absolute",
+    top: 4,
+    left: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    backgroundColor: colors.primary,
+  },
+  coverBadgeLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 9,
+    letterSpacing: 1.2,
+    color: colors.primaryFg,
+  },
+  photoActions: {
+    position: "absolute",
+    bottom: 4,
+    right: 4,
+    flexDirection: "row",
+    gap: 4,
+  },
+  photoActBtn: {
+    width: 24,
+    height: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(10,10,10,0.7)",
+  },
   itemImageEmpty: {
     width: "100%",
     aspectRatio: 3 / 4,

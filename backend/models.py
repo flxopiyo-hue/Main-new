@@ -513,6 +513,7 @@ class ColorOption(BaseModel):
 class ItemIn(BaseModel):
     name: str
     description: str = ""
+    brand_name: Optional[str] = Field(default=None, max_length=80)
     category: Literal["shirts", "dresses", "pants", "outerwear", "shoes", "accessories"]
     subcategory: Optional[str] = Field(default=None, max_length=40)
     price_cents: int = Field(ge=0)
@@ -520,7 +521,11 @@ class ItemIn(BaseModel):
     currency: Optional[Currency] = None
     # When omitted, server infers from category + name keywords.
     garment_type: Optional[GarmentType] = None
-    image_b64: str  # primary garment image
+    # Primary garment image (legacy field, also auto-mirrored as images[0]).
+    image_b64: str
+    # Up to 4 additional photos (total 5 including image_b64). Iter 14:
+    # sellers can showcase front/back/detail shots in a buyer gallery.
+    extra_images: List[str] = Field(default_factory=list, max_length=4)
     sizes: List[SizeOption]
     colors: List[ColorOption] = []
     audience: Audience = "unisex"
@@ -532,12 +537,14 @@ class ItemOut(BaseModel):
     seller_name: str
     name: str
     description: str
+    brand_name: Optional[str] = None
     category: str
     subcategory: Optional[str] = None
     price_cents: int
     currency: Currency = "USD"  # listing currency
     garment_type: GarmentType = "other"  # layered try-on classification
-    image_b64: str
+    image_b64: str  # primary thumb (kept for back-compat clients)
+    images: List[str] = Field(default_factory=list)  # full gallery, primary first
     sizes: List[SizeOption]
     colors: List[ColorOption]
     audience: Audience = "unisex"
@@ -798,18 +805,25 @@ def user_to_out(doc: Dict[str, Any]) -> UserOut:
 
 def item_to_out(doc: Dict[str, Any]) -> ItemOut:
     gtype = doc.get("garment_type") or infer_garment_type(doc)
+    # Back-compat: legacy items have only `image_b64`. Synthesize a one-
+    # element images list when needed so the client always gets a gallery.
+    gallery = list(doc.get("images") or [])
+    if not gallery and doc.get("image_b64"):
+        gallery = [doc["image_b64"]]
     return ItemOut(
         id=doc["id"],
         seller_id=doc["seller_id"],
         seller_name=doc.get("seller_name", ""),
         name=doc["name"],
         description=doc.get("description", ""),
+        brand_name=doc.get("brand_name"),
         category=doc["category"],
         subcategory=doc.get("subcategory"),
         price_cents=doc["price_cents"],
         currency=doc.get("currency", "USD"),
         garment_type=gtype,
         image_b64=doc["image_b64"],
+        images=gallery,
         sizes=[SizeOption(**s) for s in doc.get("sizes", [])],
         colors=[ColorOption(**c) for c in doc.get("colors", [])],
         audience=doc.get("audience", "unisex"),

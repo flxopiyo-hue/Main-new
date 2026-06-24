@@ -284,7 +284,14 @@ export default function ItemDetail() {
         ) : null}
 
         <View style={styles.body}>
+          {/* Brand + Seller pretitle row */}
+          {item.brand_name ? (
+            <Text style={[tp.caption, { color: colors.primary }]} testID="item-brand">
+              {item.brand_name.toUpperCase()}
+            </Text>
+          ) : null}
           <Text style={tp.caption} testID="item-seller">
+            {item.brand_name ? "by " : ""}
             {item.seller_name.toUpperCase()}
           </Text>
           <Text style={[tp.h1, { marginTop: 6 }]} testID="item-name">
@@ -293,6 +300,28 @@ export default function ItemDetail() {
           <Text style={styles.price} testID="item-price">
             {formatPriceIn(item.price_cents, item.currency, user?.preferred_currency)}
           </Text>
+
+          {/* Photo gallery (extras beyond the hero shot) */}
+          {(item.images?.length ?? 0) > 1 ? (
+            <ScrollView
+              testID="item-gallery"
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ marginTop: spacing.md }}
+              contentContainerStyle={{ gap: 8 }}
+            >
+              {(item.images ?? []).map((b64, idx) => (
+                <Image
+                  key={`gal-${idx}`}
+                  source={{ uri: dataUriFromBase64(b64) }}
+                  style={styles.galleryThumb}
+                  resizeMode="cover"
+                  testID={`item-gallery-thumb-${idx}`}
+                />
+              ))}
+            </ScrollView>
+          ) : null}
+
           {item.description ? (
             <Text style={[tp.body, { marginTop: spacing.md }]}>{item.description}</Text>
           ) : null}
@@ -623,6 +652,13 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   subhead: { marginTop: spacing.lg, marginBottom: spacing.sm },
+  galleryThumb: {
+    width: 92,
+    aspectRatio: 3 / 4,
+    backgroundColor: colors.muted,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
   sizeRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   sizeChip: {
     minWidth: 50,

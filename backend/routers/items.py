@@ -41,18 +41,31 @@ async def create_item(
     garment_type = body.garment_type or infer_garment_type(
         {"name": body.name, "category": body.category}
     )
+    # Compose the images gallery. The first slot is always the legacy
+    # `image_b64` (primary thumb shown on cards/search). Any extras the
+    # seller uploaded come after it. We strip any "data:" URL prefixes so
+    # the DB stores pure base64 bodies.
+    primary_b64 = strip_data_prefix(body.image_b64)
+    gallery: List[str] = [primary_b64] + [
+        strip_data_prefix(b) for b in (body.extra_images or [])
+    ]
+    # Cap at 5 just in case the client doesn't enforce it.
+    gallery = gallery[:5]
+
     doc = {
         "id": item_id,
         "seller_id": user["id"],
         "seller_name": user["full_name"],
         "name": body.name,
         "description": body.description,
+        "brand_name": (body.brand_name or "").strip() or None,
         "category": body.category,
         "subcategory": (body.subcategory or "").strip() or None,
         "price_cents": body.price_cents,
         "currency": listing_currency,
         "garment_type": garment_type,
-        "image_b64": strip_data_prefix(body.image_b64),
+        "image_b64": primary_b64,
+        "images": gallery,
         "sizes": [s.model_dump() for s in body.sizes],
         "colors": [c.model_dump() for c in body.colors],
         "audience": body.audience,

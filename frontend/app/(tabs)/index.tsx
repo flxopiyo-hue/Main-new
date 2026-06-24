@@ -19,20 +19,33 @@ import { HeartButton } from "@/src/components/HeartButton";
 import { OutfitDrawer } from "@/src/components/OutfitDrawer";
 import { OutfitPill } from "@/src/components/OutfitPill";
 import { useToast } from "@/src/components/Toast";
-import { api, Collection, Item, KidAgeGroup } from "@/src/lib/api";
+import { api, CATEGORIES_BY_AUDIENCE, CATEGORY_LABELS, Collection, Item, KidAgeGroup } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
 import { formatPriceIn } from "@/src/lib/currency";
 import { dataUriFromBase64 } from "@/src/lib/images";
 import { useProfiles } from "@/src/lib/profiles";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
-const CATEGORIES = [
-  { key: "shirts", label: "Shirts" },
-  { key: "dresses", label: "Dresses" },
-  { key: "pants", label: "Pants" },
-  { key: "outerwear", label: "Outerwear" },
-  { key: "shoes", label: "Shoes" },
-  { key: "accessories", label: "Accessories" },
+// Full set, ordered by buyer intent. Filtered down based on the active
+// audience so a Men shopper never sees Dresses, etc.
+const ALL_CATEGORIES = [
+  { key: "shirts", label: CATEGORY_LABELS.shirts },
+  { key: "dresses", label: CATEGORY_LABELS.dresses },
+  { key: "pants", label: CATEGORY_LABELS.pants },
+  { key: "outerwear", label: CATEGORY_LABELS.outerwear },
+  { key: "shoes", label: CATEGORY_LABELS.shoes },
+  { key: "accessories", label: CATEGORY_LABELS.accessories },
+];
+
+// Gender override chips ("Shop for"). Defaults to the active profile's
+// inferred audience; the override lets buyers shop across genders without
+// switching profiles. "All" clears the override.
+const GENDER_CHIPS = [
+  { key: "all", label: "All" },
+  { key: "women", label: "Women" },
+  { key: "men", label: "Men" },
+  { key: "unisex", label: "Unisex" },
+  { key: "kids", label: "Kids" },
 ];
 
 const HERO =
@@ -48,6 +61,9 @@ export default function Discover() {
   const [sizeFilter, setSizeFilter] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [kidAgeGroup, setKidAgeGroup] = useState<KidAgeGroup | null>(null);
+  // Explicit gender override for "Shop for ___". null = inherit from
+  // active profile; "all" = show every audience.
+  const [genderOverride, setGenderOverride] = useState<"women" | "men" | "unisex" | "kids" | "all" | null>(null);
   const [wishedIds, setWishedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -57,7 +73,7 @@ export default function Discover() {
   //   self    -> infer from user.gender (backend default)
   //   loved adult -> override by gender of loved one
   //   loved kid   -> "kids"
-  const activeAudience: "men" | "women" | "kids" | "all" | undefined = (() => {
+  const profileAudience: "men" | "women" | "kids" | "all" | undefined = (() => {
     if (!active) return undefined;
     const p = active.profile;
     if (p.audience === "kid") return "kids";
@@ -68,7 +84,26 @@ export default function Discover() {
   })();
   const isKidActive = active?.profile.audience === "kid";
 
-  const audienceLabel = activeAudience ?? (showAll ? "all" : null);
+  // Effective audience: explicit override > profile inference > undefined.
+  // "all" short-circuits to undefined-with-showAll so the backend skips
+  // filtering entirely.
+  const effectiveAudience: "men" | "women" | "unisex" | "kids" | undefined = (() => {
+    if (genderOverride === "all") return undefined;
+    if (genderOverride) return genderOverride;
+    return profileAudience as any;
+  })();
+  const effShowAll = showAll || genderOverride === "all";
+
+  const audienceLabel = effectiveAudience ?? (effShowAll ? "all" : null);
+
+  // Filter the category chips to those that match the effective audience.
+  // Men shoppers don't see Dresses, etc. (mirrors the seller wizard.)
+  const visibleCategoryKeys = effectiveAudience
+    ? (CATEGORIES_BY_AUDIENCE[effectiveAudience] ?? ALL_CATEGORIES.map((c) => c.key))
+    : ALL_CATEGORIES.map((c) => c.key);
+  const visibleCategories = ALL_CATEGORIES.filter((c) =>
+    visibleCategoryKeys.includes(c.key),
+  );
 
   const load = useCallback(async () => {
     try {
@@ -76,7 +111,7 @@ export default function Discover() {
         api.listItems({
           category: category ?? undefined,
           size: sizeFilter ?? undefined,
-          audience: showAll ? "all" : activeAudience,
+          audience: effShowAll ? "all" : effectiveAudience,
           kid_age_group: isKidActive ? kidAgeGroup ?? undefined : undefined,
         }),
         user?.role === "buyer" ? api.wishlistIds() : Promise.resolve({ item_ids: [] }),
@@ -92,8 +127,8 @@ export default function Discover() {
   }, [
     category,
     sizeFilter,
-    showAll,
-    activeAudience,
+    effShowAll,
+    effectiveAudience,
     isKidActive,
     kidAgeGroup,
     toast,
@@ -198,7 +233,27 @@ export default function Discover() {
           <ActiveProfileChip testIDPrefix="discover-profile-chip" />
         </View>
       ) : null}
-      <ChipsRow chips={CATEGORIES} active={category} onPress={setCategory} testIDPrefix="cat" />
+      {/* Gender override row — buyers can shop across genders without
+          switching the active body profile. Tapping "Men" hides Dresses
+          from the category strip below and from the resulting grid. */}
+      <View style={styles.genderRowWrap}>
+        <Text style={[tp.caption, styles.genderRowLabel]}>SHOP FOR</Text>
+        <ChipsRow
+          chips={GENDER_CHIPS}
+          active={genderOverride}
+          onPress={(k) => {
+            setGenderOverride(k as any);
+            // If the current category isn't valid for the new gender,
+            // clear it so the user isn't stuck on an unselectable chip.
+            if (k && k !== "all") {
+              const allowed = CATEGORIES_BY_AUDIENCE[k] ?? [];
+              if (category && !allowed.includes(category)) setCategory(null);
+            }
+          }}
+          testIDPrefix="gender"
+        />
+      </View>
+      <ChipsRow chips={visibleCategories} active={category} onPress={setCategory} testIDPrefix="cat" />
       {isKidActive ? (
         <View style={styles.ageGroupWrap}>
           <ChipsRow
@@ -366,6 +421,15 @@ const styles = StyleSheet.create({
   profileChipWrap: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.sm,
+  },
+  genderRowWrap: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: 4,
+    paddingBottom: 2,
+  },
+  genderRowLabel: {
+    color: colors.mutedFg,
+    marginBottom: 6,
   },
   ageGroupWrap: {
     paddingTop: 4,
