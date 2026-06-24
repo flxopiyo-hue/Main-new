@@ -293,6 +293,37 @@ frontend:
 agent_communication:
   - agent: "main"
     message: |
+      Iteration 16 ships Phase D (interactive size slider + live narration)
+      + seed enrichment so the algorithm has more dimensions to score
+      against.
+
+      Phase D full:
+      - New /src/components/SizeSlider.tsx — horizontal segmented slider
+        with PanResponder-driven drag scrubbing, per-tick fit colour,
+        star marker on the recommended size, and an animated track-active
+        bar that bleeds with the size's score colour.
+      - Live narration banner under the ticks shows the dominant fit
+        cue ("Very roomy across the chest (+10.0cm)") plus the size's
+        score chip. Switches between RECOMMENDED / FIT PREVIEW labels
+        based on whether the active tick matches the algorithm's pick.
+      - Items without per-size dimensions (e.g. shoes) skip the slider
+        entirely — only the static chip row stays.
+
+      Seed enrichment:
+      - Backfilled per-size shoulder_cm + sleeve_cm on the two seeded
+        shirts so the slider's narration has more to talk about.
+      - Backfilled shoulders_cm + inseam_cm on the demo buyer's body
+        profile so chest + shoulder narratives both fire (sleeve & garment
+        length stay null because they're not body measurements).
+
+      Phase D testing: frontend manual + screenshot verification all
+      green. Backend smoke test confirms chest+shoulder diffs now
+      populated; sleeve/length intentionally remain null (no buyer body
+      field for those — by design).
+
+      Phase E (Stripe subscriptions) remains the last deferred item.
+  - agent: "main"
+    message: |
       Iteration 15 ships Stock visibility, Phase C (Fit Match Score), and
       the Phase D foundation (per-dimension narration). 8/9 backend
       pytest pass + 100% Playwright E2E (1 skip is intentional RBAC).
