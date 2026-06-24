@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -15,11 +15,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ActiveProfileChip } from "@/src/components/ActiveProfileChip";
 import { ChipsRow } from "@/src/components/ChipsRow";
+import { FitBadge } from "@/src/components/FitBadge";
 import { HeartButton } from "@/src/components/HeartButton";
 import { OutfitDrawer } from "@/src/components/OutfitDrawer";
 import { OutfitPill } from "@/src/components/OutfitPill";
 import { useToast } from "@/src/components/Toast";
-import { api, CATEGORIES_BY_AUDIENCE, CATEGORY_LABELS, Collection, Item, KidAgeGroup } from "@/src/lib/api";
+import { api, CATEGORIES_BY_AUDIENCE, CATEGORY_LABELS, Collection, FitScore, Item, KidAgeGroup } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
 import { formatPriceIn } from "@/src/lib/currency";
 import { dataUriFromBase64 } from "@/src/lib/images";
@@ -65,6 +66,9 @@ export default function Discover() {
   // active profile; "all" = show every audience.
   const [genderOverride, setGenderOverride] = useState<"women" | "men" | "unisex" | "kids" | "all" | null>(null);
   const [wishedIds, setWishedIds] = useState<Set<string>>(new Set());
+  // Map of itemId → FitScore so each card knows whether to show a badge.
+  // Loaded in the background after the items list arrives (non-blocking).
+  const [fitScores, setFitScores] = useState<Record<string, FitScore>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [outfitOpen, setOutfitOpen] = useState(false);
@@ -157,9 +161,40 @@ export default function Discover() {
     load();
   };
 
+  // Lazy fit-score loader. Whenever the items list refreshes, fan out
+  // GET /items/{id}/fit-score requests for every visible item. Results
+  // trickle in and the badges populate progressively. The active profile
+  // is intentionally NOT passed — the backend already falls back to the
+  // buyer's self profile, which is what shoppers usually want on the
+  // grid. (Item Detail will let them switch profiles explicitly.)
+  useEffect(() => {
+    if (user?.role !== "buyer" || items.length === 0) return;
+    let cancelled = false;
+    setFitScores({});
+    Promise.all(
+      items.map(async (it) => {
+        try {
+          const fit = await api.fitScore(it.id);
+          if (!cancelled) {
+            setFitScores((prev) => ({ ...prev, [it.id]: fit }));
+          }
+        } catch {
+          // Silent — the badge just won't render.
+        }
+      }),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [items, user?.role]);
+
   const renderItem = ({ item, index }: { item: Item; index: number }) => {
     const totalQty = item.sizes.reduce((s, x) => s + (x.available_qty || 0), 0);
     const outOfStock = totalQty === 0;
+    // Show the low-stock urgency pill when 1–5 units remain so buyers see
+    // the hint without exposing the exact seller inventory count.
+    const lowStock = !outOfStock && totalQty <= 5;
+    const extras = (item.images?.length ?? 0) - 1;
     return (
       <TouchableOpacity
         testID={`item-card-${item.id}`}
@@ -191,15 +226,35 @@ export default function Discover() {
               />
             </View>
           ) : null}
+          {/* Fit-match badge (top-left). Only shows once the per-item
+              score request completes; we keep the slot empty otherwise so
+              the layout doesn't reflow when the badge arrives. */}
+          {user?.role === "buyer" && fitScores[item.id]?.scorable ? (
+            <View style={styles.cardFit} testID={`item-card-${item.id}-fit`}>
+              <FitBadge fit={fitScores[item.id]} compact />
+            </View>
+          ) : null}
+          {/* "+N" indicates extra photos in the gallery. Only show when
+              the listing actually has more than the cover. */}
+          {extras > 0 ? (
+            <View style={styles.galleryBadge} testID={`item-card-${item.id}-gallery-count`}>
+              <Text style={styles.galleryBadgeText}>+{extras}</Text>
+            </View>
+          ) : null}
           {outOfStock ? (
             <View style={styles.outBadge} testID={`item-card-${item.id}-out`}>
               <Text style={styles.outBadgeText}>Sold out</Text>
             </View>
           ) : null}
+          {lowStock ? (
+            <View style={styles.lowBadge} testID={`item-card-${item.id}-low`}>
+              <Text style={styles.lowBadgeText}>Only {totalQty} left</Text>
+            </View>
+          ) : null}
         </View>
         <View style={styles.cardBody}>
           <Text style={styles.cardSeller} numberOfLines={1}>
-            {item.seller_name.toUpperCase()}
+            {(item.brand_name || item.seller_name).toUpperCase()}
           </Text>
           <Text style={styles.cardName} numberOfLines={2}>
             {item.name}
@@ -507,6 +562,51 @@ const styles = StyleSheet.create({
   cardLeft: { marginLeft: spacing.lg, marginRight: spacing.sm / 2 },
   cardRight: { marginLeft: spacing.sm / 2, marginRight: spacing.lg },
   cardImage: { width: "100%", aspectRatio: 3 / 4, backgroundColor: colors.muted },
+  cardImageWrap: { position: "relative" },
+  cardHeart: { position: "absolute", top: 8, right: 8 },
+  cardFit: { position: "absolute", top: 8, left: 8 },
+  outBadge: {
+    position: "absolute",
+    bottom: 8,
+    left: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: "#DC2626",
+  },
+  outBadgeText: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 10,
+    letterSpacing: 1.2,
+    color: colors.primaryFg,
+  },
+  lowBadge: {
+    position: "absolute",
+    bottom: 8,
+    left: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: "#D97706",
+  },
+  lowBadgeText: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 10,
+    letterSpacing: 1.2,
+    color: colors.primaryFg,
+  },
+  galleryBadge: {
+    position: "absolute",
+    bottom: 8,
+    right: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: "rgba(10,10,10,0.65)",
+  },
+  galleryBadgeText: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 10,
+    letterSpacing: 0.5,
+    color: colors.primaryFg,
+  },
   cardBody: { paddingTop: spacing.sm },
   cardSeller: { fontFamily: fonts.bodyMedium, fontSize: 10, letterSpacing: 2, color: colors.mutedFg },
   cardName: { fontFamily: fonts.heading, fontSize: 18, color: colors.primary, marginTop: 2 },

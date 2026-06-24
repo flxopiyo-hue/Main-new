@@ -33,7 +33,13 @@ import { AddressPickerSheet } from "@/src/components/AddressPickerSheet";
 import { useOutfit } from "@/src/lib/outfit";
 import { useProfiles } from "@/src/lib/profiles";
 import { shareBase64Image } from "@/src/lib/share";
+import { stockBadge, totalAvailable } from "@/src/lib/stock";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
+
+// FitBadge — auto-loads the fit score for this item against the buyer's
+// active body profile and renders the green/amber/red chip.
+import { FitBadge } from "@/src/components/FitBadge";
+import type { FitScore } from "@/src/lib/api";
 
 const ANGLE_LABEL: Record<TryOnAngle, string> = {
   front: "Front",
@@ -61,6 +67,10 @@ export default function ItemDetail() {
   const [sharing, setSharing] = useState(false);
   const [buying, setBuying] = useState(false);
   const [outfitOpen, setOutfitOpen] = useState(false);
+  // Fit Match score for this item against the buyer's active profile.
+  // `recommended_size` is also used to auto-pick a size on first arrival.
+  const [fitScore, setFitScore] = useState<FitScore | null>(null);
+  const [fitLoading, setFitLoading] = useState(false);
 
   const addToOutfit = useOutfit((s) => s.add);
   const removeFromOutfit = useOutfit((s) => s.remove);
@@ -91,7 +101,46 @@ export default function ItemDetail() {
     load();
   }, [load]);
 
+  // Load the fit score for this item against the active profile (or self
+  // when no loved-one is picked). Re-runs whenever the active profile
+  // changes so swapping to "Aisha" updates the badge instantly.
   const { active: activeProfile } = useProfiles();
+  useEffect(() => {
+    if (user?.role !== "buyer" || !item) return;
+    let cancelled = false;
+    setFitLoading(true);
+    // The `profile.id` from useProfiles points at the loved-one row when
+    // active is non-self; for self we omit it (backend uses self profile).
+    const profileId =
+      activeProfile?.profile && !activeProfile.profile.is_self
+        ? activeProfile.profile.id
+        : undefined;
+    api
+      .fitScore(item.id, profileId)
+      .then((res) => {
+        if (cancelled) return;
+        setFitScore(res);
+        // Auto-pick the recommended size on first arrival, but only if
+        // the user hasn't already chosen one. This keeps subsequent
+        // picks sticky.
+        if (res.recommended_size) {
+          setSelectedSize((curr) => {
+            if (curr) return curr;
+            const match = item.sizes.find((s) => s.label === res.recommended_size);
+            return match ?? curr;
+          });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setFitScore(null);
+      })
+      .finally(() => {
+        if (!cancelled) setFitLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [item, user?.role, activeProfile?.profile?.id]);
   const runTryOn = useCallback(
     async (angles: TryOnAngle[] = ["front"]) => {
       if (!item) return;
@@ -301,6 +350,31 @@ export default function ItemDetail() {
             {formatPriceIn(item.price_cents, item.currency, user?.preferred_currency)}
           </Text>
 
+          {/* Fit Match Score badge — only shown to buyers. Buyers without
+              a body profile yet get a small CTA prompting them to add
+              measurements from Profile. */}
+          {user?.role === "buyer" ? (
+            <View style={styles.fitRow} testID="item-fit-row">
+              {fitLoading || (fitScore && fitScore.scorable) ? (
+                <FitBadge fit={fitScore} loading={fitLoading} testID="item-fit-badge" />
+              ) : fitScore && !fitScore.scorable ? (
+                <View style={styles.fitHint}>
+                  <Feather name="info" size={12} color={colors.mutedFg} />
+                  <Text style={styles.fitHintText}>
+                    {fitScore.reason ?? "Fit score unavailable"}
+                  </Text>
+                </View>
+              ) : null}
+              {fitScore?.recommended_size ? (
+                <Text style={styles.fitRecText}>
+                  Best size · <Text style={{ fontFamily: fonts.bodySemi }}>
+                    {fitScore.recommended_size}
+                  </Text>
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+
           {/* Photo gallery (extras beyond the hero shot) */}
           {(item.images?.length ?? 0) > 1 ? (
             <ScrollView
@@ -326,7 +400,25 @@ export default function ItemDetail() {
             <Text style={[tp.body, { marginTop: spacing.md }]}>{item.description}</Text>
           ) : null}
 
-          <Text style={[tp.caption, styles.subhead]}>Size</Text>
+          <View style={styles.subhead} testID="item-stock-row">
+            <Text style={tp.caption}>Size</Text>
+            {/* Whole-item stock state — shown when no size is selected so
+                the buyer instantly knows if the SKU is worth pursuing. */}
+            {(() => {
+              const total = totalAvailable(item.sizes);
+              const badge = stockBadge(total);
+              return (
+                <View
+                  style={[styles.stockPill, { backgroundColor: badge.color }]}
+                  testID={`item-stock-overall-${badge.level}`}
+                >
+                  <Text style={styles.stockPillLabel}>
+                    {badge.label.toUpperCase()}
+                  </Text>
+                </View>
+              );
+            })()}
+          </View>
           <View style={styles.sizeRow}>
             {item.sizes.map((s) => {
               const selected = selectedSize?.label === s.label;
@@ -357,19 +449,63 @@ export default function ItemDetail() {
             })}
           </View>
           {selectedSize ? (
-            <View style={styles.sizeMeta} testID="item-size-detail">
-              <Text style={tp.bodyMuted}>
-                {selectedSize.chest_cm ? `Chest ${selectedSize.chest_cm}cm · ` : ""}
-                {selectedSize.waist_cm ? `Waist ${selectedSize.waist_cm}cm · ` : ""}
-                {selectedSize.hips_cm ? `Hips ${selectedSize.hips_cm}cm · ` : ""}
-                {selectedSize.length_cm ? `Length ${selectedSize.length_cm}cm` : ""}
-              </Text>
-              <Text style={[tp.bodyMuted, { marginTop: 2 }]}>
-                {selectedSize.available_qty > 0
-                  ? `${selectedSize.available_qty} in stock`
-                  : "Out of stock"}
-              </Text>
-            </View>
+            (() => {
+              const badge = stockBadge(selectedSize.available_qty);
+              // Pull the narrative entries from the fit score for the
+              // currently selected size, if loaded. We surface up to 3
+              // descriptors so the buyer doesn't get a wall of text.
+              const sizeFit = fitScore?.per_size?.find(
+                (p) => p.label === selectedSize.label,
+              );
+              const narratives =
+                sizeFit?.dimensions
+                  ?.filter((d) => d.narrative && d.diff !== null)
+                  .slice(0, 4) ?? [];
+              return (
+                <View style={styles.sizeMeta} testID="item-size-detail">
+                  <Text style={tp.bodyMuted}>
+                    {selectedSize.chest_cm ? `Chest ${selectedSize.chest_cm}cm · ` : ""}
+                    {selectedSize.waist_cm ? `Waist ${selectedSize.waist_cm}cm · ` : ""}
+                    {selectedSize.hips_cm ? `Hips ${selectedSize.hips_cm}cm · ` : ""}
+                    {selectedSize.length_cm ? `Length ${selectedSize.length_cm}cm` : ""}
+                  </Text>
+                  <View
+                    style={[styles.stockChip, { borderColor: badge.color }]}
+                    testID={`item-size-stock-${badge.level}`}
+                  >
+                    <Text style={[styles.stockChipLabel, { color: badge.color }]}>
+                      {badge.label}
+                    </Text>
+                  </View>
+                  {narratives.length > 0 ? (
+                    <View style={styles.narrationRow} testID="item-narration">
+                      {narratives.map((d) => {
+                        const tone =
+                          d.diff != null && Math.abs(d.diff) < 2
+                            ? "good"
+                            : d.diff != null && Math.abs(d.diff) >= 5
+                              ? "alert"
+                              : "warn";
+                        return (
+                          <View
+                            key={d.key}
+                            style={[
+                              styles.narrChip,
+                              tone === "good" && styles.narrGood,
+                              tone === "warn" && styles.narrWarn,
+                              tone === "alert" && styles.narrAlert,
+                            ]}
+                            testID={`item-narr-${d.key}`}
+                          >
+                            <Text style={styles.narrLabel}>{d.narrative}</Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })()
           ) : null}
 
           {item.colors.length > 0 ? (
@@ -651,7 +787,84 @@ const styles = StyleSheet.create({
     color: colors.primaryFg,
     textTransform: "uppercase",
   },
-  subhead: { marginTop: spacing.lg, marginBottom: spacing.sm },
+  subhead: {
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  stockPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  stockPillLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 10,
+    letterSpacing: 1.2,
+    color: colors.primaryFg,
+  },
+  stockChip: {
+    alignSelf: "flex-start",
+    marginTop: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1,
+  },
+  stockChipLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 11,
+    letterSpacing: 0.5,
+  },
+  fitRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+    flexWrap: "wrap",
+  },
+  fitHint: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  fitHintText: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: colors.mutedFg,
+  },
+  fitRecText: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: colors.mutedFg,
+  },
+  narrationRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 8,
+  },
+  narrChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  narrGood: { borderColor: "#15803D", backgroundColor: "rgba(21,128,61,0.08)" },
+  narrWarn: { borderColor: "#D97706", backgroundColor: "rgba(217,119,6,0.08)" },
+  narrAlert: { borderColor: "#DC2626", backgroundColor: "rgba(220,38,38,0.08)" },
+  narrLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 11,
+    color: colors.primary,
+    textTransform: "capitalize",
+  },
   galleryThumb: {
     width: 92,
     aspectRatio: 3 / 4,

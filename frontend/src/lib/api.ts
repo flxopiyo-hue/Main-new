@@ -171,6 +171,33 @@ export interface ColorOption {
   hex: string;
 }
 
+export interface FitScoreDimension {
+  key: string;
+  label: string;
+  garment: number | null;
+  body: number | null;
+  diff: number | null;
+  narrative: string | null;
+}
+
+export interface FitScoreSize {
+  label: string;
+  available_qty: number;
+  score: number | null;
+  dimensions: FitScoreDimension[];
+}
+
+export interface FitScore {
+  item_id: string;
+  profile_id?: string | null;
+  scorable: boolean;
+  reason?: string;
+  score: number | null;
+  color: "green" | "amber" | "red" | null;
+  recommended_size: string | null;
+  per_size: FitScoreSize[];
+}
+
 export interface Item {
   id: string;
   seller_id: string;
@@ -606,6 +633,10 @@ export const api = {
   },
   myItems: () => request<Item[]>("/items/mine"),
   getItem: (id: string) => request<Item>(`/items/${id}`),
+  fitScore: (itemId: string, profileId?: string) =>
+    request<FitScore>(
+      `/items/${encodeURIComponent(itemId)}/fit-score${profileId ? `?profile_id=${encodeURIComponent(profileId)}` : ""}`,
+    ),
   createItem: (body: {
     name: string;
     description: string;

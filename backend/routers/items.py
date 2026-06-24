@@ -183,6 +183,59 @@ async def item_size_guide(item_id: str) -> Dict[str, Any]:
     }
 
 
+@router.get("/items/{item_id}/fit-score")
+async def item_fit_score(
+    item_id: str,
+    profile_id: Optional[str] = None,
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(auth_scheme),
+) -> Dict[str, Any]:
+    """Compare the item's per-size dimensions against the requested body
+    profile and return a 0–100 fit score + per-dimension breakdown.
+
+    Profile resolution:
+      * `profile_id` supplied → look it up in `body_profiles` (must belong
+        to the caller) and use its measurements.
+      * Else fall back to the buyer's own profile under `profiles` (self).
+      * Anonymous callers (no token) get `scorable=False` so the UI can
+        gracefully prompt them to sign in.
+    """
+    from core.fit_match import compute_fit
+    from models import infer_garment_type
+
+    item = await db.items.find_one({"id": item_id}, {"_id": 0})
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    # Backfill garment_type for legacy / un-classified docs so the fit
+    # algorithm has the right dimension keys.
+    item["garment_type"] = item.get("garment_type") or infer_garment_type(item)
+
+    # Resolve the body measurements doc. We deliberately return a *valid*
+    # envelope (not a 4xx) when there's no profile so the buyer-facing
+    # card UI can render a friendly "Add your size" CTA instead of an
+    # error page.
+    body: Dict[str, Any] = {}
+    user = await try_get_user_from_creds(creds) if creds else None
+    if user:
+        if profile_id:
+            prof = await db.body_profiles.find_one(
+                {"id": profile_id, "user_id": user["id"]}, {"_id": 0}
+            )
+            if not prof:
+                raise HTTPException(status_code=404, detail="Body profile not found")
+            body = (prof.get("measurements") or {})
+        else:
+            self_profile = await db.profiles.find_one(
+                {"user_id": user["id"]}, {"_id": 0}
+            )
+            body = (self_profile or {}).get("measurements") or {}
+
+    result = compute_fit(item, body)
+    result["item_id"] = item_id
+    result["profile_id"] = profile_id
+    return result
+
+
+
 @router.delete("/items/{item_id}")
 async def delete_item(
     item_id: str, user: Dict[str, Any] = Depends(get_current_user)
