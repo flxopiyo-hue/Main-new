@@ -293,6 +293,36 @@ frontend:
 agent_communication:
   - agent: "main"
     message: |
+      Iteration 14 ships Phase A (Multi-photo + Brand) and Phase B
+      (Discover gender filter). 4/4 backend pytest + 100% Playwright E2E.
+
+      Multi-photo:
+      - ItemIn now accepts `brand_name` + `extra_images: list[str]` (max 4),
+        ItemOut returns `images: list[str]` (primary first, max 5).
+      - Backend caps gallery at 5 even if client sends more.
+      - Legacy items (only image_b64) get an auto-synthesized images[0].
+      - Frontend wizard Step 1 is a photo grid with COVER badge,
+        reorder chevrons, delete X, and add-from-camera/library tiles.
+      - Buyer Item Detail shows a horizontal gallery strip when >1 photo.
+
+      Brand name:
+      - Optional `brand_name` field surfaced as a first-class search/display
+        property on Item Detail (above seller name).
+
+      Discover gender filter:
+      - New "SHOP FOR" chip row at the top of Discover.
+      - Effective audience = override > active-profile > default.
+      - Categories auto-filter (Men hides Dresses); selecting a now-invalid
+        category auto-clears.
+
+      Pricing locked for Phase E: KSh 199/mo + KSh 1,599/yr (≈ 8 months,
+      ~33% annual discount).
+
+      Phases C/D/E (Fit Match Score, Interactive size slider + narration,
+      Free vs Premium subscriptions w/ Stripe billing) intentionally
+      deferred to the next iteration to keep this ship stable and tested.
+  - agent: "main"
+    message: |
       Iteration 12 + 13 implement strict RBAC, role-toggle UX, and the new
       seller fulfillment workflow.
 
