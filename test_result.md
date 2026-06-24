@@ -293,6 +293,44 @@ frontend:
 agent_communication:
   - agent: "main"
     message: |
+      Iteration 15 ships Stock visibility, Phase C (Fit Match Score), and
+      the Phase D foundation (per-dimension narration). 8/9 backend
+      pytest pass + 100% Playwright E2E (1 skip is intentional RBAC).
+
+      Stock visibility:
+      - New /src/lib/stock.ts → stockBadge() returns level/label/color
+        for qty 0 ("Out of stock"), 1–5 ("Only N left"), >5 ("In stock").
+      - Buyer Discover cards: red sold-out + amber low-stock pills.
+      - Buyer Item Detail: overall pill + per-size chip after selection.
+      - Above-5 qty is NEVER exposed to the buyer.
+
+      Phase C — Fit Match Score:
+      - New /backend/core/fit_match.py with per-dimension sensitivity
+        weights (shoulder & sleeve weighted more aggressively than torso).
+      - New GET /api/items/{id}/fit-score endpoint (anonymous-safe; falls
+        back to self profile when no profile_id given).
+      - Returns headline 0-100 score, color band (green/amber/red),
+        recommended_size, and per_size[] with per-dimension diffs +
+        narrative phrases.
+      - Frontend: <FitBadge> on Discover cards (compact, top-left) and
+        Item Detail (full pill under price + "Best size · X").
+      - Item Detail auto-selects the recommended size on first arrival.
+
+      Phase D foundation — per-dimension narration:
+      - Selected size now shows narration chips under the dimensions row
+        (e.g. "Snug Chest", "Perfect Waist", "Very Roomy Length"),
+        coloured by tone (good/warn/alert).
+      - Live size slider variant deferred to a follow-up so we can ship
+        Phase E (subscriptions) next.
+
+      Bug fixes incidental to this work:
+      - infer_garment_type now applied in /fit-score so legacy items
+        without explicit garment_type still score correctly.
+      - Discover gender filter "Sold out" badge styles previously
+        referenced undefined StyleSheet entries — added them now along
+        with the new low-stock + gallery-count badges.
+  - agent: "main"
+    message: |
       Iteration 14 ships Phase A (Multi-photo + Brand) and Phase B
       (Discover gender filter). 4/4 backend pytest + 100% Playwright E2E.
 
