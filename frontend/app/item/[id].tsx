@@ -39,6 +39,7 @@ import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 // FitBadge — auto-loads the fit score for this item against the buyer's
 // active body profile and renders the green/amber/red chip.
 import { FitBadge } from "@/src/components/FitBadge";
+import { SizeSlider } from "@/src/components/SizeSlider";
 import type { FitScore } from "@/src/lib/api";
 
 const ANGLE_LABEL: Record<TryOnAngle, string> = {
@@ -448,6 +449,22 @@ export default function ItemDetail() {
               );
             })}
           </View>
+
+          {/* Live size slider — visible when this item ships with per-size
+              dimensions. Buyers can drag-scrub through sizes; the bottom
+              narration banner updates live with the dominant fit cue
+              ("Snug across shoulders", "Roomy in waist", etc.). The chip
+              row above still works for plain tap-to-select. */}
+          {fitScore?.per_size && fitScore.per_size.length > 0 ? (
+            <SizeSlider
+              testID="item-size-slider"
+              sizes={item.sizes}
+              selected={selectedSize?.label ?? null}
+              recommended={fitScore.recommended_size}
+              fits={fitScore.per_size}
+              onChange={(s) => setSelectedSize(s)}
+            />
+          ) : null}
           {selectedSize ? (
             (() => {
               const badge = stockBadge(selectedSize.available_qty);

@@ -138,9 +138,9 @@ ITEMS = [
         "price_cents": 22900,
         "image_url": "https://images.unsplash.com/photo-1485518882345-15568b007407?auto=format&fit=crop&w=800&q=80",
         "sizes": [
-            {"label": "S", "chest_cm": 100, "length_cm": 64, "available_qty": 4},
-            {"label": "M", "chest_cm": 108, "length_cm": 66, "available_qty": 6},
-            {"label": "L", "chest_cm": 116, "length_cm": 68, "available_qty": 3},
+            {"label": "S", "chest_cm": 100, "shoulder_cm": 44, "sleeve_cm": 62, "length_cm": 64, "available_qty": 4},
+            {"label": "M", "chest_cm": 108, "shoulder_cm": 46, "sleeve_cm": 63, "length_cm": 66, "available_qty": 6},
+            {"label": "L", "chest_cm": 116, "shoulder_cm": 48, "sleeve_cm": 64, "length_cm": 68, "available_qty": 3},
         ],
         "colors": [
             {"name": "White", "hex": "#FFFFFF"},
@@ -155,10 +155,10 @@ ITEMS = [
         "price_cents": 14900,
         "image_url": "https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?auto=format&fit=crop&w=800&q=80",
         "sizes": [
-            {"label": "S", "chest_cm": 102, "length_cm": 70, "available_qty": 4},
-            {"label": "M", "chest_cm": 108, "length_cm": 72, "available_qty": 6},
-            {"label": "L", "chest_cm": 114, "length_cm": 74, "available_qty": 5},
-            {"label": "XL", "chest_cm": 120, "length_cm": 76, "available_qty": 3},
+            {"label": "S", "chest_cm": 102, "shoulder_cm": 45, "sleeve_cm": 64, "length_cm": 70, "available_qty": 4},
+            {"label": "M", "chest_cm": 108, "shoulder_cm": 47, "sleeve_cm": 65, "length_cm": 72, "available_qty": 6},
+            {"label": "L", "chest_cm": 114, "shoulder_cm": 49, "sleeve_cm": 66, "length_cm": 74, "available_qty": 5},
+            {"label": "XL", "chest_cm": 120, "shoulder_cm": 51, "sleeve_cm": 67, "length_cm": 76, "available_qty": 3},
         ],
         "colors": [
             {"name": "White", "hex": "#FFFFFF"},
