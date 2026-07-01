@@ -22,7 +22,7 @@ from core.security import (
     require_role,
     try_get_user_from_creds,
 )
-from models import ItemIn, ItemOut, ItemPatchIn, infer_garment_type, item_to_out
+from models import ItemIn, ItemOut, ItemPatch, infer_garment_type, item_to_out
 
 router = APIRouter()
 
@@ -69,6 +69,10 @@ async def create_item(
         "sizes": [s.model_dump() for s in body.sizes],
         "colors": [c.model_dump() for c in body.colors],
         "audience": body.audience,
+        "is_paused": False,
+        # New items skip the back-fill migration — they already store
+        # price_cents in proper 1/100-of-major-unit form.
+        "cents_normalized": True,
         "created_at": now,
     }
     await db.items.insert_one(doc)
@@ -84,6 +88,8 @@ async def list_items(
     audience: Optional[str] = None,
     kid_age_group: Optional[str] = None,
     q: Optional[str] = None,
+    brand: Optional[str] = None,
+    include_paused: bool = False,
     creds: Optional[HTTPAuthorizationCredentials] = Depends(auth_scheme),
 ) -> List[ItemOut]:
     query: Dict[str, Any] = {}
@@ -97,6 +103,15 @@ async def list_items(
         query["seller_id"] = seller_id
     if q:
         query["name"] = {"$regex": q, "$options": "i"}
+    if brand:
+        # Case-insensitive exact-or-substring match on the brand label so
+        # "lumière" finds "Maison Lumière" listings.
+        query["brand_name"] = {"$regex": brand, "$options": "i"}
+    # Buyers (and anon) never see paused items. Sellers viewing their own
+    # listings via /items/mine get the unpaused query already in that
+    # route; this flag only matters for admin / debugging surfaces.
+    if not include_paused:
+        query["is_paused"] = {"$ne": True}
 
     # Audience filtering — explicit param wins, otherwise infer from buyer gender.
     if audience and audience != "all":
@@ -252,21 +267,116 @@ async def delete_item(
 @router.patch("/items/{item_id}", response_model=ItemOut)
 async def patch_item(
     item_id: str,
-    body: ItemPatchIn,
+    body: ItemPatch,
     user: Dict[str, Any] = Depends(get_current_user),
 ) -> ItemOut:
+    """Partial update for an item the seller owns. Every field is optional;
+    sellers can change just the price (or just the stock, or just pause the
+    listing) without re-uploading anything else."""
     doc = await db.items.find_one({"id": item_id})
     if not doc:
         raise HTTPException(status_code=404, detail="Item not found")
     if doc["seller_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Not your item")
-    if body.sizes is not None:
-        await db.items.update_one(
-            {"id": item_id},
-            {"$set": {"sizes": [s.model_dump() for s in body.sizes]}},
+
+    update: Dict[str, Any] = {}
+    # Scalar / textual fields — only included when explicitly supplied.
+    if body.name is not None:
+        update["name"] = body.name.strip()
+    if body.description is not None:
+        update["description"] = body.description.strip()
+    if body.brand_name is not None:
+        update["brand_name"] = body.brand_name.strip() or None
+    if body.category is not None:
+        update["category"] = body.category
+    if body.subcategory is not None:
+        update["subcategory"] = body.subcategory.strip() or None
+    if body.price_cents is not None:
+        update["price_cents"] = body.price_cents
+    if body.currency is not None:
+        update["currency"] = body.currency
+    if body.garment_type is not None:
+        update["garment_type"] = body.garment_type
+    if body.audience is not None:
+        update["audience"] = body.audience
+    if body.is_paused is not None:
+        update["is_paused"] = bool(body.is_paused)
+    # Image gallery — primary first, then up to 4 extras. We only rebuild
+    # the gallery when the seller explicitly sent a new primary OR new
+    # extras list.
+    if body.image_b64 is not None or body.extra_images is not None:
+        new_primary = (
+            strip_data_prefix(body.image_b64)
+            if body.image_b64 is not None
+            else doc.get("image_b64")
         )
+        if body.extra_images is not None:
+            new_extras = [strip_data_prefix(b) for b in body.extra_images]
+        else:
+            new_extras = [
+                b for b in (doc.get("images") or [])[1:] if b
+            ]
+        gallery = [new_primary] + new_extras
+        gallery = gallery[:5]
+        update["image_b64"] = new_primary
+        update["images"] = gallery
+    if body.sizes is not None:
+        update["sizes"] = [s.model_dump() for s in body.sizes]
+    if body.colors is not None:
+        update["colors"] = [c.model_dump() for c in body.colors]
+
+    if not update:
+        # Empty patch — return current state instead of a no-op write so
+        # the client always gets a fresh ItemOut envelope.
+        fresh = await db.items.find_one({"id": item_id}, {"_id": 0})
+        return item_to_out(fresh)
+
+    await db.items.update_one({"id": item_id}, {"$set": update})
     fresh = await db.items.find_one({"id": item_id}, {"_id": 0})
     return item_to_out(fresh)
+
+
+@router.post("/items/{item_id}/duplicate", response_model=ItemOut)
+async def duplicate_item(
+    item_id: str, user: Dict[str, Any] = Depends(get_current_user)
+) -> ItemOut:
+    """Deep-clone an existing listing into a fresh row owned by the same
+    seller. The duplicate inherits everything (photos, sizes, colors)
+    EXCEPT counters (views/try_ons reset to zero) and the new copy is
+    paused by default so the seller can edit it before going live again.
+    The title gets a "(Copy)" suffix so the inventory list shows both
+    rows clearly."""
+    doc = await db.items.find_one({"id": item_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Item not found")
+    if doc["seller_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Not your item")
+
+    new_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+    clone = {
+        "id": new_id,
+        "seller_id": doc["seller_id"],
+        "seller_name": doc.get("seller_name", ""),
+        "name": f"{doc['name']} (Copy)",
+        "description": doc.get("description", ""),
+        "brand_name": doc.get("brand_name"),
+        "category": doc["category"],
+        "subcategory": doc.get("subcategory"),
+        "price_cents": doc["price_cents"],
+        "currency": doc.get("currency", DEFAULT_CURRENCY),
+        "garment_type": doc.get("garment_type"),
+        "image_b64": doc["image_b64"],
+        "images": list(doc.get("images") or [doc["image_b64"]]),
+        "sizes": list(doc.get("sizes") or []),
+        "colors": list(doc.get("colors") or []),
+        "audience": doc.get("audience", "unisex"),
+        "is_paused": True,  # paused by default — let the seller review first
+        "cents_normalized": True,
+        "created_at": now,
+    }
+    await db.items.insert_one(clone)
+    return item_to_out(clone)
 
 
 @router.get("/feed", response_model=List[ItemOut])

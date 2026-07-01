@@ -8,6 +8,7 @@ import {
   RefreshControl,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -16,6 +17,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { ActiveProfileChip } from "@/src/components/ActiveProfileChip";
 import { ChipsRow } from "@/src/components/ChipsRow";
 import { FitBadge } from "@/src/components/FitBadge";
+import { HeaderMenu } from "@/src/components/HeaderMenu";
 import { HeartButton } from "@/src/components/HeartButton";
 import { OutfitDrawer } from "@/src/components/OutfitDrawer";
 import { OutfitPill } from "@/src/components/OutfitPill";
@@ -65,6 +67,12 @@ export default function Discover() {
   // Explicit gender override for "Shop for ___". null = inherit from
   // active profile; "all" = show every audience.
   const [genderOverride, setGenderOverride] = useState<"women" | "men" | "unisex" | "kids" | "all" | null>(null);
+  // Brand filter: case-insensitive substring match against item.brand_name.
+  // Buyers type their favourite designer once and stay filtered while
+  // browsing. Cleared via the chip's close icon.
+  const [brandFilter, setBrandFilter] = useState<string>("");
+  const [brandInput, setBrandInput] = useState<string>("");
+  const [showBrandInput, setShowBrandInput] = useState(false);
   const [wishedIds, setWishedIds] = useState<Set<string>>(new Set());
   // Map of itemId → FitScore so each card knows whether to show a badge.
   // Loaded in the background after the items list arrives (non-blocking).
@@ -117,6 +125,7 @@ export default function Discover() {
           size: sizeFilter ?? undefined,
           audience: effShowAll ? "all" : effectiveAudience,
           kid_age_group: isKidActive ? kidAgeGroup ?? undefined : undefined,
+          brand: brandFilter || undefined,
         }),
         user?.role === "buyer" ? api.wishlistIds() : Promise.resolve({ item_ids: [] }),
       ]);
@@ -135,6 +144,7 @@ export default function Discover() {
     effectiveAudience,
     isKidActive,
     kidAgeGroup,
+    brandFilter,
     toast,
     user?.role,
   ]);
@@ -276,13 +286,65 @@ export default function Discover() {
           <Text style={[tp.h2, styles.headerTitle]}>Hello, {user?.full_name.split(" ")[0]}.</Text>
         </View>
         <TouchableOpacity
-          testID="discover-search-btn"
+          testID="discover-brand-toggle-btn"
           style={styles.iconBtn}
-          onPress={() => toast.show("Search coming soon", "info")}
+          onPress={() => {
+            setShowBrandInput((v) => !v);
+            setBrandInput(brandFilter);
+          }}
+          accessibilityLabel="Filter by brand"
         >
-          <Feather name="search" size={20} color={colors.primary} />
+          <Feather name="bookmark" size={20} color={brandFilter ? colors.primary : colors.mutedFg} />
         </TouchableOpacity>
+        <HeaderMenu testID="discover-header-menu" />
       </View>
+
+      {showBrandInput ? (
+        <View style={styles.brandRow} testID="discover-brand-input-row">
+          <Feather name="search" size={14} color={colors.mutedFg} />
+          <TextInput
+            testID="discover-brand-input"
+            value={brandInput}
+            onChangeText={setBrandInput}
+            placeholder="Brand name (e.g. Maison Lumière)"
+            placeholderTextColor={colors.mutedFg}
+            style={styles.brandInput}
+            returnKeyType="search"
+            autoFocus
+            onSubmitEditing={() => {
+              setBrandFilter(brandInput.trim());
+              setShowBrandInput(false);
+            }}
+          />
+          <TouchableOpacity
+            testID="discover-brand-apply"
+            onPress={() => {
+              setBrandFilter(brandInput.trim());
+              setShowBrandInput(false);
+            }}
+            style={styles.brandApply}
+          >
+            <Text style={styles.brandApplyLabel}>APPLY</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {brandFilter ? (
+        <View style={styles.brandChipRow} testID="discover-brand-filter-chip">
+          <Feather name="bookmark" size={12} color={colors.primaryFg} />
+          <Text style={styles.brandChipLabel}>Brand · {brandFilter}</Text>
+          <TouchableOpacity
+            testID="discover-brand-clear"
+            onPress={() => {
+              setBrandFilter("");
+              setBrandInput("");
+            }}
+            hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+          >
+            <Feather name="x" size={12} color={colors.primaryFg} />
+          </TouchableOpacity>
+        </View>
+      ) : null}
       {user?.role === "buyer" ? (
         <View style={styles.profileChipWrap}>
           <ActiveProfileChip testIDPrefix="discover-profile-chip" />
@@ -444,9 +506,58 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
     paddingBottom: spacing.sm,
+    gap: 8,
   },
   headerTitle: { marginTop: 4 },
   iconBtn: { padding: 8 },
+  brandRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    paddingHorizontal: 12,
+    height: 44,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  brandInput: {
+    flex: 1,
+    fontFamily: fonts.body,
+    fontSize: 14,
+    color: colors.primary,
+    paddingVertical: 6,
+  },
+  brandApply: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: colors.primary,
+  },
+  brandApplyLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 11,
+    letterSpacing: 1.2,
+    color: colors.primaryFg,
+  },
+  brandChipRow: {
+    alignSelf: "flex-start",
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: colors.primary,
+  },
+  brandChipLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 11,
+    letterSpacing: 1.2,
+    color: colors.primaryFg,
+    textTransform: "uppercase",
+  },
   sizeBanner: {
     flexDirection: "row",
     alignItems: "center",

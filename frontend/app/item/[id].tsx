@@ -68,6 +68,11 @@ export default function ItemDetail() {
   const [sharing, setSharing] = useState(false);
   const [buying, setBuying] = useState(false);
   const [outfitOpen, setOutfitOpen] = useState(false);
+  // Buyer-facing unit toggle for size dimension display. Backend always
+  // stores cm; this only affects what the buyer sees in the size meta
+  // strip on this screen. The default tracks rough device locale guesses:
+  // US visitors see inches by default; everyone else sees centimetres.
+  const [sizeUnit, setSizeUnit] = useState<"cm" | "in">("cm");
   // Fit Match score for this item against the buyer's active profile.
   // `recommended_size` is also used to auto-pick a size on first arrival.
   const [fitScore, setFitScore] = useState<FitScore | null>(null);
@@ -478,14 +483,58 @@ export default function ItemDetail() {
                 sizeFit?.dimensions
                   ?.filter((d) => d.narrative && d.diff !== null)
                   .slice(0, 4) ?? [];
+              const CM_PER_IN = 2.54;
+              const fmtDim = (cm?: number | null): string | null => {
+                if (cm == null) return null;
+                if (sizeUnit === "in") {
+                  const inches = Math.round((cm / CM_PER_IN) * 10) / 10;
+                  return `${inches}"`;
+                }
+                return `${Math.round(cm)}cm`;
+              };
+              const dimParts: string[] = [];
+              const chest = fmtDim(selectedSize.chest_cm);
+              if (chest) dimParts.push(`Chest ${chest}`);
+              const waist = fmtDim(selectedSize.waist_cm);
+              if (waist) dimParts.push(`Waist ${waist}`);
+              const hips = fmtDim(selectedSize.hips_cm);
+              if (hips) dimParts.push(`Hips ${hips}`);
+              const length = fmtDim(selectedSize.length_cm);
+              if (length) dimParts.push(`Length ${length}`);
               return (
                 <View style={styles.sizeMeta} testID="item-size-detail">
-                  <Text style={tp.bodyMuted}>
-                    {selectedSize.chest_cm ? `Chest ${selectedSize.chest_cm}cm · ` : ""}
-                    {selectedSize.waist_cm ? `Waist ${selectedSize.waist_cm}cm · ` : ""}
-                    {selectedSize.hips_cm ? `Hips ${selectedSize.hips_cm}cm · ` : ""}
-                    {selectedSize.length_cm ? `Length ${selectedSize.length_cm}cm` : ""}
-                  </Text>
+                  <View style={styles.unitToggleRow}>
+                    <Text style={tp.bodyMuted}>{dimParts.join(" · ")}</Text>
+                    {dimParts.length > 0 ? (
+                      <View style={styles.unitToggle}>
+                        {(["cm", "in"] as const).map((u) => {
+                          const active = u === sizeUnit;
+                          return (
+                            <TouchableOpacity
+                              key={u}
+                              testID={`item-size-unit-${u}`}
+                              onPress={() => setSizeUnit(u)}
+                              style={[
+                                styles.unitChip,
+                                active ? styles.unitChipActive : styles.unitChipInactive,
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.unitChipLabel,
+                                  active
+                                    ? styles.unitChipLabelActive
+                                    : styles.unitChipLabelInactive,
+                                ]}
+                              >
+                                {u.toUpperCase()}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    ) : null}
+                  </View>
                   <View
                     style={[styles.stockChip, { borderColor: badge.color }]}
                     testID={`item-size-stock-${badge.level}`}
@@ -906,6 +955,32 @@ const styles = StyleSheet.create({
   sizeLabelActive: { color: colors.primaryFg },
   sizeLabelOut: { textDecorationLine: "line-through" },
   sizeMeta: { marginTop: spacing.md },
+  unitToggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  unitToggle: {
+    flexDirection: "row",
+    gap: 4,
+  },
+  unitChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+    minWidth: 32,
+    alignItems: "center",
+  },
+  unitChipActive: { borderColor: colors.primary, backgroundColor: colors.primary },
+  unitChipInactive: { borderColor: colors.border, backgroundColor: colors.surface },
+  unitChipLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 9,
+    letterSpacing: 1,
+  },
+  unitChipLabelActive: { color: colors.primaryFg },
+  unitChipLabelInactive: { color: colors.mutedFg },
   colorRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   colorSwatch: { width: 36, height: 36, borderWidth: 1, borderColor: colors.border },
   colorSwatchActive: { borderColor: colors.primary, borderWidth: 2 },

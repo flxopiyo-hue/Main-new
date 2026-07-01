@@ -198,6 +198,27 @@ export default function SellerOrders() {
           </Text>
         </View>
 
+        {/* Sticky new-order nudge — surfaces unacknowledged paid orders
+            so the seller can't miss them when they open this tab. */}
+        {buckets.paid > 0 ? (
+          <View style={styles.newOrderBanner} testID="seller-orders-new-banner">
+            <Feather name="bell" size={14} color={colors.primaryFg} />
+            <Text style={styles.newOrderLabel}>
+              {buckets.paid === 1
+                ? "1 new order awaiting acknowledgement"
+                : `${buckets.paid} new orders awaiting acknowledgement`}
+            </Text>
+            <TouchableOpacity
+              testID="seller-orders-new-banner-jump"
+              onPress={() => setFilter("paid")}
+              activeOpacity={0.85}
+              style={styles.newOrderCta}
+            >
+              <Text style={styles.newOrderCtaLabel}>OPEN</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         {/* Filter chips */}
         <ScrollView
           horizontal
@@ -535,6 +556,34 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
     gap: 8,
+  },
+  newOrderBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    backgroundColor: colors.primary,
+  },
+  newOrderLabel: {
+    flex: 1,
+    fontFamily: fonts.bodySemi,
+    fontSize: 12,
+    letterSpacing: 0.5,
+    color: colors.primaryFg,
+  },
+  newOrderCta: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: colors.primaryFg,
+  },
+  newOrderCtaLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 11,
+    letterSpacing: 1.5,
+    color: colors.primary,
   },
   filterChip: {
     paddingHorizontal: 12,

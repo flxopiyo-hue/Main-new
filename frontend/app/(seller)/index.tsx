@@ -1,20 +1,15 @@
 // Vendor Inventory Dashboard — sellers land here after login.
 //
-// Layout (mobile-first, scales up on tablet/web):
-//   ┌────────────────────────────────────────────────────────────┐
-//   │ Brand header + Add New Product CTA                          │
-//   ├────────────────────────────────────────────────────────────┤
-//   │ [Gross Revenue] [Platform Fees Deducted] [Total Orders]     │
-//   ├────────────────────────────────────────────────────────────┤
-//   │ Listings table (Photo · Title · Price · Stock · Views ·     │
-//   │                  Try-Ons · Actions)                          │
-//   └────────────────────────────────────────────────────────────┘
+// Mobile-first card layout (with a wider tabular variant on tablet). Each
+// listing row now ships with a kebab/action menu so the seller can:
+//   • Edit       → opens the Add Item wizard pre-loaded with this item.
+//   • Duplicate  → server clones the item; new copy lands paused.
+//   • Pause/Unpause → toggles `is_paused`; hidden listings stay in the
+//                     inventory dashboard but disappear from Discover.
+//   • Delete     → unchanged; lives at the end of the action strip.
 //
-// The metric cards are wired to `/api/seller/analytics` so the values are
-// the same numbers Drape will pay out / fee on. The table sources from
-// `/api/items/mine` and joins the per-item analytics on the fly. Each row
-// includes a single-tap delete; tapping the row body opens the buyer-facing
-// item detail in a new screen so the seller can preview their listing.
+// A new low-stock nudge surfaces under any item whose total inventory
+// across sizes is ≤5 so sellers see what's about to run out at a glance.
 
 import { Feather } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
@@ -34,6 +29,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { HeaderMenu } from "@/src/components/HeaderMenu";
 import { useToast } from "@/src/components/Toast";
 import { api, Item, SellerAnalytics, CATEGORY_LABELS } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
@@ -48,6 +44,17 @@ interface Row {
   total_qty: number;
 }
 
+type RowAction = (item: Item) => Promise<void> | void;
+
+interface RowActions {
+  onEdit: RowAction;
+  onDuplicate: RowAction;
+  onTogglePause: RowAction;
+  onDelete: RowAction;
+}
+
+const LOW_STOCK_THRESHOLD = 5;
+
 export default function Inventory() {
   const toast = useToast();
   const { user } = useAuth();
@@ -56,6 +63,7 @@ export default function Inventory() {
   const [analytics, setAnalytics] = useState<SellerAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -79,15 +87,60 @@ export default function Inventory() {
     }, [load]),
   );
 
-  const remove = async (id: string, name: string) => {
-    try {
-      await api.deleteItem(id);
-      toast.show(`Removed "${name}"`, "success");
-      load();
-    } catch (e: any) {
-      toast.show(e?.message ?? "Delete failed", "error");
-    }
-  };
+  const onEdit = useCallback((item: Item) => {
+    router.push(`/(seller)/add-item?edit_id=${item.id}`);
+  }, []);
+
+  const onDuplicate = useCallback(
+    async (item: Item) => {
+      setBusyId(item.id);
+      try {
+        await api.duplicateItem(item.id);
+        toast.show(`Duplicated "${item.name}" (paused)`, "success");
+        await load();
+      } catch (e: any) {
+        toast.show(e?.message ?? "Could not duplicate", "error");
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [toast, load],
+  );
+
+  const onTogglePause = useCallback(
+    async (item: Item) => {
+      setBusyId(item.id);
+      try {
+        const next = !item.is_paused;
+        await api.patchItem(item.id, { is_paused: next });
+        toast.show(
+          next
+            ? `Paused "${item.name}" — hidden from buyers`
+            : `Unpaused "${item.name}" — live for buyers`,
+          "success",
+        );
+        await load();
+      } catch (e: any) {
+        toast.show(e?.message ?? "Could not update", "error");
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [toast, load],
+  );
+
+  const onDelete = useCallback(
+    async (item: Item) => {
+      try {
+        await api.deleteItem(item.id);
+        toast.show(`Removed "${item.name}"`, "success");
+        await load();
+      } catch (e: any) {
+        toast.show(e?.message ?? "Delete failed", "error");
+      }
+    },
+    [toast, load],
+  );
 
   // Join items with their per-item analytics row so the table can show
   // views/try-ons inline. If analytics hasn't loaded yet (e.g. brand new
@@ -107,6 +160,21 @@ export default function Inventory() {
     });
   }, [items, analytics]);
 
+  // Number of listings that are either low stock OR fully out of stock.
+  // Drives the inventory health banner near the top of the page.
+  const lowStockRows = useMemo(
+    () =>
+      rows.filter(
+        (r) =>
+          !r.item.is_paused && r.total_qty > 0 && r.total_qty <= LOW_STOCK_THRESHOLD,
+      ),
+    [rows],
+  );
+  const outOfStockRows = useMemo(
+    () => rows.filter((r) => !r.item.is_paused && r.total_qty === 0),
+    [rows],
+  );
+
   // Currency to display the KPI totals in. We prefer the seller's stored
   // preference so the dashboard "feels" theirs.
   const dispCurrency = user?.preferred_currency ?? "USD";
@@ -115,6 +183,8 @@ export default function Inventory() {
   // tabular layout. On narrow phones we stack each row as a card. This is
   // the simplest responsive trick that keeps both layouts touch-friendly.
   const isWide = width >= 720;
+
+  const actions: RowActions = { onEdit, onDuplicate, onTogglePause, onDelete };
 
   if (loading) {
     return (
@@ -142,7 +212,9 @@ export default function Inventory() {
         {/* Brand header */}
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
-            <Text style={tp.caption}>SELLER PORTAL</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Text style={tp.caption}>SELLER PORTAL</Text>
+            </View>
             <Text style={[tp.h2, { marginTop: 4 }]} numberOfLines={2}>
               {user?.company_name || user?.full_name || "Inventory"}
             </Text>
@@ -153,16 +225,47 @@ export default function Inventory() {
               </Text>
             ) : null}
           </View>
-          <TouchableOpacity
-            testID="inventory-add-btn"
-            onPress={() => router.push("/(seller)/add-item")}
-            style={styles.primaryBtn}
-            activeOpacity={0.85}
-          >
-            <Feather name="plus" size={16} color={colors.primaryFg} />
-            <Text style={styles.primaryLabel}>Add New Product</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <TouchableOpacity
+              testID="inventory-add-btn"
+              onPress={() => router.push("/(seller)/add-item")}
+              style={styles.primaryBtn}
+              activeOpacity={0.85}
+            >
+              <Feather name="plus" size={16} color={colors.primaryFg} />
+              <Text style={styles.primaryLabel}>Add</Text>
+            </TouchableOpacity>
+            <HeaderMenu testID="inventory-header-menu" />
+          </View>
         </View>
+
+        {/* Stock health nudges */}
+        {outOfStockRows.length > 0 || lowStockRows.length > 0 ? (
+          <View style={styles.nudgeRow} testID="inventory-nudge-row">
+            {outOfStockRows.length > 0 ? (
+              <View
+                style={[styles.nudgeChip, { borderColor: colors.error }]}
+                testID="inventory-nudge-out"
+              >
+                <Feather name="alert-octagon" size={12} color={colors.error} />
+                <Text style={[styles.nudgeLabel, { color: colors.error }]}>
+                  {outOfStockRows.length} sold out
+                </Text>
+              </View>
+            ) : null}
+            {lowStockRows.length > 0 ? (
+              <View
+                style={[styles.nudgeChip, { borderColor: "#D97706" }]}
+                testID="inventory-nudge-low"
+              >
+                <Feather name="alert-triangle" size={12} color="#D97706" />
+                <Text style={[styles.nudgeLabel, { color: "#D97706" }]}>
+                  {lowStockRows.length} low stock
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
 
         {/* Metric cards */}
         <View style={[styles.kpiRow, isWide && styles.kpiRowWide]}>
@@ -222,15 +325,14 @@ export default function Inventory() {
                 <Text style={styles.primaryLabel}>Add New Product</Text>
               </TouchableOpacity>
             </View>
-          ) : isWide ? (
-            <TableView rows={rows} onDelete={remove} dispCurrency={dispCurrency} />
           ) : (
             <View>
               {rows.map((r) => (
                 <ListingCard
                   key={r.item.id}
                   row={r}
-                  onDelete={remove}
+                  busy={busyId === r.item.id}
+                  actions={actions}
                   dispCurrency={dispCurrency}
                 />
               ))}
@@ -277,124 +379,160 @@ function KpiCard({
 
 function ListingCard({
   row,
-  onDelete,
+  busy,
+  actions,
   dispCurrency,
 }: {
   row: Row;
-  onDelete: (id: string, name: string) => void;
+  busy: boolean;
+  actions: RowActions;
   dispCurrency: string;
 }) {
   const { item } = row;
+  const paused = !!item.is_paused;
+  const outOfStock = row.total_qty === 0;
+  const lowStock = !outOfStock && row.total_qty <= LOW_STOCK_THRESHOLD;
+
   return (
-    <Pressable
-      testID={`inventory-row-${item.id}`}
-      onPress={() => router.push(`/item/${item.id}`)}
-      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
-    >
-      <Image
-        source={{ uri: dataUriFromBase64(item.image_b64) }}
-        style={styles.cardThumb}
-        resizeMode="cover"
-      />
-      <View style={{ flex: 1 }}>
-        <Text style={tp.caption} numberOfLines={1}>
-          {(CATEGORY_LABELS[item.category] ?? item.category).toUpperCase()}
-          {item.subcategory ? ` · ${item.subcategory}` : ""}
-        </Text>
-        <Text style={styles.cardName} numberOfLines={2}>
-          {item.name}
-        </Text>
-        <Text style={styles.cardPrice}>
-          {formatPriceIn(item.price_cents, item.currency, dispCurrency)}
-          {item.currency !== dispCurrency ? (
-            <Text style={[tp.bodyMuted, { fontSize: 11 }]}>
-              {"  ·  "}listed {formatPrice(item.price_cents, item.currency)}
+    <View style={styles.card} testID={`inventory-row-${item.id}`}>
+      <Pressable
+        testID={`inventory-row-${item.id}-open`}
+        onPress={() => router.push(`/item/${item.id}`)}
+        style={({ pressed }) => [styles.cardTop, pressed && styles.cardPressed]}
+      >
+        <View>
+          <Image
+            source={{ uri: dataUriFromBase64(item.image_b64) }}
+            style={styles.cardThumb}
+            resizeMode="cover"
+          />
+          {paused ? (
+            <View style={styles.pausedBadge} testID={`inventory-row-${item.id}-paused-badge`}>
+              <Feather name="pause" size={10} color={colors.primaryFg} />
+              <Text style={styles.pausedBadgeLabel}>PAUSED</Text>
+            </View>
+          ) : null}
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={tp.caption} numberOfLines={1}>
+            {(CATEGORY_LABELS[item.category] ?? item.category).toUpperCase()}
+            {item.subcategory ? ` · ${item.subcategory}` : ""}
+          </Text>
+          <Text style={styles.cardName} numberOfLines={2}>
+            {item.name}
+          </Text>
+          {item.brand_name ? (
+            <Text style={[tp.bodyMuted, { fontSize: 11 }]} numberOfLines={1}>
+              by {item.brand_name}
             </Text>
           ) : null}
-        </Text>
-        <View style={styles.cardMeta}>
-          <Stat label="Stock" value={row.total_qty} testID={`stock-${item.id}`} />
-          <Stat label="Views" value={row.views} testID={`views-${item.id}`} />
-          <Stat label="Try-ons" value={row.try_ons} testID={`tryons-${item.id}`} />
+          <Text style={styles.cardPrice}>
+            {formatPriceIn(item.price_cents, item.currency, dispCurrency)}
+            {item.currency !== dispCurrency ? (
+              <Text style={[tp.bodyMuted, { fontSize: 11 }]}>
+                {"  ·  "}listed {formatPrice(item.price_cents, item.currency)}
+              </Text>
+            ) : null}
+          </Text>
+          <View style={styles.cardMeta}>
+            <Stat label="Stock" value={row.total_qty} testID={`stock-${item.id}`} />
+            <Stat label="Views" value={row.views} testID={`views-${item.id}`} />
+            <Stat label="Try-ons" value={row.try_ons} testID={`tryons-${item.id}`} />
+          </View>
+          {outOfStock ? (
+            <View style={[styles.stockHint, { backgroundColor: colors.error }]} testID={`inventory-row-${item.id}-soldout`}>
+              <Feather name="alert-octagon" size={10} color={colors.primaryFg} />
+              <Text style={styles.stockHintLabel}>Sold out — restock or pause</Text>
+            </View>
+          ) : lowStock ? (
+            <View style={[styles.stockHint, { backgroundColor: "#D97706" }]} testID={`inventory-row-${item.id}-low`}>
+              <Feather name="alert-triangle" size={10} color={colors.primaryFg} />
+              <Text style={styles.stockHintLabel}>
+                Only {row.total_qty} left across sizes
+              </Text>
+            </View>
+          ) : null}
         </View>
+      </Pressable>
+
+      {/* Row actions strip */}
+      <View style={styles.actionRow}>
+        <ActionButton
+          icon="edit-2"
+          label="Edit"
+          testID={`inventory-row-${item.id}-edit`}
+          disabled={busy}
+          onPress={() => actions.onEdit(item)}
+        />
+        <ActionButton
+          icon="copy"
+          label="Duplicate"
+          testID={`inventory-row-${item.id}-duplicate`}
+          disabled={busy}
+          onPress={() => actions.onDuplicate(item)}
+        />
+        <ActionButton
+          icon={paused ? "play" : "pause"}
+          label={paused ? "Unpause" : "Pause"}
+          testID={`inventory-row-${item.id}-toggle-pause`}
+          disabled={busy}
+          onPress={() => actions.onTogglePause(item)}
+        />
+        <ActionButton
+          icon="trash-2"
+          label="Delete"
+          destructive
+          testID={`inventory-row-${item.id}-delete`}
+          disabled={busy}
+          onPress={() => actions.onDelete(item)}
+        />
       </View>
-      <TouchableOpacity
-        testID={`inventory-delete-${item.id}`}
-        onPress={() => onDelete(item.id, item.name)}
-        style={styles.deleteBtn}
-        hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
-      >
-        <Feather name="trash-2" size={16} color={colors.error} />
-      </TouchableOpacity>
-    </Pressable>
+    </View>
   );
 }
 
-function TableView({
-  rows,
-  onDelete,
-  dispCurrency,
+function ActionButton({
+  icon,
+  label,
+  testID,
+  onPress,
+  disabled,
+  destructive,
 }: {
-  rows: Row[];
-  onDelete: (id: string, name: string) => void;
-  dispCurrency: string;
+  icon: keyof typeof Feather.glyphMap;
+  label: string;
+  testID: string;
+  onPress: () => void;
+  disabled?: boolean;
+  destructive?: boolean;
 }) {
   return (
-    <View style={styles.table} testID="inventory-table">
-      <View style={[styles.tableRow, styles.tableHead]}>
-        <Text style={[styles.cellPhoto, styles.tableHeadText]}>PHOTO</Text>
-        <Text style={[styles.cellTitle, styles.tableHeadText]}>TITLE</Text>
-        <Text style={[styles.cellPrice, styles.tableHeadText]}>PRICE</Text>
-        <Text style={[styles.cellNumber, styles.tableHeadText]}>STOCK</Text>
-        <Text style={[styles.cellNumber, styles.tableHeadText]}>VIEWS</Text>
-        <Text style={[styles.cellNumber, styles.tableHeadText]}>TRY-ONS</Text>
-        <Text style={[styles.cellActions, styles.tableHeadText]}> </Text>
-      </View>
-      {rows.map(({ item, views, try_ons, total_qty }) => (
-        <Pressable
-          key={item.id}
-          testID={`inventory-table-row-${item.id}`}
-          onPress={() => router.push(`/item/${item.id}`)}
-          style={({ pressed }) => [
-            styles.tableRow,
-            pressed && styles.cardPressed,
-          ]}
-        >
-          <View style={styles.cellPhoto}>
-            <Image
-              source={{ uri: dataUriFromBase64(item.image_b64) }}
-              style={styles.tableThumb}
-              resizeMode="cover"
-            />
-          </View>
-          <View style={styles.cellTitle}>
-            <Text style={styles.cardName} numberOfLines={1}>
-              {item.name}
-            </Text>
-            <Text style={[tp.bodyMuted, { fontSize: 11 }]} numberOfLines={1}>
-              {CATEGORY_LABELS[item.category] ?? item.category}
-              {item.subcategory ? ` · ${item.subcategory}` : ""}
-            </Text>
-          </View>
-          <Text style={[styles.cellPrice, styles.cellText]}>
-            {formatPriceIn(item.price_cents, item.currency, dispCurrency)}
-          </Text>
-          <Text style={[styles.cellNumber, styles.cellText]}>{total_qty}</Text>
-          <Text style={[styles.cellNumber, styles.cellText]}>{views}</Text>
-          <Text style={[styles.cellNumber, styles.cellText]}>{try_ons}</Text>
-          <View style={styles.cellActions}>
-            <TouchableOpacity
-              testID={`inventory-table-delete-${item.id}`}
-              onPress={() => onDelete(item.id, item.name)}
-              style={styles.deleteBtn}
-              hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
-            >
-              <Feather name="trash-2" size={16} color={colors.error} />
-            </TouchableOpacity>
-          </View>
-        </Pressable>
-      ))}
-    </View>
+    <TouchableOpacity
+      testID={testID}
+      onPress={onPress}
+      disabled={disabled}
+      style={[
+        styles.actionBtn,
+        destructive && styles.actionBtnDestructive,
+        disabled && { opacity: 0.5 },
+      ]}
+      hitSlop={{ top: 4, right: 4, bottom: 4, left: 4 }}
+      activeOpacity={0.7}
+    >
+      <Feather
+        name={icon}
+        size={13}
+        color={destructive ? colors.error : colors.primary}
+      />
+      <Text
+        style={[
+          styles.actionLabel,
+          destructive && { color: colors.error },
+        ]}
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
   );
 }
 
@@ -436,17 +574,39 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 6,
     backgroundColor: colors.primary,
     paddingHorizontal: spacing.md,
-    paddingVertical: 12,
-    minHeight: 44,
+    paddingVertical: 10,
+    minHeight: 40,
   },
   primaryLabel: {
     color: colors.primaryFg,
     fontFamily: fonts.bodySemi,
-    fontSize: 12,
+    fontSize: 11,
     letterSpacing: 1.5,
+    textTransform: "uppercase",
+  },
+  nudgeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
+  },
+  nudgeChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    backgroundColor: colors.surface,
+  },
+  nudgeLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 10,
+    letterSpacing: 1.2,
     textTransform: "uppercase",
   },
   kpiRow: {
@@ -505,16 +665,36 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { textAlign: "center", marginTop: spacing.sm },
   emptyBody: { textAlign: "center" },
-  // Card layout (mobile)
+  // Card layout (mobile + tablet)
   card: {
-    flexDirection: "row",
-    gap: spacing.md,
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    gap: spacing.sm,
+  },
+  cardTop: {
+    flexDirection: "row",
+    gap: spacing.md,
   },
   cardPressed: { opacity: 0.7 },
   cardThumb: { width: 72, height: 92, backgroundColor: colors.muted },
+  pausedBadge: {
+    position: "absolute",
+    bottom: 4,
+    left: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    backgroundColor: colors.primary,
+  },
+  pausedBadgeLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 9,
+    letterSpacing: 1,
+    color: colors.primaryFg,
+  },
   cardName: {
     fontFamily: fonts.heading,
     fontSize: 18,
@@ -538,32 +718,49 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     marginTop: 2,
   },
-  deleteBtn: { padding: 8, alignSelf: "flex-start" },
-  // Table layout (wide)
-  table: { borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
-  tableRow: {
+  stockHint: {
+    marginTop: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    gap: spacing.md,
+    gap: 6,
+    alignSelf: "flex-start",
   },
-  tableHead: { backgroundColor: colors.muted },
-  tableHeadText: {
+  stockHintLabel: {
     fontFamily: fonts.bodySemi,
     fontSize: 10,
-    letterSpacing: 1.5,
-    color: colors.mutedFg,
+    letterSpacing: 0.8,
+    color: colors.primaryFg,
+  },
+  actionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 4,
+  },
+  actionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    minHeight: 36,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  actionBtnDestructive: {
+    borderColor: colors.error,
+  },
+  actionLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 10,
+    letterSpacing: 1.2,
+    color: colors.primary,
     textTransform: "uppercase",
   },
-  tableThumb: { width: 56, height: 72, backgroundColor: colors.muted },
-  cellPhoto: { width: 72 },
-  cellTitle: { flex: 3, minWidth: 160 },
-  cellPrice: { flex: 1, minWidth: 80, textAlign: "right" },
-  cellNumber: { flex: 1, minWidth: 60, textAlign: "right" },
-  cellActions: { width: 40, alignItems: "flex-end" },
+  // Legacy table styles retained in case we re-enable the wide-mode table later.
   cellText: {
     fontFamily: fonts.bodySemi,
     fontSize: 14,

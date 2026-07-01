@@ -195,8 +195,7 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Seller registration overhaul (frontend) — Company/Location/Bank/M-Pesa instead of age/gender/DOB"
-    - "Admin role + admin dashboard (backend + frontend)"
+    - "Iteration 17 — 10-point pre-Phase-E QoL checklist (edit/duplicate/pause items, price parser fix, cm/in toggle, HeaderMenu role switch, brand filter, low-stock nudge, new-order banner, View-as-buyer preview)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -455,3 +454,35 @@ agent_communication:
         4) Tap Users → search "atelier" → finds Maison Lumière; toggle SUSPEND then RESTORE.
         5) Tap Items → delete icon on any item → confirmation → item disappears (do not actually delete seeded items unless you re-seed afterwards).
         6) Tap Orders → switch between PAID/PENDING filters → list updates.
+  - agent: "main"
+    message: |
+      Iteration 17 lands the 10-point pre-Phase-E QoL checklist. Please regression-test:
+
+      Backend:
+        1) PATCH /api/items/{id} as the item's owner with a subset body (e.g. {price_cents: 1234, is_paused: true}) → 200, updated fields persist, other fields untouched.
+        2) PATCH /api/items/{id} with image_b64+extra_images → images[] rebuilt to [primary, ...extras[:4]].
+        3) PATCH /api/items/{id} as a different seller → 403 Not your item.
+        4) POST /api/items/{id}/duplicate → 200, new item with name suffixed "(Copy)", is_paused=true, cents_normalized=true, ownership matches the caller.
+        5) POST /api/items/{id}/duplicate as a different seller → 403.
+        6) GET /api/items?brand=maison → filters by case-insensitive substring on brand_name.
+        7) GET /api/items should NOT include is_paused=true items (verify by pausing then re-listing).
+        8) Startup migration: price_cents for zero-decimal-currency items should be ≥1_000_000 for seeded pieces (was 12900 → now 1290000). No dupes on repeat boots.
+
+      Frontend (buyer):
+        1) Sign in as buyer@aurafit.demo/demo-buyer-2026 → Discover shows "KSh 22,900" etc. (no more "KSh 129" bug).
+        2) Top-right bookmark icon opens brand-filter input; typing "Maison" + APPLY narrows the grid; brand chip shows and can be cleared.
+        3) Top-right circular avatar opens HeaderMenu with "Switch to Seller mode" + "Sign out".
+        4) Item detail (any bottom): size details show "Chest ##cm · Length ##cm"; toggle CM/IN chip flips values (e.g. 100cm ↔ 39.4").
+
+      Frontend (seller):
+        1) Sign in as atelier@aurafit.demo/demo-seller-2026 → Inventory shows KSh prices realistic (KSh 22,900 etc.).
+        2) Each row shows Edit / Duplicate / Pause / Delete action strip.
+        3) Tapping Edit lands on wizard header "EDIT PIECE · STEP 1 / 3" with all fields pre-filled; footer says "Save Changes".
+        4) Sizing step shows CM / IN toggle → flipping converts inline measurements (backend still stores cm).
+        5) Basics step shows live price preview "Buyers will see · KSh ##,###" as user types.
+        6) Tapping Duplicate creates "(Copy)" listing that is paused; badge shows PAUSED on thumb.
+        7) Tapping Pause on an active item flips it to paused (badge appears, buyers can't see it in Discover); Unpause restores.
+        8) HeaderMenu (M avatar) → "View as buyer" enters the buyer tabs with a floating "Previewing as buyer · Tap to exit" banner above the tab bar.
+        9) Orders page: if there are unacknowledged paid orders, a black "N new orders awaiting acknowledgement · OPEN" banner appears at the top.
+
+      Test credentials unchanged — see /app/memory/test_credentials.md.

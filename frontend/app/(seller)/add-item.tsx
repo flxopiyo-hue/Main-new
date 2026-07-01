@@ -13,12 +13,10 @@
 // summary step with missing required data.
 
 import { Feather } from "@expo/vector-icons";
-import { router } from "expo-router";
-import React, { useMemo, useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Image,
-  Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -42,11 +40,12 @@ import {
   DIMENSION_KEYS_BY_TYPE,
   DIMENSION_LABELS,
   DimensionKey,
+  Item,
   SizeOption,
   SUBCATEGORIES_BY_CATEGORY,
 } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
-import { CURRENCIES, parseAmountToCents, priceInputPlaceholder } from "@/src/lib/currency";
+import { CURRENCIES, formatPrice, parseAmountToCents, priceInputPlaceholder } from "@/src/lib/currency";
 import { dataUriFromBase64, pickImageFromCamera, pickImageFromLibrary } from "@/src/lib/images";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
@@ -130,10 +129,22 @@ export default function AddItem() {
   const { user } = useAuth();
   const { width } = useWindowDimensions();
   const isWide = width >= 720;
+  const params = useLocalSearchParams<{ edit_id?: string }>();
+  const editId = typeof params.edit_id === "string" ? params.edit_id : undefined;
+  const isEditing = !!editId;
 
   const defaultCurrency: CurrencyCode = (user?.preferred_currency ?? "KES") as CurrencyCode;
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  // Hydration: when the wizard launches in edit mode, fetch the item and
+  // pre-fill every field so the seller can scrub through the same flow
+  // they used to create it. We block the wizard with a small spinner
+  // while loading so partial state doesn't flicker into view.
+  const [hydrating, setHydrating] = useState<boolean>(isEditing);
+  // Centimetre / inch toggle for the per-size dimension inputs. The
+  // backend is always cm — this only affects what the seller sees and
+  // types. We round-trip cm↔in via 2.54.
+  const [unit, setUnit] = useState<"cm" | "in">("cm");
 
   // Step 1 — up to 5 photos (primary first). `brand_name` is optional but
   // we surface it as a first-class field so buyers can search by it later.
@@ -153,6 +164,61 @@ export default function AddItem() {
   const [sizes, setSizes] = useState<Record<string, SizeOption>>({});
   const [pickedColors, setPickedColors] = useState<ColorOption[]>([]);
   const [saving, setSaving] = useState(false);
+
+  // -----------------------------------------------------------------------
+  // Edit-mode hydration
+  // -----------------------------------------------------------------------
+  useEffect(() => {
+    if (!editId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const item: Item = await api.getItem(editId);
+        if (cancelled) return;
+        // Reconstitute photos (primary first, then extras). Fall back to
+        // image_b64 alone when older items lack the gallery field.
+        const gallery = item.images && item.images.length > 0 ? item.images : [item.image_b64];
+        setPhotos(gallery);
+        setName(item.name);
+        setBrandName(item.brand_name || "");
+        setCurrency(item.currency);
+        // Price is stored as 1/100 of major units. For the input field we
+        // show the major-unit value (no decimals for KES/etc.).
+        const meta = CURRENCIES.find((c) => c.code === item.currency);
+        const decimals = meta?.decimals ?? 2;
+        const major = item.price_cents / 100;
+        setPriceInput(decimals === 0 ? String(Math.round(major)) : major.toFixed(2));
+        setDescription(item.description || "");
+        setAudience(item.audience as Audience);
+        setCategory(item.category as Category);
+        setSubcategory(item.subcategory || null);
+        const sizesMap: Record<string, SizeOption> = {};
+        for (const s of item.sizes) sizesMap[s.label] = s;
+        setSizes(sizesMap);
+        setPickedColors(item.colors || []);
+      } catch (e: any) {
+        toast.show(e?.message ?? "Couldn't load item for editing", "error");
+        router.replace("/(seller)");
+      } finally {
+        if (!cancelled) setHydrating(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [editId, toast]);
+
+  // -----------------------------------------------------------------------
+  // Live price preview — shown right under the price input.
+  // -----------------------------------------------------------------------
+  const livePriceCents = useMemo(
+    () => parseAmountToCents(priceInput, currency),
+    [priceInput, currency],
+  );
+  const livePricePreview = useMemo(
+    () => (livePriceCents != null ? formatPrice(livePriceCents, currency) : null),
+    [livePriceCents, currency],
+  );
 
   // -----------------------------------------------------------------------
   // Per-step validation rules
@@ -293,21 +359,39 @@ export default function AddItem() {
     setSaving(true);
     try {
       const [primary, ...extras] = photos;
-      await api.createItem({
-        name: name.trim(),
-        description: description.trim(),
-        brand_name: brandName.trim() || undefined,
-        category,
-        subcategory: subcategory ?? undefined,
-        price_cents: priceCents,
-        currency,
-        image_b64: primary,
-        extra_images: extras,
-        sizes: Object.values(sizes),
-        colors: pickedColors,
-        audience,
-      });
-      toast.show("Item published", "success");
+      if (isEditing && editId) {
+        await api.patchItem(editId, {
+          name: name.trim(),
+          description: description.trim(),
+          brand_name: brandName.trim() || null,
+          category,
+          subcategory: subcategory ?? null,
+          price_cents: priceCents,
+          currency,
+          image_b64: primary,
+          extra_images: extras,
+          sizes: Object.values(sizes),
+          colors: pickedColors,
+          audience,
+        });
+        toast.show("Changes saved", "success");
+      } else {
+        await api.createItem({
+          name: name.trim(),
+          description: description.trim(),
+          brand_name: brandName.trim() || undefined,
+          category,
+          subcategory: subcategory ?? undefined,
+          price_cents: priceCents,
+          currency,
+          image_b64: primary,
+          extra_images: extras,
+          sizes: Object.values(sizes),
+          colors: pickedColors,
+          audience,
+        });
+        toast.show("Item published", "success");
+      }
       router.replace("/(seller)");
     } catch (e: any) {
       toast.show(e?.message ?? "Failed to publish", "error");
@@ -319,6 +403,16 @@ export default function AddItem() {
   // -----------------------------------------------------------------------
   // Render
   // -----------------------------------------------------------------------
+  if (hydrating) {
+    return (
+      <SafeAreaView style={[styles.root, { alignItems: "center", justifyContent: "center" }]}>
+        <Text style={[tp.bodyMuted, { marginTop: spacing.md }]}>
+          Loading piece for editing…
+        </Text>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.root} edges={["top", "bottom"]}>
       {/* Header & step progress bar */}
@@ -332,7 +426,9 @@ export default function AddItem() {
         >
           <Feather name="arrow-left" size={22} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={tp.caption}>NEW PIECE · STEP {step} / 3</Text>
+        <Text style={tp.caption}>
+          {isEditing ? "EDIT PIECE" : "NEW PIECE"} · STEP {step} / 3
+        </Text>
         <View style={styles.iconBtn} />
       </View>
 
@@ -353,6 +449,7 @@ export default function AddItem() {
             currency={currency}
             description={description}
             errors={step1Errors}
+            livePricePreview={livePricePreview}
             onPickImage={pickImage}
             onRemovePhoto={removePhoto}
             onMovePhoto={movePhoto}
@@ -404,6 +501,8 @@ export default function AddItem() {
             dimKeys={dimKeys}
             errors={matrixErrors}
             colors={pickedColors}
+            unit={unit}
+            onChangeUnit={setUnit}
             onToggleSize={toggleSize}
             onUpdateSize={updateSize}
             onToggleColor={toggleColor}
@@ -447,7 +546,7 @@ export default function AddItem() {
           <View style={{ flex: 1 }}>
             <AppButton
               testID="wizard-publish-btn"
-              label="Publish"
+              label={isEditing ? "Save Changes" : "Publish"}
               onPress={submit}
               loading={saving}
               disabled={!step1Valid || !step2Valid || !step3Valid}
@@ -520,6 +619,7 @@ interface StepBasicsProps {
   currency: CurrencyCode;
   description: string;
   errors: Record<string, string>;
+  livePricePreview: string | null;
   onPickImage: (source: "camera" | "library") => void;
   onRemovePhoto: (idx: number) => void;
   onMovePhoto: (idx: number, dir: -1 | 1) => void;
@@ -538,6 +638,7 @@ function StepBasics({
   currency,
   description,
   errors,
+  livePricePreview,
   onPickImage,
   onRemovePhoto,
   onMovePhoto,
@@ -662,6 +763,14 @@ function StepBasics({
         placeholder={priceInputPlaceholder(currency)}
         errorText={errors.price}
       />
+      {livePricePreview ? (
+        <View style={styles.pricePreviewRow} testID="wizard-price-preview">
+          <Feather name="eye" size={11} color={colors.primary} />
+          <Text style={styles.pricePreviewLabel}>
+            Buyers will see · {livePricePreview}
+          </Text>
+        </View>
+      ) : null}
       <Text style={[tp.caption, styles.label]}>Currency</Text>
       <View style={styles.currencyRow}>
         {CURRENCIES.map((c) => (
@@ -832,6 +941,8 @@ interface StepSizingProps {
   dimKeys: DimensionKey[];
   errors: Record<string, string>;
   colors: ColorOption[];
+  unit: "cm" | "in";
+  onChangeUnit: (u: "cm" | "in") => void;
   onToggleSize: (label: string) => void;
   onUpdateSize: (label: string, patch: Partial<SizeOption>) => void;
   onToggleColor: (c: ColorOption) => void;
@@ -843,6 +954,8 @@ function StepSizing({
   dimKeys,
   errors,
   colors: pickedColors,
+  unit,
+  onChangeUnit,
   onToggleSize,
   onUpdateSize,
   onToggleColor,
@@ -858,8 +971,35 @@ function StepSizing({
         for fit-matching.
       </Text>
 
+      <View style={styles.unitRow} testID="wizard-unit-row">
+        <Text style={[tp.caption, { marginRight: 8 }]}>Measure in</Text>
+        {(["cm", "in"] as const).map((u) => {
+          const active = u === unit;
+          return (
+            <TouchableOpacity
+              key={u}
+              testID={`wizard-unit-${u}`}
+              onPress={() => onChangeUnit(u)}
+              style={[
+                styles.unitChip,
+                active ? styles.unitChipActive : styles.unitChipInactive,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.unitChipLabel,
+                  active ? styles.unitChipLabelActive : styles.unitChipLabelInactive,
+                ]}
+              >
+                {u.toUpperCase()}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
       <Text style={[tp.caption, styles.label]}>
-        Sizes & dimensions (cm){audience === "kids" ? " · kid sizes" : ""}
+        Sizes & dimensions ({unit}){audience === "kids" ? " · kid sizes" : ""}
       </Text>
       <View style={styles.sizeRow}>
         {sizeLabels.map((s) => {
@@ -904,6 +1044,7 @@ function StepSizing({
                 testID={`wizard-size-${s.label}-${k}`}
                 label={DIMENSION_LABELS[k]}
                 value={(s as Record<string, unknown>)[k] as number | undefined}
+                unit={unit}
                 onChange={(v) =>
                   onUpdateSize(s.label, { [k]: v } as Partial<SizeOption>)
                 }
@@ -914,6 +1055,7 @@ function StepSizing({
               testID={`wizard-size-${s.label}-qty`}
               label="Qty"
               value={s.available_qty}
+              unit={null}
               onChange={(v) =>
                 onUpdateSize(s.label, { available_qty: v ?? 0 })
               }
@@ -954,18 +1096,34 @@ function StepSizing({
 interface DimFieldProps {
   label: string;
   value?: number | null;
+  // Display unit for length measurements; null means "no unit" (used for
+  // the available_qty field, which is always integer count, not length).
+  unit: "cm" | "in" | null;
   onChange: (v: number | undefined) => void;
   testID: string;
   errorText?: string | null;
 }
 
-function DimField({ label, value, onChange, testID, errorText }: DimFieldProps) {
-  const [raw, setRaw] = useState(value != null ? String(value) : "");
+const CM_PER_IN = 2.54;
 
-  // Sync external resets (e.g. when switching category clears sizes).
+function DimField({ label, value, unit, onChange, testID, errorText }: DimFieldProps) {
+  // We always STORE in cm on the backend. When the user is in inch mode,
+  // we convert the stored cm value to inches for display and convert
+  // their inch input back to cm before bubbling up. Keeps the wire
+  // format stable regardless of seller unit preference.
+  const displayValue = React.useMemo(() => {
+    if (value == null) return "";
+    if (unit === "in") return String(Math.round((value / CM_PER_IN) * 10) / 10);
+    return String(value);
+  }, [value, unit]);
+
+  const [raw, setRaw] = useState(displayValue);
+
+  // Sync external resets (e.g. when switching category clears sizes, or
+  // when the seller flips cm↔in we need to repaint the field).
   React.useEffect(() => {
-    setRaw(value != null ? String(value) : "");
-  }, [value]);
+    setRaw(displayValue);
+  }, [displayValue]);
 
   const handleChange = (t: string) => {
     setRaw(t);
@@ -975,16 +1133,21 @@ function DimField({ label, value, onChange, testID, errorText }: DimFieldProps) 
       return;
     }
     if (isNaN(n)) {
-      // Invalid → keep raw text on screen, but propagate undefined so validators see "missing"
       onChange(undefined);
       return;
     }
-    onChange(n);
+    // Convert back to cm before bubbling up when the seller types in
+    // inches. Length-less fields (qty) skip the conversion.
+    const stored = unit === "in" ? n * CM_PER_IN : n;
+    onChange(stored);
   };
 
   return (
     <View style={dimStyles.wrap}>
-      <Text style={dimStyles.label}>{label}</Text>
+      <Text style={dimStyles.label}>
+        {label}
+        {unit ? ` (${unit})` : ""}
+      </Text>
       <TextInput
         testID={testID}
         keyboardType="decimal-pad"
@@ -1309,4 +1472,46 @@ const styles = StyleSheet.create({
   },
   footerBtnPrimary: { backgroundColor: colors.primary },
   footerBtnDisabled: { opacity: 0.45 },
+  // Live price preview row under the price input.
+  pricePreviewRow: {
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.surface,
+  },
+  pricePreviewLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 11,
+    letterSpacing: 0.6,
+    color: colors.primary,
+  },
+  // cm / in toggle on the Sizing step.
+  unitRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: spacing.md,
+  },
+  unitChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderWidth: 1,
+    minWidth: 44,
+    alignItems: "center",
+  },
+  unitChipActive: { borderColor: colors.primary, backgroundColor: colors.primary },
+  unitChipInactive: { borderColor: colors.border, backgroundColor: colors.surface },
+  unitChipLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 11,
+    letterSpacing: 1.5,
+  },
+  unitChipLabelActive: { color: colors.primaryFg },
+  unitChipLabelInactive: { color: colors.primary },
 });

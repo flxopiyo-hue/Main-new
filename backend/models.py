@@ -548,11 +548,40 @@ class ItemOut(BaseModel):
     sizes: List[SizeOption]
     colors: List[ColorOption]
     audience: Audience = "unisex"
+    # Paused listings are hidden from buyer Discover/search but still
+    # appear in the seller's Inventory dashboard with a "Paused" badge so
+    # the seller can unpause without re-listing.
+    is_paused: bool = False
     created_at: datetime
 
 
-class ItemPatchIn(BaseModel):
+class ItemPatch(BaseModel):
+    """Partial update body for `PATCH /items/{id}` — every field optional.
+    Sellers can edit any of these without re-uploading photos. Stock and
+    dimensions live inside `sizes`; passing it replaces the entire list.
+    Pause/unpause uses the `is_paused` toggle."""
+
+    name: Optional[str] = None
+    description: Optional[str] = None
+    brand_name: Optional[str] = Field(default=None, max_length=80)
+    category: Optional[
+        Literal["shirts", "dresses", "pants", "outerwear", "shoes", "accessories"]
+    ] = None
+    subcategory: Optional[str] = Field(default=None, max_length=40)
+    price_cents: Optional[int] = Field(default=None, ge=0)
+    currency: Optional[Currency] = None
+    garment_type: Optional[GarmentType] = None
+    image_b64: Optional[str] = None
+    extra_images: Optional[List[str]] = Field(default=None, max_length=4)
     sizes: Optional[List[SizeOption]] = None
+    colors: Optional[List[ColorOption]] = None
+    audience: Optional[Audience] = None
+    is_paused: Optional[bool] = None
+
+
+# Legacy alias — older imports referenced ItemPatchIn. Kept so we don't
+# break any in-flight clients that bundle the old field list.
+ItemPatchIn = ItemPatch
 
 
 # ---------------------------------------------------------------------------
@@ -827,6 +856,7 @@ def item_to_out(doc: Dict[str, Any]) -> ItemOut:
         sizes=[SizeOption(**s) for s in doc.get("sizes", [])],
         colors=[ColorOption(**c) for c in doc.get("colors", [])],
         audience=doc.get("audience", "unisex"),
+        is_paused=bool(doc.get("is_paused", False)),
         created_at=doc["created_at"],
     )
 

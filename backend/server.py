@@ -83,6 +83,59 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+async def normalize_zero_decimal_prices() -> None:
+    """One-shot migration: items created before the cents-parser fix have
+    `price_cents` stored in MAJOR units (e.g. "11000" for KSh 11,000)
+    rather than minor units (which `formatPrice` always divides by 100).
+    Bump those by ×100 and mark them with ``cents_normalized=True`` so
+    we never double-multiply.
+
+    Only zero-decimal currencies are affected — USD/EUR/etc. were always
+    stored correctly because their seller-facing decimals are 2 and
+    `parseAmountToCents` multiplied appropriately. Idempotent on repeat
+    runs because of the `cents_normalized` flag.
+
+    Legacy seed items that predate the currency field default to KES so
+    they get pulled through the same normalization path.
+    """
+    from core.db import db as _db
+
+    ZERO_DECIMAL = {"KES", "NGN", "UGX", "TZS", "RWF", "INR"}
+    try:
+        # Step 1 — legacy items missing a currency field. Assume KES so
+        # they land in the zero-decimal bucket for the bump below.
+        await _db.items.update_many(
+            {"currency": {"$exists": False}},
+            {"$set": {"currency": "KES"}},
+        )
+        # Step 2 — bump price_cents by ×100 for anything that hasn't been
+        # normalized yet.
+        cursor = _db.items.find(
+            {
+                "currency": {"$in": list(ZERO_DECIMAL)},
+                "cents_normalized": {"$ne": True},
+            },
+            {"_id": 0, "id": 1, "price_cents": 1},
+        )
+        bumped = 0
+        async for doc in cursor:
+            await _db.items.update_one(
+                {"id": doc["id"]},
+                {
+                    "$set": {
+                        "price_cents": int(doc.get("price_cents") or 0) * 100,
+                        "cents_normalized": True,
+                    }
+                },
+            )
+            bumped += 1
+        if bumped:
+            logger.info("price_cents normalization: bumped %d zero-decimal item(s)", bumped)
+    except Exception as e:  # pragma: no cover - migration must not crash boot
+        logger.warning("price_cents normalization skipped: %s", e)
+
+
 @app.on_event("shutdown")
 async def shutdown_db_client() -> None:
     close_db()

@@ -1,0 +1,33 @@
+{
+  "summary": "Iteration 17 pre-Phase-E QoL checklist — all 15 acceptance items verified end-to-end. Backend (7/7 pytest pass): PATCH partial as owner 200 / non-owner 403, POST /duplicate creates (Copy) + is_paused=true + 403 for non-owners, brand=maison substring case-insensitive filter works, paused items excluded from GET /api/items, seed price_cents migration is idempotent (all KES items ≥1,000,000, cents_normalized=true). Frontend (mobile viewport 390x844): buyer Discover shows KSh 22,900 / 19,900 / 34,900 / 24,900 (no KSh 129 bug), bookmark (`discover-brand-toggle-btn`) opens brand input row (`discover-brand-input`+`discover-brand-apply`) — typing 'Maison' + tap APPLY renders `BRAND · MAISON ×` clearable chip; avatar (`discover-header-menu`) opens HeaderMenu with 'Switch to Seller mode', 'Profile & settings', 'Sign out' (buyer) and 'View as buyer' + 'Switch to Buyer mode' + 'Profile & settings' + 'Sign out' (seller). Seller inventory: every row has `-edit / -duplicate / -toggle-pause / -delete` testIDs, low-stock 'Only 5 left' banner rendered on Half wool jacket. Edit navigation lands on `/add-item?edit_id=<uuid>` with header 'EDIT PIECE · STEP 1 / 3', title/brand/price pre-filled ('Selvedge Denim'/'Maison Lumière'/'16900'), step 3 shows 'Save Changes' + MEASURE IN CM/IN toggle (default CM) with `wizard-unit-cm`/`wizard-unit-in` testIDs. Wizard price input shows live preview 'Buyers will see · KSh 11,000' when typing 11000 (and KSh 16,900 for 16900) — KSh 110 bug is fixed. Item detail cm/in toggle (`item-size-unit-cm`/`item-size-unit-in`) flips 100cm ↔ 39.4\" correctly. View-as-buyer via `header-menu-view-as-buyer` navigates to /(tabs) with floating 'PREVIEWING AS BUYER · TAP TO EXIT' banner (`preview-banner-exit`) and does NOT flip JWT role.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration17_qol.py",
+    "/app/test_reports/pytest/iteration17_results.xml"
+  ],
+  "action_items": [
+    "(Optional, not iteration-17 regression) Seller dashboard KPI card shows 'GROSS REVENUE KSh 507' — legacy orders were captured pre-migration in major units, so amount_cents in orders was NOT bumped ×100 by the startup migration. Consider a companion one-shot migration on `orders.amount_cents` (guarded by an `amount_normalized` flag) OR document that historical orders predate normalization. This is not part of the 15 iteration-17 items — flagging as observation only."
+  ],
+  "critical_code_review_comments": [
+    "server.py normalize_zero_decimal_prices migration correctly guards on cents_normalized flag so it is idempotent across restarts. Verified twice via supervisor restart — bumped=0 on the second run.",
+    "routers/items.py list_items brand filter uses {\"$regex\": brand, \"$options\": \"i\"} — matches substring on brand_name. Consider `re.escape(brand)` if seller-supplied brand names ever contain regex metacharacters (e.g. '.', '$'), though current usage is safe with UI-controlled input.",
+    "routers/items.py duplicate_item resets is_paused=True and re-generates id but keeps views/try_ons counters absent from the clone (they start at 0 implicitly). Correct per spec.",
+    "HeaderMenu.tsx correctly gates 'View as buyer' vs 'Switch to Buyer mode' — the former does not change JWT role (verified: after view-as-buyer, atelier@aurafit.demo remains a seller and can tap-to-exit back to /(seller)).",
+    "The `header-menu-*` testIDs are consistent between buyer discover (`discover-header-menu`) and seller inventory (`inventory-header-menu`) headers — good future-proofing for RN Playwright selectors."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration17_qol.py (new — 7 tests, all pass)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "None persistent. TestPatchItem.test_owner_patch_partial temporarily sets brand_name='Maison Lumière' on the seller's first-listed item to exercise the brand filter; restores price_cents at teardown. Test suite also creates a throwaway TEST_ seller for non-owner 403 checks and a TEST_ pause-item that is deleted at end of test.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All 15 iteration-17 QoL acceptance items pass. Backend regression file lives at /app/backend/tests/test_iteration17_qol.py — safe to re-run before Phase E (Stripe subs) integration. Main leftover observation is the Orders KPI card showing pre-migration order amounts (KSh 507 total); this pre-dates iter 17 and is called out as an optional companion migration in action_items. Do NOT re-run the migration idempotency without checking — it is already verified idempotent via supervisor restart. Seller pre-seeded orders and buyer photos remain intact.",
+  "rca_of_issue": "N/A — no bugs surfaced for iteration 17."
+}

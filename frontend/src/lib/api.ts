@@ -216,6 +216,7 @@ export interface Item {
   sizes: SizeOption[];
   colors: ColorOption[];
   audience: Audience;
+  is_paused?: boolean;
   created_at: string;
 }
 
@@ -623,6 +624,7 @@ export const api = {
     audience?: string;
     kid_age_group?: KidAgeGroup;
     q?: string;
+    brand?: string;
   } = {}) => {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {
@@ -722,8 +724,26 @@ export const api = {
   connectStatus: () => request<ConnectStatus>("/seller/connect/status"),
   connectSetup: (body: { return_url?: string } = {}) =>
     request<ConnectStatus>("/seller/connect/setup", { method: "POST", body }),
-  patchItem: (id: string, body: { sizes?: SizeOption[] }) =>
-    request<Item>(`/items/${id}`, { method: "PATCH", body }),
+  patchItem: (
+    id: string,
+    body: {
+      name?: string;
+      description?: string;
+      brand_name?: string | null;
+      category?: string;
+      subcategory?: string | null;
+      price_cents?: number;
+      currency?: CurrencyCode;
+      image_b64?: string;
+      extra_images?: string[];
+      sizes?: SizeOption[];
+      colors?: ColorOption[];
+      audience?: Audience;
+      is_paused?: boolean;
+    },
+  ) => request<Item>(`/items/${id}`, { method: "PATCH", body }),
+  duplicateItem: (id: string) =>
+    request<Item>(`/items/${id}/duplicate`, { method: "POST" }),
   itemSizeGuide: (id: string) => request<SizeGuide>(`/items/${id}/size-guide`),
 
   // Feed (algorithmic discover)

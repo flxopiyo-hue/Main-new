@@ -260,6 +260,11 @@ async def main() -> None:
             print(f"  ⚠️ image fetch failed for {spec['name']}: {e}")
             continue
         now = datetime.now(timezone.utc)
+        # Convert legacy price_cents (originally drafted in dollars) into
+        # proper KES minor units. Each unit was meant to be ÷100 (USD
+        # cents) — we re-scale by 100 so 12900 → 1,290,000 (KSh 12,900),
+        # which is a realistic Kenyan boutique price tag.
+        kes_price_cents = int(spec["price_cents"]) * 100
         await db.items.insert_one(
             {
                 "id": str(uuid.uuid4()),
@@ -268,11 +273,14 @@ async def main() -> None:
                 "name": spec["name"],
                 "description": spec["description"],
                 "category": spec["category"],
-                "price_cents": spec["price_cents"],
+                "price_cents": kes_price_cents,
+                "currency": "KES",
                 "image_b64": image_b64,
                 "sizes": spec["sizes"],
                 "colors": spec["colors"],
                 "audience": spec.get("audience", "unisex"),
+                "is_paused": False,
+                "cents_normalized": True,
                 "created_at": now,
             }
         )

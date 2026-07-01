@@ -119,18 +119,25 @@ export function formatPriceIn(
 
 /**
  * Convert a user-entered amount (e.g. "129" or "16,500.50") in the given
- * currency into integer minor units. Used by the seller "new item" form.
+ * currency into integer minor units (1/100 of the major unit). Used by
+ * the seller "new item" form.
+ *
+ * IMPORTANT contract: we ALWAYS multiply by 100, regardless of whether
+ * the currency formats with decimals. Even for zero-decimal currencies
+ * like KES, NGN, UGX (where the user types "11,000" and never thinks in
+ * "cents"), we still store as 1,100,000 minor units. The `formatPrice`
+ * helper always divides by 100 on the way out — this consistency is
+ * what fixes the original bug where "11,000" rendered as "KSh 110".
  */
 export function parseAmountToCents(
   input: string,
-  currency: Currency,
+  _currency: Currency,
 ): number | null {
-  const meta = getCurrencyMeta(currency);
   const cleaned = input.replace(/[^0-9.,-]/g, "").replace(/,/g, "");
   if (!cleaned) return null;
   const n = parseFloat(cleaned);
   if (Number.isNaN(n) || n < 0) return null;
-  return Math.round(n * Math.pow(10, meta.decimals === 0 ? 0 : 2));
+  return Math.round(n * 100);
 }
 
 /** Label used for input placeholders in the seller form. */
