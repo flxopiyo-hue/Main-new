@@ -97,7 +97,10 @@ async def normalize_zero_decimal_prices() -> None:
     runs because of the `cents_normalized` flag.
 
     Legacy seed items that predate the currency field default to KES so
-    they get pulled through the same normalization path.
+    they get pulled through the same normalization path. The same
+    correction is applied to `orders.amount_cents` so historical revenue
+    figures on the seller dashboard don't show KSh 507 for what should
+    be KSh 50,700.
     """
     from core.db import db as _db
 
@@ -118,7 +121,7 @@ async def normalize_zero_decimal_prices() -> None:
             },
             {"_id": 0, "id": 1, "price_cents": 1},
         )
-        bumped = 0
+        bumped_items = 0
         async for doc in cursor:
             await _db.items.update_one(
                 {"id": doc["id"]},
@@ -129,9 +132,41 @@ async def normalize_zero_decimal_prices() -> None:
                     }
                 },
             )
-            bumped += 1
-        if bumped:
-            logger.info("price_cents normalization: bumped %d zero-decimal item(s)", bumped)
+            bumped_items += 1
+        if bumped_items:
+            logger.info(
+                "price_cents normalization: bumped %d zero-decimal item(s)",
+                bumped_items,
+            )
+
+        # Step 3 — same fix for historical orders. Orders captured the
+        # buggy item.price_cents at checkout time so the seller
+        # dashboard's KSh totals are 100× smaller than the reality.
+        await _db.orders.update_many(
+            {"currency": {"$exists": False}},
+            {"$set": {"currency": "KES"}},
+        )
+        cursor_o = _db.orders.find(
+            {
+                "currency": {"$in": list(ZERO_DECIMAL)},
+                "cents_normalized": {"$ne": True},
+            },
+            {"_id": 0, "id": 1, "amount_cents": 1, "subtotal_cents": 1, "platform_fee_cents": 1, "seller_net_cents": 1},
+        )
+        bumped_orders = 0
+        async for doc in cursor_o:
+            update: dict = {"cents_normalized": True}
+            for k in ("amount_cents", "subtotal_cents", "platform_fee_cents", "seller_net_cents"):
+                v = doc.get(k)
+                if v is not None:
+                    update[k] = int(v) * 100
+            await _db.orders.update_one({"id": doc["id"]}, {"$set": update})
+            bumped_orders += 1
+        if bumped_orders:
+            logger.info(
+                "amount_cents normalization: bumped %d zero-decimal order(s)",
+                bumped_orders,
+            )
     except Exception as e:  # pragma: no cover - migration must not crash boot
         logger.warning("price_cents normalization skipped: %s", e)
 
