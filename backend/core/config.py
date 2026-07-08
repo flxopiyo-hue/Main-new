@@ -25,12 +25,32 @@ JWT_EXPIRY_HOURS: int = int(os.environ.get("JWT_EXPIRY_HOURS", "168"))
 EMERGENT_LLM_KEY: str = os.environ.get("EMERGENT_LLM_KEY", "")
 STRIPE_API_KEY: str = os.environ.get("STRIPE_API_KEY", "")
 
+# Paystack — used for Premium tier subscriptions in KES. Stripe isn't
+# available in Kenya so we lean on Paystack's native M-Pesa + card rails.
+# Same secret key signs webhooks (Paystack's convention — no separate
+# webhook secret).
+PAYSTACK_PUBLIC_KEY: str = os.environ.get("PAYSTACK_PUBLIC_KEY", "")
+PAYSTACK_SECRET_KEY: str = os.environ.get("PAYSTACK_SECRET_KEY", "")
+PREMIUM_PLAN_NAME: str = os.environ.get("PREMIUM_PLAN_NAME", "Drape Premium")
+PREMIUM_PLAN_AMOUNT_KOBO: int = int(os.environ.get("PREMIUM_PLAN_AMOUNT_KOBO", "19900"))
+PREMIUM_PLAN_TRIAL_DAYS: int = int(os.environ.get("PREMIUM_PLAN_TRIAL_DAYS", "7"))
+FRONTEND_PUBLIC_URL: str = os.environ.get(
+    "FRONTEND_PUBLIC_URL", "https://fit-finder-app-5.preview.emergentagent.com"
+)
+
 # ---- Domain constants ----------------------------------------------------
 NANO_BANANA_MODEL: str = "gemini-3.1-flash-image-preview"
 VISION_MODEL: str = "gemini-2.5-flash"
 PLATFORM_FEE_BPS: int = 1000  # 10% take rate (per seller portal spec)
 MAX_TRYON_ANGLES: int = 4
 DEFAULT_CURRENCY: str = "KES"  # Kenyan Shilling — product originates in Kenya
+
+# Subscription gating — Free tier caps kept intentionally generous so the
+# Premium sell is "unlimited + multi-profile + AI multi-angle outfits"
+# rather than "starving you until you pay".
+FREE_TRYONS_PER_WEEK: int = 7
+FREE_MAX_PROFILES: int = 2
+PREMIUM_MAX_PROFILES: int = 10
 
 CONNECT_MOCKED_NOTE: str = (
     "Demo onboarding — replace `STRIPE_API_KEY` with a real Stripe test key "

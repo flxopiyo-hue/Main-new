@@ -6,6 +6,7 @@ BEFORE /items/{item_id} so the dynamic segment doesn't swallow them.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -337,6 +338,17 @@ async def patch_item(
 
     await db.items.update_one({"id": item_id}, {"$set": update})
     fresh = await db.items.find_one({"id": item_id}, {"_id": 0})
+
+    # If the seller changed inventory (patched sizes) OR unpaused, some
+    # sold-out sizes may have just come back in stock — fire off the
+    # restock fan-out so subscribed buyers get a red dot next open.
+    if "sizes" in update or ("is_paused" in update and update.get("is_paused") is False):
+        try:
+            from routers.restock import fanout_restock_for_item
+            await fanout_restock_for_item(item_id, fresh.get("sizes") or [])
+        except Exception as e:  # pragma: no cover - fanout must not fail patch
+            logging.getLogger("aurafit.items").warning("restock fanout failed: %s", e)
+
     return item_to_out(fresh)
 
 

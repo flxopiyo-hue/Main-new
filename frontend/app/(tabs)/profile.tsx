@@ -151,6 +151,71 @@ export default function Profile() {
           ) : null}
         </View>
 
+        {/* Drape Premium upgrade / status card — the primary monetisation
+            surface on the buyer profile. Free users see an "Upgrade" CTA;
+            Premium users get a compact status pill. */}
+        {user?.role === "buyer" ? (
+          <TouchableOpacity
+            testID="profile-premium-card"
+            onPress={() => router.push("/subscription")}
+            activeOpacity={0.9}
+            style={
+              user?.subscription_tier === "premium"
+                ? styles.premiumCardActive
+                : styles.premiumCardCta
+            }
+          >
+            <View style={styles.premiumIcon}>
+              <Feather
+                name={user?.subscription_tier === "premium" ? "check" : "star"}
+                size={16}
+                color={
+                  user?.subscription_tier === "premium"
+                    ? colors.primary
+                    : colors.primaryFg
+                }
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text
+                style={[
+                  styles.premiumTitle,
+                  user?.subscription_tier === "premium"
+                    ? { color: colors.primary }
+                    : { color: colors.primaryFg },
+                ]}
+              >
+                {user?.subscription_tier === "premium"
+                  ? "Drape Premium — Active"
+                  : "Try Drape Premium free for 7 days"}
+              </Text>
+              <Text
+                style={[
+                  styles.premiumHint,
+                  user?.subscription_tier === "premium"
+                    ? { color: colors.mutedFg }
+                    : { color: colors.primaryFg, opacity: 0.85 },
+                ]}
+              >
+                {user?.subscription_tier === "premium"
+                  ? user?.cancel_at_period_end
+                    ? "Cancels at period end · Tap to resume"
+                    : "Unlimited try-ons · 10 profiles · Manage plan"
+                  : "Unlimited try-ons + AI multi-angle outfits · KSh 199/mo"}
+              </Text>
+            </View>
+            <Feather
+              name="chevron-right"
+              size={18}
+              color={
+                user?.subscription_tier === "premium"
+                  ? colors.mutedFg
+                  : colors.primaryFg
+              }
+            />
+          </TouchableOpacity>
+        ) : null}
+
         {user?.role === "buyer" ? (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
@@ -552,6 +617,46 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: spacing.md,
+  },
+  premiumCardCta: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    marginBottom: spacing.lg,
+    padding: spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: colors.primary,
+  },
+  premiumCardActive: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    marginBottom: spacing.lg,
+    padding: spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.surface,
+  },
+  premiumIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.background,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  premiumTitle: {
+    fontFamily: fonts.heading,
+    fontSize: 16,
+  },
+  premiumHint: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    marginTop: 2,
+    lineHeight: 16,
   },
   sectionHeadRow: {
     flexDirection: "row",

@@ -35,7 +35,9 @@ from routers import (
     orders,
     payments,
     profile,
+    restock,
     seller,
+    subs,
     tryon,
     users,
     wishlist,
@@ -71,6 +73,16 @@ api_router.include_router(payments.router)
 api_router.include_router(seller.router)
 api_router.include_router(collections.router)
 api_router.include_router(admin.router)
+
+# Restock notifications carry their own /api prefix (like subs.router
+# below) so they can compose /api/items/{id}/notify without stepping
+# on the items router's /items/{id} handler.
+app.include_router(restock.router)
+
+# Subscriptions router carries its own /api/subs prefix (unlike the
+# others which are prefixed by the api_router). Mount it directly on
+# the app so the shape stays /api/subs/* rather than /api/api/subs/*.
+app.include_router(subs.router)
 
 app.include_router(api_router)
 
@@ -182,6 +194,27 @@ async def backfill_verified_sellers() -> None:
         await backfill_all_seller_verifications()
     except Exception as e:  # pragma: no cover
         logger.warning("verified_seller backfill skipped: %s", e)
+
+
+@app.on_event("startup")
+async def bootstrap_premium_plan() -> None:
+    """Idempotent Paystack plan bootstrap for Drape Premium.
+
+    On the first boot after keys land in .env this creates the KES 199
+    plan with a 7-day trial. On subsequent boots it just looks up the
+    plan_code by name and caches it. Never crashes startup — if
+    Paystack is down we log and Premium checkout stays disabled until
+    the next boot picks it back up.
+    """
+    try:
+        from routers.subs import ensure_premium_plan, set_plan_code
+
+        code = await ensure_premium_plan()
+        set_plan_code(code)
+        if code:
+            logger.info("paystack: premium plan ready (%s)", code)
+    except Exception as e:  # pragma: no cover
+        logger.warning("premium plan bootstrap skipped: %s", e)
 
 
 @app.on_event("shutdown")

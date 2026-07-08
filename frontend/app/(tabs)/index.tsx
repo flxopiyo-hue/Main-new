@@ -21,6 +21,7 @@ import { HeaderMenu } from "@/src/components/HeaderMenu";
 import { HeartButton } from "@/src/components/HeartButton";
 import { OutfitDrawer } from "@/src/components/OutfitDrawer";
 import { OutfitPill } from "@/src/components/OutfitPill";
+import { RestockBell } from "@/src/components/RestockBell";
 import { useToast } from "@/src/components/Toast";
 import { VerifiedBadge } from "@/src/components/VerifiedBadge";
 import { api, CATEGORIES_BY_AUDIENCE, CATEGORY_LABELS, Collection, FitScore, Item, KidAgeGroup } from "@/src/lib/api";
@@ -304,6 +305,7 @@ export default function Discover() {
         >
           <Feather name="bookmark" size={20} color={brandFilter ? colors.primary : colors.mutedFg} />
         </TouchableOpacity>
+        {user?.role === "buyer" ? <RestockBell testID="discover-restock-bell" /> : null}
         <HeaderMenu testID="discover-header-menu" />
       </View>
 

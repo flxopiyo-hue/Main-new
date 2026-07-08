@@ -565,15 +565,40 @@ async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
   });
   const text = await res.text();
   if (!res.ok) {
-    let detail = text;
+    let detail: unknown = text;
+    let parsed: any = null;
     try {
-      const json = JSON.parse(text);
-      detail = json.detail || text;
+      parsed = JSON.parse(text);
+      detail = parsed.detail || text;
     } catch {}
+    // 402 Payment Required means the backend is asking the client to
+    // show the paywall. We surface a structured Error so
+    // AppError-consumers can distinguish "network fail" from "hit the
+    // free-tier ceiling".
+    if (res.status === 402 && parsed?.detail && typeof parsed.detail === "object") {
+      const err = new Error(parsed.detail.message || "Upgrade required") as PaywallError;
+      err.paywall = true;
+      err.feature = parsed.detail.feature;
+      err.upgradeUrl = parsed.detail.upgrade_url;
+      throw err;
+    }
     throw new Error(typeof detail === "string" ? detail : "Request failed");
   }
   if (!text) return undefined as T;
   return JSON.parse(text) as T;
+}
+
+/** Error thrown on HTTP 402 — the try-on / profile flow catches this
+ *  and shows the paywall modal instead of a red toast. */
+export interface PaywallError extends Error {
+  paywall: true;
+  feature?: string;
+  upgradeUrl?: string;
+}
+
+/** Type-guard callers can use in catch blocks. */
+export function isPaywallError(e: unknown): e is PaywallError {
+  return !!(e && typeof e === "object" && (e as any).paywall === true);
 }
 
 export const api = {
@@ -861,6 +886,77 @@ export const api = {
     request<Address>(`/addresses/${id}/default`, { method: "POST" }),
   deleteAddress: (id: string) =>
     request<{ ok: boolean }>(`/addresses/${id}`, { method: "DELETE" }),
+
+  // Subscription (Paystack-backed Drape Premium tier).
+  subsMe: () =>
+    request<{
+      subscription: {
+        tier: "free" | "premium";
+        status: string | null;
+        current_period_end: string | null;
+        trial_end: string | null;
+        cancel_at_period_end: boolean;
+        plan_amount_kes: number;
+        trial_days: number;
+      };
+      gate: {
+        premium: boolean;
+        tryons_used_this_week: number;
+        tryons_limit: number;
+        tryons_remaining: number;
+        profiles_count: number;
+        profiles_limit: number;
+        multi_angle_allowed: boolean;
+      };
+    }>("/subs/me"),
+  subsCheckout: () =>
+    request<{ authorization_url: string; reference: string }>("/subs/checkout", {
+      method: "POST",
+    }),
+  subsVerify: (reference: string) =>
+    request<{
+      tier: "free" | "premium";
+      status: string;
+      trial_end?: string | null;
+      user: { id: string; subscription_tier: string; subscription_status: string };
+    }>(`/subs/verify?reference=${encodeURIComponent(reference)}`),
+  subsCancel: () =>
+    request<{ cancel_at_period_end: boolean }>("/subs/cancel", { method: "POST" }),
+  subsResume: () =>
+    request<{ cancel_at_period_end: boolean }>("/subs/resume", { method: "POST" }),
+
+  // Restock notifications — "Notify me when back in stock" flow.
+  notifyStatus: (itemId: string, size: string) =>
+    request<{ subscribed: boolean; size: string }>(
+      `/items/${itemId}/notify?size=${encodeURIComponent(size)}`,
+    ),
+  notifySubscribe: (itemId: string, size: string) =>
+    request<{ subscribed: boolean; size: string }>(
+      `/items/${itemId}/notify?size=${encodeURIComponent(size)}`,
+      { method: "POST" },
+    ),
+  notifyUnsubscribe: (itemId: string, size: string) =>
+    request<{ subscribed: boolean; size: string }>(
+      `/items/${itemId}/notify?size=${encodeURIComponent(size)}`,
+      { method: "DELETE" },
+    ),
+  restockNotifications: () =>
+    request<
+      Array<{
+        id: string;
+        item_id: string;
+        item_name: string;
+        size: string;
+        subscribed_at: string;
+        notified_at: string | null;
+        viewed_at: string | null;
+      }>
+    >("/notifications/restock"),
+  dismissNotification: (id: string) =>
+    request<{ subscribed: boolean; size: string }>(
+      `/notifications/${id}/dismiss`,
+      { method: "POST" },
+    ),
 };
 
 export const BACKEND_URL = BASE_URL;

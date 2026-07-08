@@ -16,12 +16,14 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { AppButton } from "@/src/components/AppButton";
 import { HeartButton } from "@/src/components/HeartButton";
 import { OutfitDrawer } from "@/src/components/OutfitDrawer";
+import { PaywallModal } from "@/src/components/PaywallModal";
 import { useToast } from "@/src/components/Toast";
 import { VerifiedBadge } from "@/src/components/VerifiedBadge";
 import {
   api,
   BACKEND_URL,
   ColorOption,
+  isPaywallError,
   Item,
   SizeOption,
   TryOnAngle,
@@ -69,6 +71,13 @@ export default function ItemDetail() {
   const [sharing, setSharing] = useState(false);
   const [buying, setBuying] = useState(false);
   const [outfitOpen, setOutfitOpen] = useState(false);
+  // Paywall modal state — populated when a /tryon call responds 402
+  // (Free-tier weekly cap or multi-angle premium gate).
+  const [paywallInfo, setPaywallInfo] = useState<{ feature?: string; message?: string } | null>(null);
+  // Restock notification state for the currently-selected size. `null`
+  // means we haven't checked yet (before the first render).
+  const [notifySubscribed, setNotifySubscribed] = useState<boolean>(false);
+  const [notifyBusy, setNotifyBusy] = useState(false);
   // Buyer-facing unit toggle for size dimension display. Backend always
   // stores cm; this only affects what the buyer sees in the size meta
   // strip on this screen. The default tracks rough device locale guesses:
@@ -186,7 +195,11 @@ export default function ItemDetail() {
         setTryOnId(result.id);
         setFitSummary(result.fit_summary ?? null);
       } catch (e: any) {
-        toast.show(e?.message ?? "Try-on failed", "error");
+        if (isPaywallError(e)) {
+          setPaywallInfo({ feature: e.feature, message: e.message });
+        } else {
+          toast.show(e?.message ?? "Try-on failed", "error");
+        }
       } finally {
         setGenerating(false);
         setGeneratingMulti(false);
@@ -200,6 +213,52 @@ export default function ItemDetail() {
       runTryOn(["front"]);
     }
   }, [tryon, item, tryOnAngles.length, generating, generatingMulti, runTryOn]);
+
+  // Restock notification: whenever the selected size changes, re-fetch
+  // whether the current buyer is already subscribed. We only bother
+  // when the size is sold out — for in-stock sizes the state is moot.
+  useEffect(() => {
+    if (!item || !selectedSize || user?.role !== "buyer") {
+      setNotifySubscribed(false);
+      return;
+    }
+    if (selectedSize.available_qty > 0) {
+      setNotifySubscribed(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.notifyStatus(item.id, selectedSize.label);
+        if (!cancelled) setNotifySubscribed(!!res.subscribed);
+      } catch {
+        /* ignore — worst case the button shows "Notify me" */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [item, selectedSize, user?.role]);
+
+  const toggleNotify = useCallback(async () => {
+    if (!item || !selectedSize) return;
+    setNotifyBusy(true);
+    try {
+      const fn = notifySubscribed ? api.notifyUnsubscribe : api.notifySubscribe;
+      await fn(item.id, selectedSize.label);
+      setNotifySubscribed(!notifySubscribed);
+      toast.show(
+        notifySubscribed
+          ? "Notifications off for this size"
+          : "We'll ping you when it's back",
+        "success",
+      );
+    } catch (e: any) {
+      toast.show(e?.message ?? "Could not update", "error");
+    } finally {
+      setNotifyBusy(false);
+    }
+  }, [item, selectedSize, notifySubscribed, toast]);
 
   const onShare = async (fmt: "square" | "story" = "square") => {
     if (!tryOnId) return;
@@ -577,6 +636,34 @@ export default function ItemDetail() {
                       })}
                     </View>
                   ) : null}
+                  {selectedSize.available_qty <= 0 && user?.role === "buyer" ? (
+                    <TouchableOpacity
+                      testID="item-notify-btn"
+                      onPress={toggleNotify}
+                      style={[
+                        styles.notifyBtn,
+                        notifySubscribed && styles.notifyBtnActive,
+                      ]}
+                      activeOpacity={0.85}
+                      disabled={notifyBusy}
+                    >
+                      <Feather
+                        name={notifySubscribed ? "bell-off" : "bell"}
+                        size={13}
+                        color={notifySubscribed ? colors.mutedFg : colors.primaryFg}
+                      />
+                      <Text
+                        style={[
+                          styles.notifyLabel,
+                          notifySubscribed && { color: colors.mutedFg },
+                        ]}
+                      >
+                        {notifySubscribed
+                          ? "You'll be notified"
+                          : "Notify me when back in stock"}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
               );
             })()
@@ -723,6 +810,12 @@ export default function ItemDetail() {
         </View>
       </ScrollView>
       <OutfitDrawer visible={outfitOpen} onClose={() => setOutfitOpen(false)} />
+      <PaywallModal
+        visible={!!paywallInfo}
+        feature={paywallInfo?.feature}
+        message={paywallInfo?.message}
+        onClose={() => setPaywallInfo(null)}
+      />
       <AddressPickerSheet
         visible={addressSheetOpen}
         onClose={() => setAddressSheetOpen(false)}
@@ -968,6 +1061,28 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     flexWrap: "wrap",
+  },
+  notifyBtn: {
+    marginTop: spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    backgroundColor: colors.primary,
+  },
+  notifyBtnActive: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  notifyLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 12,
+    letterSpacing: 1.2,
+    color: colors.primaryFg,
+    textTransform: "uppercase",
   },
   unitToggleRow: {
     flexDirection: "row",

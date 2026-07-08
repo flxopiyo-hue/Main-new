@@ -118,6 +118,10 @@ async def create_loved_one(
 ) -> LovedOneOut:
     if user.get("role") != "buyer":
         raise HTTPException(status_code=403, detail="Only buyers can add loved ones")
+    # Enforce per-tier profile cap (Free = 2 / Premium = 10). Raises 402
+    # with paywall metadata when the buyer hits the wall.
+    from core.gating import assert_can_add_profile
+    await assert_can_add_profile(user)
     if body.audience == "kid" and body.age is None:
         raise HTTPException(status_code=400, detail="Age is required for kid profiles")
     doc_id = str(uuid.uuid4())

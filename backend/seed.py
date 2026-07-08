@@ -24,7 +24,7 @@ MONGO_URL = os.environ["MONGO_URL"]
 DB_NAME = os.environ["DB_NAME"]
 
 SELLER = {
-    "email": "atelier@aurafit.demo",
+    "email": "atelier@aurafit.com",
     "full_name": "Maison Lumière",
     "password": "demo-seller-2026",
     "company_name": "Maison Lumière",

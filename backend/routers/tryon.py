@@ -333,9 +333,20 @@ async def generate_tryon(
     if not EMERGENT_LLM_KEY:
         raise HTTPException(status_code=500, detail="LLM key not configured")
 
+    # Enforce 7-try-ons-per-week cap for Free users. Premium users have
+    # `assert_can_tryon` skip immediately. Client catches the 402 and
+    # opens the paywall modal.
+    from core.gating import assert_can_tryon, is_premium
+    await assert_can_tryon(user)
+
     item = await db.items.find_one({"id": body.item_id}, {"_id": 0})
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
+
+    # Multi-angle output is Premium-only. Free users always get the
+    # single default angle regardless of what the client requests.
+    if not is_premium(user):
+        body.angles = [body.angles[0]] if body.angles else []
 
     body_b64: Optional[str] = None
     photo_user = user
@@ -465,6 +476,14 @@ async def generate_outfit_tryon(
     """
     if not EMERGENT_LLM_KEY:
         raise HTTPException(status_code=500, detail="LLM key not configured")
+
+    # Gating — Free users share the same weekly cap across all try-on
+    # flavours. Multi-angle results are Premium-only; Free callers get a
+    # single default-angle image regardless of what the client asks for.
+    from core.gating import assert_can_tryon, is_premium
+    await assert_can_tryon(user)
+    if not is_premium(user):
+        body.angles = [body.angles[0]] if body.angles else []
 
     # Fetch all items in one round-trip and preserve user-supplied order before
     # we re-sort by layer.
@@ -612,6 +631,11 @@ async def generate_byo_garment_tryon(
         raise HTTPException(status_code=403, detail="Only buyers can use BYO Try-On")
     if not body.garment_b64:
         raise HTTPException(status_code=400, detail="Garment photo is required")
+
+    from core.gating import assert_can_tryon, is_premium
+    await assert_can_tryon(user)
+    if not is_premium(user):
+        body.angles = [body.angles[0]] if body.angles else []
 
     # Resolve body photo (same logic as item try-on).
     body_b64: Optional[str] = None
