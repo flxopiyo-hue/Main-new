@@ -171,6 +171,19 @@ async def normalize_zero_decimal_prices() -> None:
         logger.warning("price_cents normalization skipped: %s", e)
 
 
+@app.on_event("startup")
+async def backfill_verified_sellers() -> None:
+    """Compute the auto-verified badge for every existing seller once at
+    boot so historical demo data lights up without waiting for a fresh
+    order. Idempotent — the helper itself is safe on repeat runs.
+    """
+    try:
+        from core.seller_verify import backfill_all_seller_verifications
+        await backfill_all_seller_verifications()
+    except Exception as e:  # pragma: no cover
+        logger.warning("verified_seller backfill skipped: %s", e)
+
+
 @app.on_event("shutdown")
 async def shutdown_db_client() -> None:
     close_db()

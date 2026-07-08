@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from core.config import PLATFORM_FEE_BPS, STRIPE_API_KEY
 from core.db import db
 from core.security import get_current_user, require_role
+from core.seller_verify import maybe_verify_seller
 from models import CheckoutIn, CheckoutOut
 
 logger = logging.getLogger("aurafit.payments")
@@ -136,6 +137,10 @@ async def payment_status(
                     {"$set": {"status": new_status}},
                 )
                 order["status"] = new_status
+                # A newly-paid order might tip this seller over the
+                # verification threshold — recompute their badge.
+                if new_status == "paid":
+                    await maybe_verify_seller(order["seller_id"])
         except Exception as e:
             logger.warning("Stripe status fetch failed: %s", e)
 
@@ -168,9 +173,16 @@ async def stripe_webhook(request: Request) -> Dict[str, Any]:
         )
         payment_status_val = event_dict.get("payment_status") or "paid"
         if session_id and payment_status_val == "paid":
-            await db.orders.update_one(
+            result = await db.orders.update_one(
                 {"session_id": session_id}, {"$set": {"status": "paid"}}
             )
+            if result.modified_count:
+                # Look up the seller so we can bump their verification.
+                doc = await db.orders.find_one(
+                    {"session_id": session_id}, {"_id": 0, "seller_id": 1}
+                )
+                if doc and doc.get("seller_id"):
+                    await maybe_verify_seller(doc["seller_id"])
     except Exception as e:
         logger.warning("Webhook handling failed: %s", e)
 

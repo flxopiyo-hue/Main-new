@@ -13,7 +13,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Capture body and clothing photos for try-on.",
         "NSPhotoLibraryUsageDescription": "Pick photos for try-on and listings."
-      }
+      },
+      "bundleIdentifier": "com.emergent.fitfinderapp.leor5k"
     },
     "android": {
       "adaptiveIcon": {
@@ -25,7 +26,8 @@
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE"
-      ]
+      ],
+      "package": "com.emergent.fitfinderapp.leor5k"
     },
     "web": {
       "bundler": "metro",

@@ -22,6 +22,7 @@ import { HeartButton } from "@/src/components/HeartButton";
 import { OutfitDrawer } from "@/src/components/OutfitDrawer";
 import { OutfitPill } from "@/src/components/OutfitPill";
 import { useToast } from "@/src/components/Toast";
+import { VerifiedBadge } from "@/src/components/VerifiedBadge";
 import { api, CATEGORIES_BY_AUDIENCE, CATEGORY_LABELS, Collection, FitScore, Item, KidAgeGroup } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
 import { formatPriceIn } from "@/src/lib/currency";
@@ -263,9 +264,16 @@ export default function Discover() {
           ) : null}
         </View>
         <View style={styles.cardBody}>
-          <Text style={styles.cardSeller} numberOfLines={1}>
-            {(item.brand_name || item.seller_name).toUpperCase()}
-          </Text>
+          <View style={styles.cardSellerRow}>
+            <Text style={styles.cardSeller} numberOfLines={1}>
+              {(item.brand_name || item.seller_name).toUpperCase()}
+            </Text>
+            <VerifiedBadge
+              verified={item.seller_verified}
+              size="sm"
+              testID={`item-card-${item.id}-verified`}
+            />
+          </View>
           <Text style={styles.cardName} numberOfLines={2}>
             {item.name}
           </Text>
@@ -719,7 +727,8 @@ const styles = StyleSheet.create({
     color: colors.primaryFg,
   },
   cardBody: { paddingTop: spacing.sm },
-  cardSeller: { fontFamily: fonts.bodyMedium, fontSize: 10, letterSpacing: 2, color: colors.mutedFg },
+  cardSellerRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  cardSeller: { flex: 1, fontFamily: fonts.bodyMedium, fontSize: 10, letterSpacing: 2, color: colors.mutedFg },
   cardName: { fontFamily: fonts.heading, fontSize: 18, color: colors.primary, marginTop: 2 },
   cardPrice: { fontFamily: fonts.bodySemi, fontSize: 14, color: colors.primary, marginTop: 4 },
   cardPriceApprox: {

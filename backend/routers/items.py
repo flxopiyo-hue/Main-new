@@ -22,6 +22,7 @@ from core.security import (
     require_role,
     try_get_user_from_creds,
 )
+from core.seller_verify import load_seller_verification_map
 from models import ItemIn, ItemOut, ItemPatch, infer_garment_type, item_to_out
 
 router = APIRouter()
@@ -136,7 +137,8 @@ async def list_items(
             query["sizes.label"] = {"$in": size_set}
 
     docs = await db.items.find(query, {"_id": 0}).sort("created_at", -1).to_list(200)
-    return [item_to_out(d) for d in docs]
+    vmap = await load_seller_verification_map({d["seller_id"] for d in docs})
+    return [item_to_out(d, seller_verified=vmap.get(d["seller_id"], False)) for d in docs]
 
 
 # IMPORTANT: /items/mine must come BEFORE /items/{item_id}.
@@ -147,7 +149,8 @@ async def my_items(user: Dict[str, Any] = Depends(get_current_user)) -> List[Ite
         .sort("created_at", -1)
         .to_list(200)
     )
-    return [item_to_out(d) for d in docs]
+    verified = bool(user.get("verified_seller"))
+    return [item_to_out(d, seller_verified=verified) for d in docs]
 
 
 @router.get("/items/{item_id}", response_model=ItemOut)
@@ -163,7 +166,8 @@ async def get_item(
     skip_count = bool(u and u.get("id") == doc["seller_id"])
     if not skip_count:
         await db.items.update_one({"id": item_id}, {"$inc": {"views": 1}})
-    return item_to_out(doc)
+    seller = await db.users.find_one({"id": doc["seller_id"]}, {"_id": 0, "verified_seller": 1})
+    return item_to_out(doc, seller_verified=bool(seller and seller.get("verified_seller")))
 
 
 @router.get("/items/{item_id}/size-guide")

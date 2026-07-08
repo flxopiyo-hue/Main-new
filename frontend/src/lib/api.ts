@@ -74,6 +74,17 @@ export interface User {
   location?: Location | null;
   bank_details?: BankDetails | null;
   suspended?: boolean;
+  // Auto-awarded once the seller has 5+ paid orders. Buyer surfaces
+  // (Discover card, Item Detail seller strip) show a small check-mark
+  // chip when this is true.
+  verified_seller?: boolean;
+  verified_orders_count?: number;
+  // Subscription state — surfaces to the buyer paywall UI + gating logic.
+  subscription_tier?: "free" | "premium";
+  subscription_status?: string | null;
+  current_period_end?: string | null;
+  trial_end?: string | null;
+  cancel_at_period_end?: boolean;
   token_version?: number;
   created_at: string;
 }
@@ -202,6 +213,7 @@ export interface Item {
   id: string;
   seller_id: string;
   seller_name: string;
+  seller_verified?: boolean;
   name: string;
   description: string;
   brand_name?: string | null;

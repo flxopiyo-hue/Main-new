@@ -356,11 +356,22 @@ export default function Profile() {
 
         {user?.role === "buyer" ? (
           <View style={styles.section}>
-            <Text style={[tp.caption, { marginBottom: spacing.md }]}>Orders</Text>
+            <View style={styles.sectionHeadRow}>
+              <Text style={tp.caption}>Recent orders</Text>
+              <TouchableOpacity
+                testID="profile-order-history-link"
+                onPress={() => router.push("/orders")}
+                hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+              >
+                <Text style={styles.linkLabel}>See all →</Text>
+              </TouchableOpacity>
+            </View>
             {orders.length === 0 ? (
               <Text style={tp.bodyMuted}>No orders yet.</Text>
             ) : (
-              orders.map((o) => (
+              // Only surface the 3 most recent orders here; the dedicated
+              // /orders screen holds the full filterable history.
+              orders.slice(0, 3).map((o) => (
                 <TouchableOpacity
                   key={o.id}
                   style={styles.orderRow}
@@ -541,6 +552,19 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: spacing.md,
+  },
+  sectionHeadRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: spacing.md,
+  },
+  linkLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 11,
+    letterSpacing: 1.4,
+    color: colors.primary,
+    textTransform: "uppercase",
   },
   link: { fontFamily: fonts.bodySemi, fontSize: 12, letterSpacing: 1, textTransform: "uppercase", color: colors.primary },
   grid: { flexDirection: "row", flexWrap: "wrap", marginHorizontal: -spacing.sm / 2 },

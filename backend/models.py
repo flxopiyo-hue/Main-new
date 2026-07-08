@@ -256,6 +256,18 @@ class UserOut(BaseModel):
     location: Optional[Location] = None
     bank_details: Optional[BankDetails] = None
     suspended: bool = False
+    # Trust signal shown next to seller names once they cross the paid-
+    # order threshold. Auto-granted; the platform never awards this
+    # manually. See `maybe_verify_seller()` in core/seller.py.
+    verified_seller: bool = False
+    verified_orders_count: int = 0
+    # Subscription state — updated by Stripe webhooks. Free is the
+    # default for every user.
+    subscription_tier: Literal["free", "premium"] = "free"
+    subscription_status: Optional[str] = None  # trialing / active / past_due / canceled / etc
+    current_period_end: Optional[datetime] = None
+    trial_end: Optional[datetime] = None
+    cancel_at_period_end: bool = False
     # Token-versioning support — every increment invalidates outstanding JWTs
     # (security middleware compares this against the JWT's `tv` claim).
     token_version: int = 0
@@ -535,6 +547,11 @@ class ItemOut(BaseModel):
     id: str
     seller_id: str
     seller_name: str
+    # Auto-verified flag mirrored from the seller's user document (True
+    # once they've fulfilled 5+ paid orders). Populated by the list/get
+    # endpoints via a batched join so buyer surfaces can show a small
+    # "Verified" badge without an extra round-trip per item.
+    seller_verified: bool = False
     name: str
     description: str
     brand_name: Optional[str] = None
@@ -827,12 +844,19 @@ def user_to_out(doc: Dict[str, Any]) -> UserOut:
         location=Location(**raw_loc) if raw_loc else None,
         bank_details=BankDetails(**raw_bank) if raw_bank else None,
         suspended=bool(doc.get("suspended", False)),
+        verified_seller=bool(doc.get("verified_seller", False)),
+        verified_orders_count=int(doc.get("verified_orders_count") or 0),
+        subscription_tier=doc.get("subscription_tier") or "free",
+        subscription_status=doc.get("subscription_status"),
+        current_period_end=doc.get("current_period_end"),
+        trial_end=doc.get("trial_end"),
+        cancel_at_period_end=bool(doc.get("cancel_at_period_end", False)),
         token_version=int(doc.get("token_version") or 0),
         created_at=doc["created_at"],
     )
 
 
-def item_to_out(doc: Dict[str, Any]) -> ItemOut:
+def item_to_out(doc: Dict[str, Any], seller_verified: bool = False) -> ItemOut:
     gtype = doc.get("garment_type") or infer_garment_type(doc)
     # Back-compat: legacy items have only `image_b64`. Synthesize a one-
     # element images list when needed so the client always gets a gallery.
@@ -843,6 +867,7 @@ def item_to_out(doc: Dict[str, Any]) -> ItemOut:
         id=doc["id"],
         seller_id=doc["seller_id"],
         seller_name=doc.get("seller_name", ""),
+        seller_verified=bool(seller_verified),
         name=doc["name"],
         description=doc.get("description", ""),
         brand_name=doc.get("brand_name"),

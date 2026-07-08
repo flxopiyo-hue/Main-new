@@ -17,6 +17,7 @@ import { AppButton } from "@/src/components/AppButton";
 import { HeartButton } from "@/src/components/HeartButton";
 import { OutfitDrawer } from "@/src/components/OutfitDrawer";
 import { useToast } from "@/src/components/Toast";
+import { VerifiedBadge } from "@/src/components/VerifiedBadge";
 import {
   api,
   BACKEND_URL,
@@ -345,10 +346,17 @@ export default function ItemDetail() {
               {item.brand_name.toUpperCase()}
             </Text>
           ) : null}
-          <Text style={tp.caption} testID="item-seller">
-            {item.brand_name ? "by " : ""}
-            {item.seller_name.toUpperCase()}
-          </Text>
+          <View style={styles.sellerRow}>
+            <Text style={tp.caption} testID="item-seller">
+              {item.brand_name ? "by " : ""}
+              {item.seller_name.toUpperCase()}
+            </Text>
+            <VerifiedBadge
+              verified={item.seller_verified}
+              size="md"
+              testID="item-seller-verified"
+            />
+          </View>
           <Text style={[tp.h1, { marginTop: 6 }]} testID="item-name">
             {item.name}
           </Text>
@@ -955,6 +963,12 @@ const styles = StyleSheet.create({
   sizeLabelActive: { color: colors.primaryFg },
   sizeLabelOut: { textDecorationLine: "line-through" },
   sizeMeta: { marginTop: spacing.md },
+  sellerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
+  },
   unitToggleRow: {
     flexDirection: "row",
     alignItems: "center",
