@@ -195,7 +195,7 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Iteration 17 — 10-point pre-Phase-E QoL checklist (edit/duplicate/pause items, price parser fix, cm/in toggle, HeaderMenu role switch, brand filter, low-stock nudge, new-order banner, View-as-buyer preview)"
+    - "Iteration 18 — 4-item backlog: buyer order history, verified-seller badge auto-award, notify-me restock red-dot, Paystack subscriptions KES 199/mo with 7-day trial + gating (7 tryons/week, 2 profiles free / 10 premium, multi-angle premium-only)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"

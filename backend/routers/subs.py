@@ -353,8 +353,18 @@ async def webhook(
         }
         if data.get("next_payment_date"):
             update["current_period_end"] = _to_dt(data["next_payment_date"])
-    elif event in {"subscription.disable", "subscription.not_renew"}:
+    elif event == "subscription.not_renew":
+        # Buyer disabled auto-renew from Paystack's UI — keep tier=premium
+        # until the current period ends, then flip via subscription.disable.
         update = {"cancel_at_period_end": True}
+    elif event == "subscription.disable":
+        # Period ended (or admin-forced disable): downgrade to Free.
+        # ``data.status`` is "complete" (natural expiry) or "cancelled".
+        update = {
+            "subscription_tier": "free",
+            "subscription_status": "canceled",
+            "cancel_at_period_end": False,
+        }
     elif event == "charge.success":
         # A renewal — extend the period.
         if data.get("plan"):
@@ -365,13 +375,6 @@ async def webhook(
         update = {
             "subscription_status": "past_due",
             # Don't downgrade yet — Paystack gives a grace window.
-        }
-    elif event == "subscription.disable" and data.get("status") == "complete":
-        # Period actually ended and no successful renewal → Free tier.
-        update = {
-            "subscription_tier": "free",
-            "subscription_status": "canceled",
-            "cancel_at_period_end": False,
         }
 
     if update:
