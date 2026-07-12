@@ -22,8 +22,9 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppButton } from "@/src/components/AppButton";
+import { PaywallModal } from "@/src/components/PaywallModal";
 import { useToast } from "@/src/components/Toast";
-import { api } from "@/src/lib/api";
+import { api, isPaywallError } from "@/src/lib/api";
 import { dataUriFromBase64 } from "@/src/lib/images";
 import {
   deriveOutfitRules,
@@ -44,6 +45,9 @@ export function OutfitDrawer({ visible, onClose }: DrawerProps) {
   const remove = useOutfit((s) => s.remove);
   const clear = useOutfit((s) => s.clear);
   const [generating, setGenerating] = useState(false);
+  // Paywall modal state — fires when the backend returns 402 for a Free
+  // user requesting multi-angle output.
+  const [paywallInfo, setPaywallInfo] = useState<{ feature?: string; message?: string } | null>(null);
 
   const sorted = useMemo(() => sortByLayer(items), [items]);
   const rules = useMemo(() => deriveOutfitRules(sorted), [sorted]);
@@ -63,12 +67,18 @@ export function OutfitDrawer({ visible, onClose }: DrawerProps) {
         params: { id: result.id },
       });
     } catch (e: any) {
-      const msg = e?.message ?? "Outfit try-on failed";
-      if (msg.toLowerCase().includes("body photo")) {
-        toast.show("Add a front photo in your profile first", "error");
-        router.push("/onboarding/measurements");
+      if (isPaywallError(e)) {
+        // Keep the drawer open behind the modal so the buyer can retry
+        // single-angle immediately after dismissing.
+        setPaywallInfo({ feature: e.feature, message: e.message });
       } else {
-        toast.show(msg, "error");
+        const msg = e?.message ?? "Outfit try-on failed";
+        if (msg.toLowerCase().includes("body photo")) {
+          toast.show("Add a front photo in your profile first", "error");
+          router.push("/onboarding/measurements");
+        } else {
+          toast.show(msg, "error");
+        }
       }
     } finally {
       setGenerating(false);
@@ -200,6 +210,12 @@ export function OutfitDrawer({ visible, onClose }: DrawerProps) {
           ) : null}
         </View>
       </SafeAreaView>
+      <PaywallModal
+        visible={!!paywallInfo}
+        feature={paywallInfo?.feature}
+        message={paywallInfo?.message}
+        onClose={() => setPaywallInfo(null)}
+      />
     </Modal>
   );
 }

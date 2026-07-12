@@ -336,17 +336,22 @@ async def generate_tryon(
     # Enforce 7-try-ons-per-week cap for Free users. Premium users have
     # `assert_can_tryon` skip immediately. Client catches the 402 and
     # opens the paywall modal.
-    from core.gating import assert_can_tryon, is_premium
+    from core.gating import assert_can_tryon, assert_can_use_multi_angle, is_premium
     await assert_can_tryon(user)
 
     item = await db.items.find_one({"id": body.item_id}, {"_id": 0})
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
 
-    # Multi-angle output is Premium-only. Free users always get the
-    # single default angle regardless of what the client requests.
+    # Multi-angle output is Premium-only. Raise 402 (paywall) when a
+    # Free user asks for >1 angle so the client can show the upgrade
+    # modal — silently truncating to front-only is confusing UX
+    # (buyer taps "multi-angle" and only gets front → looks broken).
+    requested_angles = body.angles or ["front"]
+    if len(requested_angles) > 1:
+        assert_can_use_multi_angle(user)
     if not is_premium(user):
-        body.angles = [body.angles[0]] if body.angles else []
+        body.angles = ["front"] if not body.angles else [body.angles[0]]
 
     body_b64: Optional[str] = None
     photo_user = user
@@ -478,12 +483,16 @@ async def generate_outfit_tryon(
         raise HTTPException(status_code=500, detail="LLM key not configured")
 
     # Gating — Free users share the same weekly cap across all try-on
-    # flavours. Multi-angle results are Premium-only; Free callers get a
-    # single default-angle image regardless of what the client asks for.
-    from core.gating import assert_can_tryon, is_premium
+    # flavours. Multi-angle results are Premium-only; raise 402 when a
+    # Free caller asks for >1 angle so the paywall modal fires instead
+    # of silently downgrading to a single front render.
+    from core.gating import assert_can_tryon, assert_can_use_multi_angle, is_premium
     await assert_can_tryon(user)
+    requested_angles = body.angles or ["front"]
+    if len(requested_angles) > 1:
+        assert_can_use_multi_angle(user)
     if not is_premium(user):
-        body.angles = [body.angles[0]] if body.angles else []
+        body.angles = ["front"] if not body.angles else [body.angles[0]]
 
     # Fetch all items in one round-trip and preserve user-supplied order before
     # we re-sort by layer.
@@ -632,10 +641,13 @@ async def generate_byo_garment_tryon(
     if not body.garment_b64:
         raise HTTPException(status_code=400, detail="Garment photo is required")
 
-    from core.gating import assert_can_tryon, is_premium
+    from core.gating import assert_can_tryon, assert_can_use_multi_angle, is_premium
     await assert_can_tryon(user)
+    requested_angles = body.angles or ["front"]
+    if len(requested_angles) > 1:
+        assert_can_use_multi_angle(user)
     if not is_premium(user):
-        body.angles = [body.angles[0]] if body.angles else []
+        body.angles = ["front"] if not body.angles else [body.angles[0]]
 
     # Resolve body photo (same logic as item try-on).
     body_b64: Optional[str] = None

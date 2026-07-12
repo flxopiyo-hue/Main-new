@@ -1,0 +1,32 @@
+{
+  "summary": "Iteration 19 validates the multi-angle try-on paywall fix. Backend: 7/7 pytest cases in /app/backend/tests/test_multi_angle_paywall.py pass — POST /api/tryon, /api/tryon/outfit, and /api/tryon/garment all return HTTP 402 with detail.code='paywall' and detail.feature='multi_angle' when a Free user (buyer@aurafit.com) requests angles=['front','side','back']. Single-angle (['front']) still passes gating for Free users. After flipping buyer to subscription_tier='premium'/status='trialing' via direct mongo, all three endpoints stop paywalling (return 200 or 502 depending on Nano Banana's ability to render our tiny stub — both prove the gate is open). Reset to Free in teardown. Frontend (Playwright, 390x844 mobile, buyer@aurafit.com signed in): Tapped MAISON LUMIÈRE 'Oversized Knit Pullover', scrolled to CTAs, tapped 'MULTI-ANGLE TRY-ON'. Console shows the expected 402 response and PaywallModal renders with title='Multi-angle try-ons are Premium', message='AI multi-angle try-ons are a Premium feature. Upgrade to unlock.', CTA='UPGRADE — 7 days free', dismiss='NOT NOW', plus the 3 benefit rows. Dismissing the modal returns to the item detail, and clicking 'TRY AGAIN — FRONT' (single-angle) does NOT trigger the paywall — the client stays in the generation state (60s+ Nano Banana render). Fix confirmed end-to-end.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_multi_angle_paywall.py",
+    "/app/test_reports/pytest/iteration19_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "In /app/backend/routers/tryon.py the legacy `if not is_premium(user): body.angles = ['front'] if not body.angles else [body.angles[0]]` truncation still runs AFTER assert_can_use_multi_angle. Because assert raises on >1 angle for Free users, the truncation only ever fires for a Free user who sent exactly 1 angle — so it's effectively a no-op today. Consider removing the dead line for clarity (all three endpoints have this pattern).",
+    "assert_can_use_multi_angle is a sync function called without await — correct since it doesn't touch mongo — but sibling helpers (assert_can_tryon, assert_can_add_profile) are async. Consider making all three async for API uniformity or documenting the split."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_multi_angle_paywall.py (new)",
+    "/app/test_reports/pytest/iteration19_results.xml (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Premium-tier tests directly flip db.users {subscription_tier, subscription_status} for buyer@aurafit.com via pymongo, then restore to free/None in the fixture teardown. Autouse module fixture also pre-emptively resets buyer to free before any assertions to guard against prior-iteration bleed-over.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Bug is fully resolved. Free users hit 402 paywall on multi-angle across all three try-on endpoints and the PaywallModal renders correctly with the multi_angle feature copy. Single-angle path is unaffected. If retesting, note that buyer@aurafit.com may have already used their weekly try-on quota — a Free-single-angle call could return 402 tryon_weekly_limit; the test explicitly allows that as a non-multi_angle failure.",
+  "rca_of_issue": "Root cause (fixed in prior iteration): /app/backend/routers/tryon.py silently truncated `body.angles` to `[body.angles[0]]` for non-premium users, so a Free buyer tapping 'MULTI-ANGLE TRY-ON' received a successful 200 with just the front render — looked like a bug. Fix: raise PaywallError(402, feature='multi_angle') via assert_can_use_multi_angle when a Free user submits >1 angle. Verified applied to /tryon (line ~351), /tryon/outfit (line ~492), and /tryon/garment (line ~647). Frontend PaywallModal in /app/frontend/src/components/PaywallModal.tsx already had the 'multi_angle' → 'Multi-angle try-ons are Premium' meta entry, so the modal renders immediately on the 402 caught by isPaywallError(e) inside runTryOn."
+}
