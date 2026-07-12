@@ -3,12 +3,12 @@
 Free tier:
   • 7 try-ons per rolling 7-day window
   • Up to 2 body profiles
-  • Single front-angle try-on (no multi-angle carousel)
+  • Multi-angle try-ons ARE available (only the weekly cap gates them)
 
 Premium tier:
   • Unlimited try-ons
-  • Up to 10 profiles
-  • AI-styled multi-angle try-ons (up to MAX_TRYON_ANGLES angles)
+  • Up to 10 body profiles
+  • Priority support + early-access to new features
 
 Callers use :func:`assert_can_tryon` and :func:`assert_can_add_profile`
 before mutating state. Both raise :class:`fastapi.HTTPException(402)`
@@ -109,12 +109,4 @@ async def assert_can_add_profile(user_doc: Dict[str, Any]) -> None:
                 if premium
                 else f"Free supports {FREE_MAX_PROFILES} profiles. Upgrade to Premium for {PREMIUM_MAX_PROFILES}."
             ),
-        )
-
-
-def assert_can_use_multi_angle(user_doc: Dict[str, Any]) -> None:
-    if not is_premium(user_doc):
-        raise PaywallError(
-            feature="multi_angle",
-            message="AI multi-angle try-ons are a Premium feature. Upgrade to unlock.",
         )
