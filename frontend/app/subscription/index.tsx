@@ -45,9 +45,9 @@ interface MeData {
 
 const BENEFITS = [
   { icon: "zap", label: "Unlimited AI try-ons every week" },
-  { icon: "layers", label: "AI-styled multi-angle outfit renders" },
   { icon: "users", label: "Up to 10 body profiles for family & clients" },
   { icon: "sliders", label: "Interactive live size slider with fit narration" },
+  { icon: "eye", label: "Early access to new features" },
   { icon: "award", label: "Priority Support" },
 ] as const;
 

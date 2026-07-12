@@ -32,7 +32,6 @@ interface Props {
 const FEATURE_META: Record<string, { title: string; icon: keyof typeof Feather.glyphMap }> = {
   tryon_weekly_limit: { title: "You've hit your weekly try-on limit", icon: "clock" },
   profile_limit: { title: "You're at your profile limit", icon: "users" },
-  multi_angle: { title: "Multi-angle try-ons are Premium", icon: "layers" },
 };
 
 export function PaywallModal({ visible, feature, message, onClose }: Props) {
@@ -64,7 +63,7 @@ export function PaywallModal({ visible, feature, message, onClose }: Props) {
           <View style={styles.benefits}>
             <Benefit label="Unlimited try-ons" />
             <Benefit label="Up to 10 body profiles" />
-            <Benefit label="AI multi-angle outfits" />
+            <Benefit label="Priority support" />
           </View>
           <TouchableOpacity
             testID="paywall-upgrade"

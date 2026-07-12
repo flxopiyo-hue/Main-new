@@ -64,7 +64,9 @@ async def gate_snapshot(user_doc: Dict[str, Any]) -> Dict[str, Any]:
         "tryons_remaining": -1 if premium else max(0, FREE_TRYONS_PER_WEEK - tryons),
         "profiles_count": profiles,
         "profiles_limit": PREMIUM_MAX_PROFILES if premium else FREE_MAX_PROFILES,
-        "multi_angle_allowed": premium,
+        # Multi-angle try-ons are available on every tier — the only
+        # per-tier gate is the weekly cap and the profile cap.
+        "multi_angle_allowed": True,
     }
 
 

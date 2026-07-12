@@ -201,7 +201,7 @@ export default function Profile() {
                   ? user?.cancel_at_period_end
                     ? "Cancels at period end · Tap to resume"
                     : "Unlimited try-ons · 10 profiles · Manage plan"
-                  : "Unlimited try-ons + AI multi-angle outfits · KSh 199/mo"}
+                  : "Unlimited try-ons + up to 10 body profiles · KSh 199/mo"}
               </Text>
             </View>
             <Feather

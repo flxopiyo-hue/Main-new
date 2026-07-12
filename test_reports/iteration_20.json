@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 20 validates the flipped gating rule: multi-angle try-ons are now ungated on ALL tiers. Free-tier caps that remain are (a) 7 try-ons per rolling 7d and (b) 2 body profiles. Backend: 6/6 pytest cases in /app/backend/tests/test_iteration20_multi_angle_ungated.py pass — POST /api/tryon, /api/tryon/outfit, and /api/tryon/garment with angles=['front','side','back'] as buyer@aurafit.com (Free) return 200 or 502 (never 402/multi_angle). GET /api/subs/me returns gate.multi_angle_allowed=true and gate.premium=false, gate.tryons_limit=7, gate.profiles_limit=2. Weekly-cap enforcement verified by inserting 7 dry tryon rows in the last 7d and confirming next POST /api/tryon returns 402 detail.feature='tryon_weekly_limit'. Profile-cap enforcement verified by seeding 2 body_profiles and confirming POST /api/loved-ones returns 402 detail.feature='profile_limit'. Test-data cleanup fixtures wipe TEST_ inserts on teardown. Frontend (Playwright, 390x844 mobile, buyer@aurafit.com Free): (1) /subscription benefits list = ['Unlimited AI try-ons every week','Up to 10 body profiles for family & clients','Interactive live size slider with fit narration','Early access to new features','Priority Support'] — zero mention of multi-angle. (2) Profile card hint reads exactly 'Unlimited try-ons + up to 10 body profiles · KSh 199/mo'. (3) On item MAISON LUMIÈRE 'Oversized Knit Pullover', tapping [data-testid=item-tryon-multi-btn] fires POST /api/tryon → HTTP 200 (no PaywallModal). Item detail flips to 'TRY AGAIN — FRONT' + share options — confirming hasTryOn was set from the multi-angle result. NOTE: buyer had 7 pre-existing tryons in the 7d window which paywalled the first attempt with title 'You've hit your weekly try-on limit' (feature=tryon_weekly_limit — the CORRECT remaining gate). After clearing that quota via mongo, the 200 path was verified end-to-end.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "core/gating.py", "issue": "assert_can_use_multi_angle is defined but no longer called anywhere in the codebase (all 3 tryon routes call assert_can_tryon only). Dead code — safe to delete for clarity."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration20_multi_angle_ungated.py",
+    "/app/test_reports/pytest/iteration20_results.xml"
+  ],
+  "action_items": [
+    "STALE TEST: /app/backend/tests/test_multi_angle_paywall.py (iter-19) still asserts Free multi-angle → 402 multi_angle. Those 3 tests will now FAIL against current backend (which is the expected new behaviour). Main agent should either delete that file or invert the assertions to match iteration 20 semantics.",
+    "OPTIONAL CLEANUP: In /app/backend/core/gating.py remove the now-unused `assert_can_use_multi_angle` helper (never imported), and remove its docstring reference to 'Single front-angle try-on (no multi-angle carousel)' from the Free-tier bullet list at the top of gating.py — that comment is now incorrect (Free CAN use multi-angle).",
+    "OPTIONAL: /app/frontend/src/components/PaywallModal.tsx still contains a 'multi_angle' meta entry ('Multi-angle try-ons are Premium'). Now unreachable — safe to prune."
+  ],
+  "critical_code_review_comments": [
+    "gate_snapshot() correctly hard-codes multi_angle_allowed=True. Good.",
+    "All 3 tryon endpoints (/tryon, /tryon/outfit, /tryon/garment) call `await assert_can_tryon(user)` and NOT assert_can_use_multi_angle — the fix is applied consistently.",
+    "gating.py header docstring lines 6-7 still list 'Single front-angle try-on (no multi-angle carousel)' under Free tier — copy is now stale and misleading for future maintainers."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration20_multi_angle_ungated.py (new)",
+    "/app/test_reports/pytest/iteration20_results.xml (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Autouse fixture resets buyer@aurafit.com to {subscription_tier:free, subscription_status:null} and wipes TEST_-prefixed tryons/body_profiles pre and post. Weekly-cap test dry-inserts 7 tryon rows with id prefix 'TEST_iter20_cap_' via pymongo (no Nano Banana calls); profile-cap test seeds 2 body_profiles with id prefix 'TEST_iter20_prof_'; both cleaned in fixture teardown. During frontend testing, deleted buyer's 7 real tryons in the last 7d window to enable a live multi-angle 200 verification. Buyer's tryon history is therefore reset to just the 1 new multi-angle result generated during this run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Multi-angle is now UNGATED. If you're re-testing paywalls, only tryon_weekly_limit (7/wk) and profile_limit (2 profiles) remain for Free tier. The iter-19 test file test_multi_angle_paywall.py is now WRONG and will fail — prefer running test_iteration20_multi_angle_ungated.py. Buyer's tryon history was reset during this run; a fresh tester should expect capacity available.",
+  "rca_of_issue": "N/A — requirement flip, not a bug. Fix applied by main agent (removal of assert_can_use_multi_angle calls, gate_snapshot returning multi_angle_allowed=True) is complete and verified."
+}
