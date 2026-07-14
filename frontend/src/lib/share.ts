@@ -12,7 +12,7 @@ export async function shareBase64Image(b64: string, filename = "aurafit-tryon"):
   });
   await Sharing.shareAsync(uri, {
     mimeType: "image/jpeg",
-    dialogTitle: "Share your Drape try-on",
+    dialogTitle: "Share your Oromona try-on",
     UTI: "public.jpeg",
   });
   return true;

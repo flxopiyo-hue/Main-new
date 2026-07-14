@@ -51,7 +51,7 @@ export function PaywallModal({ visible, feature, message, onClose }: Props) {
           <View style={styles.iconWrap}>
             <Feather name={icon} size={22} color={colors.primary} />
           </View>
-          <Text style={styles.eyebrow}>DRAPE PREMIUM</Text>
+          <Text style={styles.eyebrow}>OROMONA PREMIUM</Text>
           <Text style={styles.title} testID="paywall-title">
             {title}
           </Text>

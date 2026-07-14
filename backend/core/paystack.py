@@ -1,4 +1,4 @@
-"""Paystack API client for Drape Premium subscriptions.
+"""Paystack API client for Oromona Premium subscriptions.
 
 Small async wrapper over the Paystack REST API. We deliberately stay
 close to the raw REST calls (no SDK) so that we can move to Flutterwave

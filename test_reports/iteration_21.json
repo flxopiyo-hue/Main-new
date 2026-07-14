@@ -1,0 +1,54 @@
+{
+  "summary": "Iteration 21 — Oromona rebrand regression PASSED end-to-end. Backend 6/6 tests in /app/backend/tests/test_iteration21_oromona_rebrand.py pass: (1) POST /api/auth/login with admin@oromona.com/oromona-admin-2026 returns 200 + JWT + role=admin; (2) old admin@drape.app rejected with 400; (3) GET /api/subs/me for buyer@aurafit.com returns subscription.plan_amount_kes=199 and gate.multi_angle_allowed=true; (4) POST /api/subs/checkout returns a live checkout.paystack.com authorization_url; (5) seed.py dry-run imports cleanly and ADMIN dict is {email:'admin@oromona.com',password:'oromona-admin-2026'}; (6) atelier@aurafit.com/demo-seller-2026 seller still logs in and GET /api/seller/items returns non-empty inventory. Backend logs confirm 'paystack: reusing plan PLN_vh12k4j5951wd9v' — the newly-created 'Oromona Premium' plan_code is the one wired into checkout. Frontend Playwright (390x844 mobile viewport) verifies: welcome shows 'OROMONA' brand + 'It fits me.' tagline (zero 'drape' strings); login and register screens show 'OROMONA' caption; Discover header shows 'OROMONA' with KSh prices after buyer sign-in; Profile card reads 'Try Oromona Premium free for 7 days'; /subscription page shows 'OROMONA PREMIUM' header, 'Unlock the full atelier.' title, 'KSh 199', 5 benefits with NO 'multi-angle' language, 'START 7-DAY TRIAL' CTA; tapping the CTA fires POST /api/subs/checkout and redirects to https://checkout.paystack.com/540yyinvyvvqdjz (Cloudflare bot-check page rendered — expected); /subscription/success shows 'OROMONA PREMIUM' header; admin login lands on /admin dashboard with 'OROMONA · ADMIN' shell brand and 'Signed in as admin@oromona.com'. IMPORTANT: initial admin login FAILED (400 Invalid email or password) — the admin user's email was migrated to admin@oromona.com in Mongo but the bcrypt hash still verified the OLD 'drape-admin-2026' password. Testing agent patched the DB hash to unblock (see rca_of_issue). Main agent MUST fix seed.py to re-hash on password migration.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "seed.py / users collection (admin@oromona.com)",
+        "issue": "Admin email was renamed drape.app → oromona.com but hashed_password was NOT re-hashed. bcrypt.checkpw('oromona-admin-2026') returned False against the DB hash; bcrypt.checkpw('drape-admin-2026') returned True. seed.py lines 227-233 only $set role+suspended when admin exists — it never updates the password. As a result, admin login via API and UI both returned 400 'Invalid email or password' until the DB was manually patched. RCA + patch details in rca_of_issue.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "global (shadow* styles)",
+        "issue": "Console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' React Native Web is warning throughout the app. Not blocking but worth tidying in a future pass."
+      },
+      {
+        "component": "global (pointerEvents prop)",
+        "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Repeated across screens (likely inside a shared modal/overlay component)."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration21_oromona_rebrand.py",
+    "/app/test_reports/pytest/iteration21_results.xml"
+  ],
+  "action_items": [
+    "CRITICAL — Fix seed.py admin migration: when an admin document exists but its email is admin@oromona.com AND the configured password doesn't verify against hashed_password, seed.py should re-hash oromona-admin-2026 and $set hashed_password. Even simpler: unconditionally $set a freshly bcrypt-hashed ADMIN['password'] on every seed run (idempotent). Right now the seed's admin branch is: existing → only sets role+suspended; missing → inserts with fresh hash. So any pre-existing pre-rebrand admin doc is stuck with the old password.",
+    "OPTIONAL: Consider the same defensive re-hash for the seller upsert path (currently seed.py lines 207-210 also skip password when seller exists — fine today because seller password didn't change, but a footgun for the next migration).",
+    "OPTIONAL: Prune leftover internal 'drape.*' AsyncStorage keys: /app/frontend/src/lib/outfit.tsx:120 STORAGE_KEY='drape.outfit.v1' and /app/frontend/src/lib/auth.tsx:24 LOCALE_SYNC_KEY='drape.localeCurrencySynced'. Not user-facing (safe to leave) but inconsistent with rebrand.",
+    "OPTIONAL: Address React Native Web deprecation warnings for shadow* props and pointerEvents prop."
+  ],
+  "critical_code_review_comments": [
+    "seed.py admin branch (lines 226-247): the 'existing admin' path is not idempotent w.r.t. password. It should either always re-hash ADMIN['password'] on run, OR compare bcrypt.checkpw(current_password, existing.hashed_password) and only rewrite when mismatched. Same class of bug will bite any future credential rotation.",
+    "Rebrand copy is otherwise clean: no 'DRAPE'/'drape' user-facing strings survive; 'Oromona Premium' plan_code PLN_vh12k4j5951wd9v is correctly wired via backend logs 'paystack: reusing plan PLN_vh12k4j5951wd9v'.",
+    "/app/backend/.env correctly exposes PREMIUM_PLAN_NAME='Oromona Premium'; DB_NAME still 'aurafit' (fine — internal, protected variable)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration21_oromona_rebrand.py (new)",
+    "/app/test_reports/pytest/iteration21_results.xml (new)",
+    "Mongo users doc admin@oromona.com — hashed_password rewritten to bcrypt('oromona-admin-2026') to unblock end-to-end testing. Documented so main agent's seed.py fix can safely re-run without further state divergence."
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Rehashed admin@oromona.com password in Mongo (bcrypt of 'oromona-admin-2026') to unblock admin login testing. No other seed data was added or removed. Buyer, seller, item, and subscription documents were untouched.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend + frontend rebrand fully verified (6/6 pytest, all playwright checks green). The one real defect is silent: seed.py did not migrate the admin PASSWORD when its email flipped. Testing agent patched the DB hash directly; if you wipe the DB and re-run seed.py, admin login will BREAK again unless main agent has fixed seed.py to $set hashed_password on the existing-admin branch. If you're re-verifying only the seed fix, run: `python -m pytest /app/backend/tests/test_iteration21_oromona_rebrand.py -v` and expect all 6 to pass; also drop admin doc, re-run seed.py, then re-run the pytest. Old admin@drape.app credentials should always be rejected (that assertion is already in the suite).",
+  "rca_of_issue": "ROOT CAUSE (admin login 400): The Oromona rebrand renamed the admin email in the DB (admin@drape.app → admin@oromona.com) and updated seed.py ADMIN dict to the new email + new password 'oromona-admin-2026'. However, seed.py's admin branch when the user already exists only does `$set: {role: 'admin', suspended: False}` (seed.py:229-232). It never touches hashed_password. So the pre-existing admin document ended up with the NEW email but the OLD bcrypt hash of 'drape-admin-2026'. REPRODUCTION: (a) `curl -sX POST $BASE/api/auth/login -H content-type:application/json -d '{\"email\":\"admin@oromona.com\",\"password\":\"oromona-admin-2026\"}'` → 400 Invalid email or password. (b) `bcrypt.checkpw(b'drape-admin-2026', hashed_password)` → True; `bcrypt.checkpw(b'oromona-admin-2026', hashed_password)` → False. MITIGATION APPLIED: `db.users.update_one({email:'admin@oromona.com'}, {$set:{hashed_password: bcrypt.hashpw(b'oromona-admin-2026', bcrypt.gensalt()).decode()}})` — reruns of the test suite now pass 6/6. PERMANENT FIX (main agent): Update seed.py admin branch (~line 227) to unconditionally set hashed_password too, e.g.: `{$set:{role:'admin', suspended:False, hashed_password: bcrypt.hashpw(ADMIN['password'].encode(), bcrypt.gensalt()).decode()}}`. Same guidance for any future seed credential rotation."
+}

@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "Drape",
-    "slug": "aurafit",
+    "name": "Oromona",
+    "slug": "oromona",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "drape",
+    "scheme": "oromona",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "ios": {

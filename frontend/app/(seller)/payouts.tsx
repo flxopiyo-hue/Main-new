@@ -141,7 +141,7 @@ export default function Payouts() {
               ? "Stripe Connect is active — net revenue routes automatically to your bank or M-Pesa account."
               : status === "pending"
                 ? "Stripe is reviewing your KYC submission. Payouts will start once approved."
-                : "Connect your payout account to receive funds for paid orders. Drape uses Stripe Connect Express."}
+                : "Connect your payout account to receive funds for paid orders. Oromona uses Stripe Connect Express."}
           </Text>
           {connect?.note ? (
             <Text style={[tp.bodyMuted, { marginTop: spacing.sm, fontStyle: "italic" }]}>
@@ -193,7 +193,7 @@ export default function Payouts() {
               icon="percent"
               label="Platform fee"
               value={`${(data.platform_fee_bps / 100).toFixed(0)}%`}
-              hint="Drape's commission, deducted automatically per paid transaction."
+              hint="Oromona's commission, deducted automatically per paid transaction."
               testID="terms-fee"
             />
             <TermsCard

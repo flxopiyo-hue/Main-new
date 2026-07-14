@@ -38,9 +38,9 @@ SELLER = {
 }
 
 ADMIN = {
-    "email": "admin@drape.app",
-    "full_name": "Drape Platform Admin",
-    "password": "drape-admin-2026",
+    "email": "admin@oromona.com",
+    "full_name": "Oromona Platform Admin",
+    "password": "oromona-admin-2026",
 }
 
 ITEMS = [

@@ -887,7 +887,7 @@ export const api = {
   deleteAddress: (id: string) =>
     request<{ ok: boolean }>(`/addresses/${id}`, { method: "DELETE" }),
 
-  // Subscription (Paystack-backed Drape Premium tier).
+  // Subscription (Paystack-backed Oromona Premium tier).
   subsMe: () =>
     request<{
       subscription: {

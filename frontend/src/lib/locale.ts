@@ -1,4 +1,4 @@
-// Locale + region detection for Drape.
+// Locale + region detection for Oromona.
 //
 // Uses the device-provided region (works offline, respects user override of
 // the device language/region setting). If the user is in Kenya, we softly

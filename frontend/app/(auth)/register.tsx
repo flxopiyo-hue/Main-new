@@ -103,7 +103,7 @@ export default function Register() {
           return;
         }
         if (derivedAge !== null && derivedAge < 13) {
-          toast.show("You must be at least 13 years old to use Drape", "error");
+          toast.show("You must be at least 13 years old to use Oromona", "error");
           setLoading(false);
           return;
         }
@@ -161,7 +161,7 @@ export default function Register() {
         >
           <Feather name="arrow-left" size={22} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={[tp.caption]}>DRAPE</Text>
+        <Text style={[tp.caption]}>OROMONA</Text>
         <View style={styles.iconBtn} />
       </View>
       <KeyboardAwareScrollView
@@ -335,7 +335,7 @@ function BuyerFields({ gender, setGender, dob, derivedAge, openPicker }: BuyerFi
           {derivedAge} years old
         </Text>
       ) : (
-        <Text style={styles.dobHint}>You must be at least 13 to join Drape</Text>
+        <Text style={styles.dobHint}>You must be at least 13 to join Oromona</Text>
       )}
     </>
   );

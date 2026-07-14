@@ -241,7 +241,7 @@ export default function SellerSettings() {
         </TouchableOpacity>
 
         <Text style={styles.versionLabel}>
-          Drape · Seller Portal · v{user.token_version ?? 0}
+          Oromona · Seller Portal · v{user.token_version ?? 0}
         </Text>
         <View style={{ height: spacing.xxl }} />
       </ScrollView>

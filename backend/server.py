@@ -198,7 +198,7 @@ async def backfill_verified_sellers() -> None:
 
 @app.on_event("startup")
 async def bootstrap_premium_plan() -> None:
-    """Idempotent Paystack plan bootstrap for Drape Premium.
+    """Idempotent Paystack plan bootstrap for Oromona Premium.
 
     On the first boot after keys land in .env this creates the KES 199
     plan with a 7-day trial. On subsequent boots it just looks up the

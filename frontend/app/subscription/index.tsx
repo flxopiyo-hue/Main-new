@@ -1,4 +1,4 @@
-// Drape Premium pricing screen — the buyer's paywall + upgrade CTA.
+// Oromona Premium pricing screen — the buyer's paywall + upgrade CTA.
 // Reached from:
 //   • Profile → "Upgrade to Premium" card
 //   • Any paywall modal from the try-on flow (weekly cap hit) or the
@@ -159,7 +159,7 @@ export default function SubscriptionScreen() {
         >
           <Feather name="arrow-left" size={22} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={tp.caption}>DRAPE PREMIUM</Text>
+        <Text style={tp.caption}>OROMONA PREMIUM</Text>
         <View style={styles.iconBtn} />
       </View>
 

@@ -66,7 +66,7 @@ export default function OutfitResult() {
       const data = await api.shareTryOn(tryon.id, fmt, active);
       const ok = await shareBase64Image(
         data.image_b64,
-        `drape-outfit-${active}-${fmt}`,
+        `oromona-outfit-${active}-${fmt}`,
       );
       if (!ok) toast.show("Sharing not available on this device", "error");
     } catch (e: any) {

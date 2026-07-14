@@ -221,7 +221,7 @@ export function DobPicker({
       <SafeAreaView style={styles.sheetWrap} edges={["bottom"]}>
         <View style={styles.sheet}>
           <Text style={styles.title}>Date of birth</Text>
-          <Text style={styles.sub}>You must be at least 13 to join Drape.</Text>
+          <Text style={styles.sub}>You must be at least 13 to join Oromona.</Text>
 
           <View style={styles.row}>
             <View style={styles.col}>

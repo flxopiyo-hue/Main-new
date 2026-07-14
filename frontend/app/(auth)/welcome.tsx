@@ -18,14 +18,13 @@ export default function Welcome() {
       <View style={styles.scrim} />
       <SafeAreaView style={styles.content} edges={["top", "bottom"]}>
         <View style={styles.top}>
-          <Text style={styles.brand}>DRAPE</Text>
+          <Text style={styles.brand}>OROMONA</Text>
           <Text style={styles.brandSub}>Nairobi · Made for everywhere</Text>
         </View>
         <View style={styles.middle}>
           <Text style={styles.title}>
-            See it{"\n"}
-            <Text style={styles.titleItalic}>drape</Text>
-            {"\n"}before you wear it.
+            It{"\n"}
+            <Text style={styles.titleItalic}>fits me.</Text>
           </Text>
           <Text style={styles.sub}>
             Capture your measurements. Try clothes on with AI — front, side and back —

@@ -78,7 +78,7 @@ export default function SubscriptionSuccess() {
             <Feather name="x" size={30} color={colors.error} />
           )}
         </View>
-        <Text style={tp.caption}>DRAPE PREMIUM</Text>
+        <Text style={tp.caption}>OROMONA PREMIUM</Text>
         <Text style={styles.title} testID="sub-verify-title">
           {status === "verifying"
             ? "Verifying"

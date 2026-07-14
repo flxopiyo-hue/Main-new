@@ -36,7 +36,7 @@ export function AdminShell({ title, subtitle, children, trailing }: Props) {
     <SafeAreaView style={styles.root} edges={["top", "bottom"]}>
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
-          <Text style={tp.caption} testID="admin-brand">DRAPE · ADMIN</Text>
+          <Text style={tp.caption} testID="admin-brand">OROMONA · ADMIN</Text>
           <Text style={[tp.h2, styles.title]} testID="admin-title">
             {title}
           </Text>

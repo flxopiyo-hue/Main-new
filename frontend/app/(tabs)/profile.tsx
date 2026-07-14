@@ -151,7 +151,7 @@ export default function Profile() {
           ) : null}
         </View>
 
-        {/* Drape Premium upgrade / status card — the primary monetisation
+        {/* Oromona Premium upgrade / status card — the primary monetisation
             surface on the buyer profile. Free users see an "Upgrade" CTA;
             Premium users get a compact status pill. */}
         {user?.role === "buyer" ? (
@@ -186,8 +186,8 @@ export default function Profile() {
                 ]}
               >
                 {user?.subscription_tier === "premium"
-                  ? "Drape Premium — Active"
-                  : "Try Drape Premium free for 7 days"}
+                  ? "Oromona Premium — Active"
+                  : "Try Oromona Premium free for 7 days"}
               </Text>
               <Text
                 style={[

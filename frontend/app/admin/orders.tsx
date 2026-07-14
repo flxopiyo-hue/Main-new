@@ -62,7 +62,7 @@ export default function AdminOrders() {
   );
 
   return (
-    <AdminShell title="Orders" subtitle="Every order placed through Drape, across all sellers.">
+    <AdminShell title="Orders" subtitle="Every order placed through Oromona, across all sellers.">
       <View style={styles.controls}>
         <View style={styles.filterRow}>
           {FILTERS.map((f) => {

@@ -1,4 +1,4 @@
-// Drape auth context: holds current user + token, persists token via secureStore.
+// Oromona auth context: holds current user + token, persists token via secureStore.
 //
 // New in iteration 12 (role switcher): `login` now accepts an optional
 // `asRole` argument so the user can pick their entry point on the login

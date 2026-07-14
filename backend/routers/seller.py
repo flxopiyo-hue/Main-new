@@ -342,7 +342,7 @@ async def connect_setup(
                     },
                     business_profile={
                         "name": user.get("company_name") or user.get("full_name"),
-                        "product_description": "Apparel atelier on Drape",
+                        "product_description": "Apparel atelier on Oromona",
                     },
                 )
                 existing_acct = acct.id

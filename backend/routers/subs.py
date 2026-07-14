@@ -1,4 +1,4 @@
-"""Drape Premium subscription endpoints (Paystack-backed).
+"""Oromona Premium subscription endpoints (Paystack-backed).
 
 Endpoints exposed under ``/api/subs/*``:
 
@@ -48,7 +48,7 @@ logger = logging.getLogger("aurafit.subs")
 
 
 async def ensure_premium_plan() -> Optional[str]:
-    """Idempotent: creates the Drape Premium plan on Paystack if it
+    """Idempotent: creates the Oromona Premium plan on Paystack if it
     doesn't exist yet. Returns the plan_code that other endpoints can
     quote. Safe to call on every boot.
 
