@@ -226,11 +226,26 @@ async def main() -> None:
     # ----- Admin -----
     admin_existing = await db.users.find_one({"email": ADMIN["email"]})
     if admin_existing:
+        # Re-hash the password on every seed run so credential rotation
+        # via the ADMIN dict (e.g. the Drape→Oromona rebrand) actually
+        # takes effect. Previously we only touched role/suspended, which
+        # left the old bcrypt hash intact and locked the admin out after
+        # a rename. `full_name` is likewise kept in sync.
+        hashed_admin = bcrypt.hashpw(
+            ADMIN["password"].encode(), bcrypt.gensalt()
+        ).decode()
         await db.users.update_one(
             {"id": admin_existing["id"]},
-            {"$set": {"role": "admin", "suspended": False}},
+            {
+                "$set": {
+                    "role": "admin",
+                    "suspended": False,
+                    "full_name": ADMIN["full_name"],
+                    "hashed_password": hashed_admin,
+                }
+            },
         )
-        print(f"  · admin already present ({ADMIN['email']})")
+        print(f"  · admin refreshed ({ADMIN['email']} / {ADMIN['password']})")
     else:
         admin_id = str(uuid.uuid4())
         hashed_admin = bcrypt.hashpw(ADMIN["password"].encode(), bcrypt.gensalt()).decode()
