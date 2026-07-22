@@ -94,6 +94,34 @@ const PRESET_COLORS: ColorOption[] = [
   { name: "Rose", hex: "#D4859A" },
 ];
 
+// Extended palette shown when the seller adds a custom-named color.
+// These are common apparel shades so the seller can tap-pick a hue
+// without needing a full color picker (which React Native doesn't ship
+// natively and would require a heavy 3rd-party lib for). The seller
+// can still override via the hex text field below.
+const EXTENDED_PALETTE: string[] = [
+  "#0A0A0A", // black
+  "#3F3F46", // charcoal
+  "#8B8B8B", // grey
+  "#FFFFFF", // white
+  "#F5E6D3", // cream
+  "#F4C7A1", // peach
+  "#D4859A", // rose
+  "#B91C4E", // magenta
+  "#8B1E1E", // burgundy
+  "#C8A77B", // camel
+  "#7B4A1E", // rust
+  "#3E2A18", // chocolate
+  "#5C6F44", // olive
+  "#1F5E42", // forest
+  "#0F766E", // teal
+  "#1B2A4E", // navy
+  "#3B82F6", // cobalt
+  "#6D28D9", // purple
+  "#F59E0B", // mustard
+  "#EF4444", // red
+];
+
 const STEPS = [
   { num: 1, label: "Basics" },
   { num: 2, label: "Taxonomy" },
@@ -1074,23 +1102,212 @@ function StepSizing({
 
       <View style={{ height: spacing.lg }} />
       <Text style={[tp.caption, styles.label]}>Colors</Text>
+      <Text style={styles.colorHint}>
+        Tap a preset or add your own name & shade. Add as many as you carry.
+      </Text>
+      <ColorEditor
+        picked={pickedColors}
+        presets={PRESET_COLORS}
+        palette={EXTENDED_PALETTE}
+        onAdd={onToggleColor}
+        onRemove={onToggleColor}
+      />
+      <View style={{ height: spacing.xxl }} />
+    </View>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Color editor — free-form list of named color variants                      */
+/* -------------------------------------------------------------------------- */
+
+interface ColorEditorProps {
+  picked: ColorOption[];
+  presets: ColorOption[];
+  palette: string[];
+  onAdd: (c: ColorOption) => void;
+  onRemove: (c: ColorOption) => void;
+}
+
+function ColorEditor({ picked, presets, palette, onAdd, onRemove }: ColorEditorProps) {
+  const [drafting, setDrafting] = useState(false);
+  const [draftName, setDraftName] = useState("");
+  const [draftHex, setDraftHex] = useState(palette[0]);
+  const [nameError, setNameError] = useState<string | null>(null);
+
+  const isDuplicate = (name: string) => {
+    const norm = name.trim().toLowerCase();
+    return picked.some((p) => p.name.trim().toLowerCase() === norm);
+  };
+
+  const commit = () => {
+    const name = draftName.trim();
+    if (!name) {
+      setNameError("Give this color a name");
+      return;
+    }
+    if (isDuplicate(name)) {
+      setNameError("You've already added that color");
+      return;
+    }
+    // Hex must be 3 or 6 hex digits with an optional leading #.
+    const hex = draftHex.startsWith("#") ? draftHex : `#${draftHex}`;
+    if (!/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(hex)) {
+      setNameError("Hex should look like #C8A77B");
+      return;
+    }
+    onAdd({ name, hex });
+    setDraftName("");
+    setDraftHex(palette[0]);
+    setNameError(null);
+    // Keep the drafter open so the seller can add another without an
+    // extra tap — matches the user's "add another" request.
+  };
+
+  const cancel = () => {
+    setDrafting(false);
+    setDraftName("");
+    setDraftHex(palette[0]);
+    setNameError(null);
+  };
+
+  return (
+    <View>
+      {/* Selected color chips */}
+      {picked.length > 0 ? (
+        <View style={styles.colorChipsRow} testID="wizard-color-chips">
+          {picked.map((c) => (
+            <View key={c.name} style={styles.colorChip}>
+              <View style={[styles.colorChipSwatch, { backgroundColor: c.hex }]} />
+              <Text style={styles.colorChipLabel} numberOfLines={1}>
+                {c.name}
+              </Text>
+              <TouchableOpacity
+                testID={`wizard-color-remove-${c.name}`}
+                onPress={() => onRemove(c)}
+                style={styles.colorChipRemove}
+                hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+              >
+                <Feather name="x" size={12} color={colors.primaryFg} />
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      {/* Quick-pick presets — 1-tap add when not already picked */}
+      <Text style={styles.colorSectionCaption}>QUICK PICK</Text>
       <View style={styles.colorRow}>
-        {PRESET_COLORS.map((c) => {
-          const on = !!pickedColors.find((x) => x.name === c.name);
+        {presets.map((c) => {
+          const on = !!picked.find((x) => x.name === c.name);
           return (
             <TouchableOpacity
               key={c.name}
               testID={`wizard-color-${c.name}`}
-              onPress={() => onToggleColor(c)}
+              onPress={() => (on ? onRemove(c) : onAdd(c))}
               style={[
                 styles.colorSwatch,
                 { backgroundColor: c.hex },
                 on && styles.colorSwatchActive,
               ]}
-            />
+              accessibilityLabel={`${c.name} preset${on ? " selected" : ""}`}
+            >
+              {on ? (
+                <Feather
+                  name="check"
+                  size={14}
+                  color={c.hex === "#FFFFFF" ? colors.primary : colors.primaryFg}
+                />
+              ) : null}
+            </TouchableOpacity>
           );
         })}
       </View>
+
+      {/* Custom color drafter */}
+      {!drafting ? (
+        <TouchableOpacity
+          testID="wizard-color-add-custom-btn"
+          onPress={() => setDrafting(true)}
+          style={styles.customAddBtn}
+        >
+          <Feather name="plus" size={14} color={colors.primary} />
+          <Text style={styles.customAddLabel}>Add another color</Text>
+        </TouchableOpacity>
+      ) : (
+        <View style={styles.customPanel} testID="wizard-color-custom-panel">
+          <Text style={styles.colorSectionCaption}>ADD CUSTOM COLOR</Text>
+          <View style={styles.customRow}>
+            <View style={[styles.customPreview, { backgroundColor: draftHex }]} />
+            <TextInput
+              testID="wizard-color-custom-name"
+              placeholder="e.g. Terracotta"
+              placeholderTextColor={colors.mutedFg}
+              style={styles.customNameInput}
+              value={draftName}
+              onChangeText={(t) => {
+                setDraftName(t);
+                if (nameError) setNameError(null);
+              }}
+              returnKeyType="done"
+              onSubmitEditing={commit}
+              autoCapitalize="words"
+            />
+          </View>
+          <Text style={styles.customLabel}>Shade — tap a swatch or type hex</Text>
+          <View style={styles.paletteRow}>
+            {palette.map((hex) => (
+              <TouchableOpacity
+                key={hex}
+                testID={`wizard-color-palette-${hex}`}
+                onPress={() => setDraftHex(hex)}
+                style={[
+                  styles.paletteSwatch,
+                  { backgroundColor: hex },
+                  hex === draftHex && styles.paletteSwatchActive,
+                ]}
+                accessibilityLabel={`Shade ${hex}${hex === draftHex ? " selected" : ""}`}
+              />
+            ))}
+          </View>
+          <TextInput
+            testID="wizard-color-custom-hex"
+            placeholder="#C8A77B"
+            placeholderTextColor={colors.mutedFg}
+            style={styles.customHexInput}
+            value={draftHex}
+            onChangeText={(t) => {
+              setDraftHex(t);
+              if (nameError) setNameError(null);
+            }}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            maxLength={7}
+          />
+          {nameError ? (
+            <Text style={styles.customError} testID="wizard-color-custom-error">
+              {nameError}
+            </Text>
+          ) : null}
+          <View style={styles.customActions}>
+            <TouchableOpacity
+              testID="wizard-color-custom-cancel"
+              onPress={cancel}
+              style={[styles.customBtn, styles.customBtnGhost]}
+            >
+              <Text style={styles.customBtnLabelGhost}>Done</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="wizard-color-custom-commit"
+              onPress={commit}
+              style={[styles.customBtn, styles.customBtnPrimary]}
+            >
+              <Feather name="plus" size={14} color={colors.primaryFg} />
+              <Text style={styles.customBtnLabel}>Add color</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
       <View style={{ height: spacing.xxl }} />
     </View>
   );
@@ -1458,8 +1675,191 @@ const styles = StyleSheet.create({
   },
   sizeDetailGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md, rowGap: spacing.md },
   colorRow: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
-  colorSwatch: { width: 40, height: 40, borderWidth: 1, borderColor: colors.border },
+  colorSwatch: {
+    width: 40,
+    height: 40,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   colorSwatchActive: { borderColor: colors.primary, borderWidth: 2 },
+  colorHint: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: colors.mutedFg,
+    marginTop: 4,
+    marginBottom: 12,
+    lineHeight: 17,
+  },
+  colorSectionCaption: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 10,
+    color: colors.mutedFg,
+    letterSpacing: 1.4,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  colorChipsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 4,
+  },
+  colorChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingLeft: 6,
+    paddingRight: 4,
+    paddingVertical: 4,
+    backgroundColor: colors.primary,
+    borderRadius: 999,
+  },
+  colorChipSwatch: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.35)",
+  },
+  colorChipLabel: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 12,
+    color: colors.primaryFg,
+    maxWidth: 100,
+  },
+  colorChipRemove: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.18)",
+  },
+  customAddBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginTop: 12,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: colors.border,
+    borderRadius: 12,
+    alignSelf: "flex-start",
+  },
+  customAddLabel: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13,
+    color: colors.primary,
+  },
+  customPanel: {
+    marginTop: 12,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 8,
+  },
+  customRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  customPreview: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  customNameInput: {
+    flex: 1,
+    fontFamily: fonts.body,
+    fontSize: 15,
+    color: colors.primary,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  customLabel: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: colors.mutedFg,
+    marginTop: 6,
+  },
+  paletteRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 4,
+  },
+  paletteSwatch: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  paletteSwatchActive: {
+    borderWidth: 3,
+    borderColor: colors.primary,
+  },
+  customHexInput: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: colors.primary,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    backgroundColor: colors.background,
+  },
+  customError: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: colors.error,
+    marginTop: 4,
+  },
+  customActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 8,
+    marginTop: 8,
+  },
+  customBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  customBtnGhost: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+  },
+  customBtnPrimary: {
+    backgroundColor: colors.primary,
+  },
+  customBtnLabel: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 12,
+    color: colors.primaryFg,
+    letterSpacing: 0.5,
+  },
+  customBtnLabelGhost: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 12,
+    color: colors.primary,
+    letterSpacing: 0.5,
+  },
   currencyRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   currencyChip: {
     paddingHorizontal: 12,
