@@ -316,14 +316,14 @@ async def paystack_return(reference: str = "") -> HTMLResponse:
 
     order = await db.orders.find_one({"session_id": reference}, {"_id": 0})
     if order:
+        was_paid_already = order.get("status") == "paid"
         await db.orders.update_one(
             {"id": order["id"]},
             {"$set": {"status": order_status, "paystack_status": pstatus}},
         )
-        if ok:
-            await _decrement_variant_stock(order)
-            if order.get("seller_id"):
-                await maybe_verify_seller(order["seller_id"])
+        if ok and not was_paid_already:
+            order["status"] = "paid"
+            await _on_order_paid(order)
 
     if ok:
         body_txt = "Your order is confirmed. Returning you to the Oromona app…"
@@ -367,9 +367,8 @@ async def payments_webhook(request: Request) -> Dict[str, Any]:
             await db.orders.update_one(
                 {"id": order["id"]}, {"$set": {"status": "paid", "paystack_status": "success"}}
             )
-            await _decrement_variant_stock(order)
-            if order.get("seller_id"):
-                await maybe_verify_seller(order["seller_id"])
+            order["status"] = "paid"
+            await _on_order_paid(order)
     elif event in {"charge.failed"}:
         await db.orders.update_one(
             {"session_id": reference}, {"$set": {"status": "failed", "paystack_status": event}}
@@ -407,6 +406,26 @@ async def _decrement_variant_stock(order: Dict[str, Any]) -> None:
                 )
     except Exception as e:  # pragma: no cover
         logger.warning("stock decrement skipped for order %s: %s", order.get("id"), e)
+
+
+async def _on_order_paid(order: Dict[str, Any]) -> None:
+    """Side effects when an order first flips to ``paid``:
+      * decrement the purchased variant's stock
+      * create the escrow payout record (status=held) so seller
+        payouts are tracked from the moment money lands
+      * seller auto-verify (5+ paid orders → verified badge)
+    """
+    await _decrement_variant_stock(order)
+    try:
+        from core import escrow as escrow_mod
+        await escrow_mod.create_payout_record(order)
+    except Exception as e:  # pragma: no cover
+        logger.warning("payout create skipped for order %s: %s", order.get("id"), e)
+    if order.get("seller_id"):
+        try:
+            await maybe_verify_seller(order["seller_id"])
+        except Exception as e:  # pragma: no cover
+            logger.warning("seller verify skipped for %s: %s", order["seller_id"], e)
 
 
 # ---------------------------------------------------------------------------

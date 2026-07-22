@@ -730,9 +730,27 @@ class OrderOut(BaseModel):
     # through the state machine). Buyers see this on the order detail screen.
     tracking_number: Optional[str] = None
     tracking_url: Optional[str] = None
+    # Auto-detected from tracking_url hostname (e.g. "G4S Courier",
+    # "Sendy", "DHL", falling back to "External carrier").
+    carrier: Optional[str] = None
     shipped_at: Optional[datetime] = None
+    # Seller-picked at ship time, in business days (1-5). We compute the
+    # eta timestamp server-side so the buyer sees a concrete date.
+    estimated_delivery_days: Optional[int] = None
+    estimated_delivery_at: Optional[datetime] = None
     delivered_at: Optional[datetime] = None
     fulfillment_note: Optional[str] = None
+    # Escrow / dispute lifecycle
+    buyer_confirmed_at: Optional[datetime] = None
+    dispute_raised_at: Optional[datetime] = None
+    dispute_reason: Optional[str] = None
+    # When funds are/will be released from escrow to the seller. Set
+    # to (delivered_at + 48h) at delivery time; ``buyer_confirmed_at``
+    # advances the release to now.
+    escrow_release_at: Optional[datetime] = None
+    escrow_status: Optional[str] = None  # held / released / settled / disputed / cancelled
+    payout_id: Optional[str] = None
+    notified_seller_at: Optional[datetime] = None  # rate-limit buyer nudges
 
 
 class OrderSellerOut(BaseModel):
@@ -765,17 +783,29 @@ class FulfillmentIn(BaseModel):
     """Body for `POST /seller/orders/{id}/fulfillment` — drives the order
     state machine. Sellers POST one of:
       - `action: "acknowledge"` → paid → in_fulfillment
-      - `action: "ship"` + `tracking_number` (and optional `tracking_url`)
+      - `action: "ship"` + `tracking_number` (and optional `tracking_url`,
+                          `estimated_delivery_days` 1-5)
                           → in_fulfillment | paid → shipped
-      - `action: "deliver"` → shipped → delivered (rare; couriers usually
-                              report delivery, but we expose this for manual
-                              marking when the seller knows).
+      - `action: "deliver"` → shipped → delivered (marked by seller/
+                              courier). Starts the 48h buyer-confirmation
+                              window before funds auto-release.
     """
 
     action: Literal["acknowledge", "ship", "deliver"]
     tracking_number: Optional[str] = Field(default=None, max_length=120)
     tracking_url: Optional[str] = Field(default=None, max_length=400)
+    estimated_delivery_days: Optional[int] = Field(default=None, ge=1, le=5)
     note: Optional[str] = Field(default=None, max_length=400)
+
+
+class ReportProblemIn(BaseModel):
+    """Body for `POST /orders/{id}/report-problem` — a buyer flags an
+    issue during the 48h escrow window. Freezes the auto-release until
+    an admin (or the seller resolving with the buyer off-app) marks
+    the dispute resolved.
+    """
+
+    reason: str = Field(min_length=6, max_length=800)
 
 
 # ---------------------------------------------------------------------------

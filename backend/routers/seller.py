@@ -17,9 +17,10 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel
 
 from core.config import (
@@ -185,6 +186,149 @@ async def seller_orders(
 # Payout transaction history — one row per paid order, per the buyer's request
 # for "most accurate" granularity (no weekly aggregation).
 # ---------------------------------------------------------------------------
+@router.get("/seller/banks")
+async def seller_banks(
+    country: str = "kenya",
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Return the list of banks + mobile-money providers Paystack
+    supports in the given country, so the seller's Payout Account
+    screen can render a searchable dropdown. Cached in the client for
+    a short window — Paystack updates the list rarely.
+    """
+    from core import paystack
+
+    await require_role("seller", user)
+    country = country.strip().lower() or "kenya"
+    try:
+        banks = await paystack.list_banks(country)
+    except paystack.PaystackError as e:
+        raise HTTPException(status_code=502, detail=f"Paystack error: {e}") from e
+    # Only expose the fields the client actually needs.
+    slim = [
+        {
+            "code": b.get("code"),
+            "name": b.get("name"),
+            "slug": b.get("slug"),
+            "type": b.get("type"),  # "nuban" | "mobile_money" | "basa" | ...
+            "currency": b.get("currency"),
+        }
+        for b in banks
+        if b.get("code") and b.get("name")
+    ]
+    return {"country": country, "banks": slim}
+
+
+@router.post("/seller/payout-account")
+async def seller_set_payout_account(
+    body: Dict[str, Any] = Body(...),
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Create / update the seller's Paystack Subaccount + Transfer
+    Recipient. Body:
+      { bank_code, bank_name, account_number, account_type?,
+        country? = 'kenya' }
+    """
+    from core import paystack
+
+    await require_role("seller", user)
+    bank_code = str(body.get("bank_code") or "").strip()
+    bank_name = str(body.get("bank_name") or "").strip()
+    account_number = str(body.get("account_number") or "").strip()
+    account_type = str(body.get("account_type") or "basa").strip().lower()
+    country = str(body.get("country") or "kenya").strip().lower()
+    if not bank_code or not account_number:
+        raise HTTPException(status_code=400, detail="bank_code and account_number are required")
+
+    # Verify the account belongs to a real name — Paystack rejects
+    # invalid pairs so the seller can't accidentally set someone
+    # else's account. Mobile money numbers skip resolve on Paystack.
+    resolved_name: Optional[str] = None
+    if account_type not in {"mobile_money"}:
+        try:
+            resolved = await paystack.resolve_account(
+                account_number=account_number, bank_code=bank_code
+            )
+            resolved_name = resolved.get("account_name")
+        except paystack.PaystackError as e:
+            raise HTTPException(status_code=400, detail=f"Bank verification failed: {e}") from e
+
+    display_name = resolved_name or user.get("full_name") or user.get("email") or "Oromona seller"
+
+    subaccount: Dict[str, Any] = {}
+    recipient: Dict[str, Any] = {}
+    subaccount_error: Optional[str] = None
+    recipient_error: Optional[str] = None
+
+    # Create Subaccount (stores bank details on Paystack for the
+    # seller's business identity — useful for reporting even though
+    # we don't split at charge time).
+    try:
+        subaccount = await paystack.create_subaccount(
+            business_name=user.get("company_name") or display_name,
+            settlement_bank=bank_code,
+            account_number=account_number,
+            primary_contact_email=user.get("email"),
+        )
+    except paystack.PaystackError as e:
+        subaccount_error = str(e)
+
+    # Create Transfer Recipient (the actual push target for payouts).
+    try:
+        recipient_type = account_type if account_type in {"mobile_money", "nuban", "ghipss", "basa"} else "basa"
+        recipient = await paystack.create_transfer_recipient(
+            type_=recipient_type,
+            name=display_name,
+            account_number=account_number,
+            bank_code=bank_code,
+            currency="KES" if country == "kenya" else "NGN",
+        )
+    except paystack.PaystackError as e:
+        recipient_error = str(e)
+
+    update: Dict[str, Any] = {
+        "payout_account": {
+            "country": country,
+            "bank_code": bank_code,
+            "bank_name": bank_name,
+            "account_number_last4": account_number[-4:],
+            "account_holder": display_name,
+            "account_type": account_type,
+            "updated_at": datetime.now(timezone.utc),
+        }
+    }
+    if subaccount.get("subaccount_code"):
+        update["paystack_subaccount_code"] = subaccount["subaccount_code"]
+    if recipient.get("recipient_code"):
+        update["paystack_recipient_code"] = recipient["recipient_code"]
+
+    await db.users.update_one({"id": user["id"]}, {"$set": update})
+
+    ok = bool(recipient.get("recipient_code"))
+    return {
+        "ok": ok,
+        "subaccount_code": subaccount.get("subaccount_code"),
+        "recipient_code": recipient.get("recipient_code"),
+        "account_holder": display_name,
+        "subaccount_error": subaccount_error,
+        "recipient_error": recipient_error,
+    }
+
+
+@router.get("/seller/payout-account")
+async def seller_get_payout_account(
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    await require_role("seller", user)
+    fresh = await db.users.find_one({"id": user["id"]}, {"_id": 0}) or {}
+    return {
+        "payout_account": fresh.get("payout_account"),
+        "recipient_code": fresh.get("paystack_recipient_code"),
+        "subaccount_code": fresh.get("paystack_subaccount_code"),
+        "has_recipient": bool(fresh.get("paystack_recipient_code")),
+    }
+
+
 @router.get("/seller/payouts")
 async def seller_payouts(
     user: Dict[str, Any] = Depends(get_current_user),
@@ -438,7 +582,9 @@ async def update_fulfillment(
     body: FulfillmentIn,
     user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    from datetime import datetime as _dt, timezone as _tz
+    from datetime import datetime as _dt, timedelta, timezone as _tz
+
+    from core import escrow as escrow_mod
 
     await require_role("seller", user)
     order = await db.orders.find_one({"id": order_id, "seller_id": user["id"]})
@@ -471,16 +617,37 @@ async def update_fulfillment(
         update["status"] = "shipped"
         update["tracking_number"] = body.tracking_number.strip()
         if body.tracking_url:
-            update["tracking_url"] = body.tracking_url.strip()
+            url = body.tracking_url.strip()
+            update["tracking_url"] = url
+            # Precompute carrier so buyers see it immediately even
+            # before the enrich helper runs.
+            from core.carriers import detect_carrier
+            c = detect_carrier(url)
+            if c:
+                update["carrier"] = c
         update["shipped_at"] = now
+        # Seller-picked ETA (1-5 business days). We compute a concrete
+        # ISO timestamp (skipping weekends approximately) so the buyer
+        # sees a "should arrive by <date>" line.
+        if body.estimated_delivery_days:
+            days = max(1, min(5, int(body.estimated_delivery_days)))
+            update["estimated_delivery_days"] = days
+            # Naive calendar-days ETA — refined "business days only"
+            # can be added if buyers ask, but for KE couriers ±1d
+            # accuracy is fine.
+            update["estimated_delivery_at"] = now + timedelta(days=days)
     elif body.action == "deliver":
-        if current != "shipped":
+        if current not in ("shipped", "in_fulfillment"):
             raise HTTPException(
                 status_code=400,
                 detail=f"Cannot mark delivered from status '{current}'",
             )
+        # Escrow release timer starts here — buyer has 48h to confirm
+        # or dispute before funds auto-release to the seller.
+        result = await escrow_mod.start_delivery_window(order_id)
         update["status"] = "delivered"
-        update["delivered_at"] = now
+        update["delivered_at"] = result["delivered_at"]
+        update["escrow_release_at"] = result["escrow_release_at"]
 
     if body.note:
         update["fulfillment_note"] = body.note.strip()

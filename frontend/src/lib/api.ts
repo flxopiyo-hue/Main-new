@@ -411,9 +411,20 @@ export interface Order {
   // Fulfillment metadata (null until the seller advances the order)
   tracking_number?: string | null;
   tracking_url?: string | null;
+  carrier?: string | null;  // auto-detected from tracking_url
   shipped_at?: string | null;
+  estimated_delivery_days?: number | null;  // 1-5, seller-picked
+  estimated_delivery_at?: string | null;
   delivered_at?: string | null;
   fulfillment_note?: string | null;
+  // Escrow / dispute lifecycle
+  buyer_confirmed_at?: string | null;
+  dispute_raised_at?: string | null;
+  dispute_reason?: string | null;
+  escrow_release_at?: string | null;
+  escrow_status?: "held" | "released" | "settled" | "disputed" | "cancelled" | null;
+  payout_id?: string | null;
+  notified_seller_at?: string | null;
 }
 
 export type FitFeedback = "small" | "perfect" | "large";
@@ -854,6 +865,58 @@ export const api = {
   orderDetail: (id: string) => request<OrderDetail>(`/orders/${id}`),
   orderFeedback: (id: string, body: { fit: FitFeedback; comment?: string }) =>
     request<OrderDetail>(`/orders/${id}/feedback`, { method: "POST", body }),
+  notifySeller: (id: string) =>
+    request<{ ok: boolean; notified_at: string }>(`/orders/${id}/notify-seller`, {
+      method: "POST",
+    }),
+  confirmDelivery: (id: string) =>
+    request<OrderDetail>(`/orders/${id}/confirm-delivery`, { method: "POST" }),
+  reportProblem: (id: string, reason: string) =>
+    request<OrderDetail>(`/orders/${id}/report-problem`, {
+      method: "POST",
+      body: { reason },
+    }),
+  sellerBanks: (country: string = "kenya") =>
+    request<{
+      country: string;
+      banks: {
+        code: string;
+        name: string;
+        slug?: string;
+        type?: string;
+        currency?: string;
+      }[];
+    }>(`/seller/banks?country=${encodeURIComponent(country)}`),
+  sellerGetPayoutAccount: () =>
+    request<{
+      payout_account?: {
+        country: string;
+        bank_code: string;
+        bank_name: string;
+        account_number_last4: string;
+        account_holder: string;
+        account_type: string;
+        updated_at: string;
+      };
+      recipient_code?: string;
+      subaccount_code?: string;
+      has_recipient: boolean;
+    }>("/seller/payout-account"),
+  sellerSetPayoutAccount: (body: {
+    bank_code: string;
+    bank_name: string;
+    account_number: string;
+    account_type?: string;
+    country?: string;
+  }) =>
+    request<{
+      ok: boolean;
+      subaccount_code?: string;
+      recipient_code?: string;
+      account_holder?: string;
+      subaccount_error?: string;
+      recipient_error?: string;
+    }>("/seller/payout-account", { method: "POST", body }),
 
   // Payments
   checkout: (body: {

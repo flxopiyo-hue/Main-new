@@ -241,6 +241,32 @@ async def bootstrap_item_variants() -> None:
         logger.warning("variants bootstrap skipped: %s", e)
 
 
+# Background escrow sweep — checks for orders whose 48h buyer-
+# confirmation window has expired and releases the payout. Runs every
+# 5 minutes so end-of-window delay stays negligible from the seller's
+# perspective. Kept lean (single DB query + optional Paystack Transfer
+# per due order) so it's safe to run alongside request traffic.
+_ESCROW_SWEEP_INTERVAL_SECONDS = 300
+
+
+@app.on_event("startup")
+async def start_escrow_sweeper() -> None:
+    import asyncio
+
+    async def _loop() -> None:
+        while True:
+            try:
+                from core.escrow import release_due_payouts
+                await release_due_payouts()
+            except Exception as e:  # pragma: no cover
+                logger.warning("escrow sweep tick failed: %s", e)
+            await asyncio.sleep(_ESCROW_SWEEP_INTERVAL_SECONDS)
+
+    # Fire-and-forget the loop task. The event loop keeps it alive for
+    # the process's lifetime; the shutdown handler cancels it.
+    app.state.escrow_task = asyncio.create_task(_loop())
+
+
 
 
 @app.on_event("shutdown")

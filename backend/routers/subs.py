@@ -404,16 +404,11 @@ async def webhook(
                 )
                 if new_status == "paid":
                     try:
-                        from routers.payments import _decrement_variant_stock
-                        await _decrement_variant_stock(order)
+                        from routers.payments import _on_order_paid
+                        order["status"] = "paid"
+                        await _on_order_paid(order)
                     except Exception as _e:  # pragma: no cover
-                        logger.warning("stock decrement skipped for %s: %s", order["id"], _e)
-                    if order.get("seller_id"):
-                        try:
-                            from core.seller_verify import maybe_verify_seller
-                            await maybe_verify_seller(order["seller_id"])
-                        except Exception as _e:  # pragma: no cover
-                            logger.warning("seller verify skipped for %s: %s", order["seller_id"], _e)
+                        logger.warning("on_order_paid skipped for %s: %s", order["id"], _e)
         # An item purchase does not touch the subscription document, so
         # we short-circuit here.
         return {"status": "ok", "kind": "item_purchase"}

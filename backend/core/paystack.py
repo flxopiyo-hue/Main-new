@@ -155,3 +155,126 @@ def verify_webhook_signature(raw_body: bytes, signature_header: Optional[str]) -
         PAYSTACK_SECRET_KEY.encode("utf-8"), raw_body, hashlib.sha512
     ).hexdigest()
     return hmac.compare_digest(computed, signature_header)
+
+
+# ---------------------------------------------------------------------------
+# Seller banking — Subaccounts + Transfer Recipients + Transfers
+# ---------------------------------------------------------------------------
+
+
+async def list_banks(country: str = "kenya") -> list[Dict[str, Any]]:
+    """Return the list of banks + mobile-money providers Paystack
+    supports in the given country. Country param takes English name
+    (kenya | ghana | nigeria | south africa | cote d'ivoire).
+    """
+    # perPage=100 covers all Kenyan institutions (~50) comfortably.
+    data = await _request(
+        "GET", f"/bank?country={country}&perPage=100"
+    )
+    return data.get("data") or []
+
+
+async def resolve_account(*, account_number: str, bank_code: str) -> Dict[str, Any]:
+    """Validate an account number against a bank code — returns the
+    account holder's name when the pair is valid. Used to pre-verify
+    seller bank details before creating the subaccount.
+    """
+    data = await _request(
+        "GET",
+        f"/bank/resolve?account_number={account_number}&bank_code={bank_code}",
+    )
+    return data.get("data") or {}
+
+
+async def create_subaccount(
+    *,
+    business_name: str,
+    settlement_bank: str,
+    account_number: str,
+    percentage_charge: float = 0.0,
+    primary_contact_email: Optional[str] = None,
+    primary_contact_phone: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Register a seller subaccount on Paystack. Even though we use
+    escrow (no split at charge time), we still create a subaccount so
+    Paystack has the seller's bank details on file and settlement
+    reporting is unified across the platform.
+
+    ``percentage_charge`` is Paystack's per-txn fee they'll auto-deduct
+    when Split IS used. We pass 0.0 because we don't split at charge —
+    we push manually via Transfer post-delivery.
+    """
+    payload: Dict[str, Any] = {
+        "business_name": business_name,
+        "settlement_bank": settlement_bank,
+        "account_number": account_number,
+        "percentage_charge": percentage_charge,
+    }
+    if primary_contact_email:
+        payload["primary_contact_email"] = primary_contact_email
+    if primary_contact_phone:
+        payload["primary_contact_phone"] = primary_contact_phone
+    data = await _request("POST", "/subaccount", json=payload)
+    return data["data"]
+
+
+async def create_transfer_recipient(
+    *,
+    type_: str,
+    name: str,
+    account_number: str,
+    bank_code: str,
+    currency: str = "KES",
+) -> Dict[str, Any]:
+    """Register the seller as a Transfer Recipient so we can push funds
+    via ``/transfer``. ``type_`` is:
+      - ``nuban``  (Nigeria bank)
+      - ``ghipss`` (Ghana bank)
+      - ``basa``   (SA bank)
+      - ``mobile_money`` (M-Pesa, MTN MoMo, etc.)
+      - ``authorization`` (recurring card debit — not used here)
+      - For Kenya banks use ``basa`` — Paystack maps KE onto the same
+        rail as SA for bank transfers.
+    """
+    payload = {
+        "type": type_,
+        "name": name,
+        "account_number": account_number,
+        "bank_code": bank_code,
+        "currency": currency,
+    }
+    data = await _request("POST", "/transferrecipient", json=payload)
+    return data["data"]
+
+
+async def initiate_transfer(
+    *,
+    amount_kobo: int,
+    recipient_code: str,
+    reference: str,
+    reason: str,
+    source: str = "balance",
+) -> Dict[str, Any]:
+    """Push funds from the platform's Paystack balance to the given
+    recipient. Amount is in the currency's minor unit (kobo/pesewas/
+    cents). Paystack replies with a ``transfer_code`` we persist for
+    later status polling via ``/transfer/verify``.
+    """
+    payload = {
+        "source": source,
+        "amount": int(amount_kobo),
+        "recipient": recipient_code,
+        "reason": reason[:100] if reason else "Oromona seller payout",
+        "reference": reference,
+    }
+    data = await _request("POST", "/transfer", json=payload)
+    return data["data"]
+
+
+async def verify_transfer(reference_or_code: str) -> Dict[str, Any]:
+    """Poll the current status of a transfer. Used by the payouts
+    dashboard to show ``settled`` after Paystack confirms delivery.
+    """
+    data = await _request("GET", f"/transfer/verify/{reference_or_code}")
+    return data.get("data") or {}
+
