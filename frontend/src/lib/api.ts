@@ -165,16 +165,54 @@ export const DIMENSION_KEYS_BY_TYPE: Record<string, DimensionKey[]> = {
   other: [],
 };
 
+// The one dimension that MUST be filled for a size to be publishable —
+// the rest are optional (helps the seller move fast; buyers still get a
+// fit score from whatever measurements are provided).
+export const PRIMARY_DIMENSION_BY_TYPE: Record<string, DimensionKey | null> = {
+  shirt: "chest_cm",
+  vest_under: "chest_cm",
+  waistcoat: "chest_cm",
+  outerwear: "chest_cm",
+  dress: "bust_cm",
+  skirt: "waist_cm",
+  trousers: "waist_cm",
+  shorts: "waist_cm",
+  belt: "waist_cm",
+  tie: "length_cm",
+  scarf: "length_cm",
+  socks: null,
+  shoes: null,
+  hat: null,
+  bag: null,
+  jewelry: null,
+  other: null,
+};
+
 export const DIMENSION_LABELS: Record<DimensionKey, string> = {
   chest_cm: "Chest",
-  shoulder_cm: "Shoulder",
-  sleeve_cm: "Sleeve",
-  length_cm: "Length",
+  shoulder_cm: "Shoulder Width",
+  sleeve_cm: "Sleeve Length",
+  length_cm: "Body Length",
   waist_cm: "Waist",
   hips_cm: "Hips",
   inseam_cm: "Inseam",
   rise_cm: "Rise",
   bust_cm: "Bust",
+};
+
+// Short "how to measure" hint shown beneath each dimension input on the
+// seller wizard. Keeps sellers consistent — a "Chest" measured flat vs
+// circumference gives wildly different fit scores.
+export const DIMENSION_HINTS: Record<DimensionKey, string> = {
+  chest_cm: "Pit-to-pit, garment laid flat",
+  shoulder_cm: "Seam to seam across the back",
+  sleeve_cm: "Shoulder seam to cuff",
+  length_cm: "High point of shoulder to hem",
+  waist_cm: "Around narrowest point, flat × 2",
+  hips_cm: "Widest point across hips, flat × 2",
+  inseam_cm: "Crotch seam to hem",
+  rise_cm: "Crotch seam to top of waistband",
+  bust_cm: "Fullest point across, flat × 2",
 };
 
 export interface ColorOption {

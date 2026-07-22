@@ -16,6 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ActiveProfileChip } from "@/src/components/ActiveProfileChip";
 import { ChipsRow } from "@/src/components/ChipsRow";
+import { CurrencyPill } from "@/src/components/CurrencyPill";
 import { FitBadge } from "@/src/components/FitBadge";
 import { HeaderMenu } from "@/src/components/HeaderMenu";
 import { HeartButton } from "@/src/components/HeartButton";
@@ -82,6 +83,10 @@ export default function Discover() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [outfitOpen, setOutfitOpen] = useState(false);
+  // "Set my size" banner state — true when the buyer hasn't yet
+  // configured any body measurements. We check on mount and after each
+  // profile screen return.
+  const [needsSizingSetup, setNeedsSizingSetup] = useState(false);
 
   // Active profile drives the audience filter:
   //   self    -> infer from user.gender (backend default)
@@ -163,10 +168,21 @@ export default function Discover() {
       try {
         const p = await api.getProfile();
         if (p.preferred_size && !sizeFilter) setSizeFilter(p.preferred_size);
+        // Detect "hasn't set up sizing yet" — no measurements AND no
+        // preferred size. Only relevant for buyers; sellers use the same
+        // Discover screen but shouldn't see this nudge.
+        const anyMeasurement = p.measurements
+          ? Object.values(p.measurements).some((v) => typeof v === "number" && v > 0)
+          : false;
+        if (user?.role === "buyer" && !anyMeasurement && !p.preferred_size) {
+          setNeedsSizingSetup(true);
+        } else {
+          setNeedsSizingSetup(false);
+        }
       } catch {}
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [user?.role]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -305,6 +321,7 @@ export default function Discover() {
         >
           <Feather name="bookmark" size={20} color={brandFilter ? colors.primary : colors.mutedFg} />
         </TouchableOpacity>
+        {user?.role === "buyer" ? <CurrencyPill testID="discover-currency-pill" onChanged={onRefresh} /> : null}
         {user?.role === "buyer" ? <RestockBell testID="discover-restock-bell" /> : null}
         <HeaderMenu testID="discover-header-menu" />
       </View>
@@ -412,6 +429,25 @@ export default function Discover() {
             <Text style={styles.audienceLink}>{showAll ? "Filter" : "Show all"}</Text>
           </TouchableOpacity>
         </View>
+      ) : null}
+      {needsSizingSetup ? (
+        <TouchableOpacity
+          testID="discover-sizing-nudge"
+          activeOpacity={0.85}
+          style={styles.sizingNudge}
+          onPress={() => router.push("/onboarding/measurements")}
+        >
+          <View style={styles.sizingNudgeIconWrap}>
+            <Feather name="user" size={16} color={colors.primaryFg} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.sizingNudgeTitle}>Set my size</Text>
+            <Text style={styles.sizingNudgeSub}>
+              We&apos;ll show items that actually fit — takes a minute.
+            </Text>
+          </View>
+          <Feather name="arrow-right" size={18} color={colors.primary} />
+        </TouchableOpacity>
       ) : null}
       {sizeFilter ? (
         <View style={styles.sizeBanner} testID="discover-size-filter">
@@ -583,6 +619,40 @@ const styles = StyleSheet.create({
     fontSize: 12,
     letterSpacing: 1.2,
     textTransform: "uppercase",
+  },
+  sizingNudge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  sizingNudgeIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.primary,
+  },
+  sizingNudgeTitle: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13,
+    color: colors.primary,
+    letterSpacing: 0.5,
+  },
+  sizingNudgeSub: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: colors.mutedFg,
+    marginTop: 2,
   },
   audienceBanner: {
     flexDirection: "row",

@@ -37,10 +37,12 @@ import {
   CATEGORY_LABELS,
   ColorOption,
   CurrencyCode,
+  DIMENSION_HINTS,
   DIMENSION_KEYS_BY_TYPE,
   DIMENSION_LABELS,
   DimensionKey,
   Item,
+  PRIMARY_DIMENSION_BY_TYPE,
   SizeOption,
   SUBCATEGORIES_BY_CATEGORY,
 } from "@/src/lib/api";
@@ -244,6 +246,7 @@ export default function AddItem() {
 
   const gtype = CATEGORY_TO_GARMENT_TYPE[category] ?? "other";
   const dimKeys: DimensionKey[] = (DIMENSION_KEYS_BY_TYPE[gtype] ?? []) as DimensionKey[];
+  const primaryDim: DimensionKey | null = PRIMARY_DIMENSION_BY_TYPE[gtype] ?? null;
 
   // Track invalid (non-positive / non-numeric) entries in the matrix so the
   // UI can highlight them and the Publish button can stay disabled.
@@ -259,25 +262,24 @@ export default function AddItem() {
       if (!s.available_qty || s.available_qty <= 0) {
         errs[`${s.label}-available_qty`] = "Qty must be ≥ 1";
       }
-      // Each body dimension that's relevant to this garment_type is treated
-      // as REQUIRED — otherwise the Fit Match Score we're building next has
-      // nothing to compare against. We allow zero dimensions for the
-      // "accessories"/"shoes" tracks where dimKeys is [] (loop just no-ops).
+      // Only the PRIMARY dimension is required — the rest are optional
+      // (sellers move faster; buyers still get a partial fit score).
+      // Any non-primary dimension that IS filled must be a positive
+      // number so bad data doesn't sneak into the fit engine.
       for (const k of dimKeys) {
         const raw = (s as Record<string, unknown>)[k];
-        // No value entered → blank submission → error
+        const isPrimary = k === primaryDim;
         if (raw === undefined || raw === null || raw === "") {
-          errs[`${s.label}-${k}`] = "Required";
+          if (isPrimary) errs[`${s.label}-${k}`] = "Required";
           continue;
         }
-        // Negative / zero / non-numeric → error
         if (typeof raw !== "number" || raw <= 0 || isNaN(raw)) {
           errs[`${s.label}-${k}`] = "Must be > 0";
         }
       }
     }
     return errs;
-  }, [sizes, dimKeys]);
+  }, [sizes, dimKeys, primaryDim]);
 
   const step1Valid = Object.keys(step1Errors).length === 0;
   const step2Valid = Object.keys(step2Errors).length === 0;
@@ -499,6 +501,7 @@ export default function AddItem() {
             category={category}
             sizes={sizes}
             dimKeys={dimKeys}
+            primaryDim={primaryDim}
             errors={matrixErrors}
             colors={pickedColors}
             unit={unit}
@@ -939,6 +942,7 @@ interface StepSizingProps {
   category: Category;
   sizes: Record<string, SizeOption>;
   dimKeys: DimensionKey[];
+  primaryDim: DimensionKey | null;
   errors: Record<string, string>;
   colors: ColorOption[];
   unit: "cm" | "in";
@@ -952,6 +956,7 @@ function StepSizing({
   audience,
   sizes,
   dimKeys,
+  primaryDim,
   errors,
   colors: pickedColors,
   unit,
@@ -1043,6 +1048,8 @@ function StepSizing({
                 key={k}
                 testID={`wizard-size-${s.label}-${k}`}
                 label={DIMENSION_LABELS[k]}
+                hint={DIMENSION_HINTS[k]}
+                optional={k !== primaryDim}
                 value={(s as Record<string, unknown>)[k] as number | undefined}
                 unit={unit}
                 onChange={(v) =>
@@ -1095,6 +1102,8 @@ function StepSizing({
 
 interface DimFieldProps {
   label: string;
+  hint?: string;
+  optional?: boolean;
   value?: number | null;
   // Display unit for length measurements; null means "no unit" (used for
   // the available_qty field, which is always integer count, not length).
@@ -1106,7 +1115,7 @@ interface DimFieldProps {
 
 const CM_PER_IN = 2.54;
 
-function DimField({ label, value, unit, onChange, testID, errorText }: DimFieldProps) {
+function DimField({ label, hint, optional, value, unit, onChange, testID, errorText }: DimFieldProps) {
   // We always STORE in cm on the backend. When the user is in inch mode,
   // we convert the stored cm value to inches for display and convert
   // their inch input back to cm before bubbling up. Keeps the wire
@@ -1147,7 +1156,9 @@ function DimField({ label, value, unit, onChange, testID, errorText }: DimFieldP
       <Text style={dimStyles.label}>
         {label}
         {unit ? ` (${unit})` : ""}
+        {optional ? <Text style={dimStyles.optionalTag}> · optional</Text> : null}
       </Text>
+      {hint ? <Text style={dimStyles.hint}>{hint}</Text> : null}
       <TextInput
         testID={testID}
         keyboardType="decimal-pad"
@@ -1182,6 +1193,21 @@ const dimStyles = StyleSheet.create({
     color: colors.mutedFg,
     textTransform: "uppercase",
     marginBottom: 4,
+  },
+  optionalTag: {
+    fontFamily: fonts.body,
+    fontSize: 9,
+    color: colors.mutedFg,
+    textTransform: "lowercase",
+    letterSpacing: 0.5,
+  },
+  hint: {
+    fontFamily: fonts.body,
+    fontSize: 10,
+    color: colors.mutedFg,
+    marginBottom: 2,
+    fontStyle: "italic",
+    lineHeight: 13,
   },
   input: {
     fontFamily: fonts.body,

@@ -133,6 +133,29 @@ export default function MeasurementsScreen() {
 
   const sizeOptions = ["XS", "S", "M", "L", "XL", "XXL"];
 
+  // Simple size recommendation based on chest/bust measurement — good
+  // enough for buyer onboarding; the per-item Fit Match Score refines
+  // this later using the actual garment dimensions.
+  const recommendedSize: string | null = useMemo(() => {
+    const chest = m.chest_cm ?? m.bust_cm ?? null;
+    if (!chest || chest <= 0) return null;
+    if (chest < 86) return "XS";
+    if (chest < 90) return "S";
+    if (chest < 94) return "M";
+    if (chest < 100) return "L";
+    if (chest < 106) return "XL";
+    return "XXL";
+  }, [m.chest_cm, m.bust_cm]);
+
+  // First time we compute a recommendation and the user hasn't picked
+  // one yet — auto-select it so the CTA below reflects a real choice.
+  useEffect(() => {
+    if (recommendedSize && !preferredSize) {
+      setPreferredSize(recommendedSize);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recommendedSize]);
+
   return (
     <SafeAreaView style={styles.root} edges={["top", "bottom"]}>
       <View style={styles.header}>
@@ -287,6 +310,26 @@ export default function MeasurementsScreen() {
 
         {/* SIZE */}
         <View style={{ height: spacing.xl }} />
+        {recommendedSize ? (
+          <View testID="onboarding-size-recommendation" style={styles.recCard}>
+            <View style={styles.recIconWrap}>
+              <Feather name="check-circle" size={18} color={colors.primaryFg} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.recLabel}>RECOMMENDED FOR YOU</Text>
+              <Text style={styles.recTitle}>
+                Size {recommendedSize}
+                {preferredSize === recommendedSize ? " ✓ selected" : ""}
+              </Text>
+              <Text style={styles.recSub}>
+                Based on your{" "}
+                {m.chest_cm ? "chest" : "bust"}{" "}
+                {Math.round(m.chest_cm ?? m.bust_cm ?? 0)}
+                cm — you can override below if you know your fit runs different.
+              </Text>
+            </View>
+          </View>
+        ) : null}
         <Text style={[tp.caption, styles.label]}>Preferred Size</Text>
         <View style={styles.sizeRow}>
           {sizeOptions.map((s) => (
@@ -297,6 +340,9 @@ export default function MeasurementsScreen() {
               style={[
                 styles.sizeChip,
                 preferredSize === s ? styles.sizeChipActive : styles.sizeChipInactive,
+                recommendedSize === s && preferredSize !== s
+                  ? styles.sizeChipSuggested
+                  : null,
               ]}
             >
               <Text
@@ -491,9 +537,52 @@ const styles = StyleSheet.create({
   },
   sizeChipInactive: { borderColor: colors.border, backgroundColor: colors.surface },
   sizeChipActive: { borderColor: colors.primary, backgroundColor: colors.primary },
+  sizeChipSuggested: {
+    borderColor: colors.primary,
+    borderWidth: 2,
+    borderStyle: "dashed",
+  },
   sizeChipLabel: { fontFamily: fonts.bodySemi, fontSize: 13, letterSpacing: 1 },
   sizeChipLabelInactive: { color: colors.primary },
   sizeChipLabelActive: { color: colors.primaryFg },
+  recCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: colors.primary,
+    marginBottom: spacing.md,
+  },
+  recIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.15)",
+  },
+  recLabel: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 10,
+    color: colors.primaryFg,
+    letterSpacing: 1.4,
+    opacity: 0.7,
+  },
+  recTitle: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 17,
+    color: colors.primaryFg,
+    marginTop: 2,
+  },
+  recSub: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: colors.primaryFg,
+    opacity: 0.85,
+    marginTop: 4,
+    lineHeight: 15,
+  },
   footer: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
