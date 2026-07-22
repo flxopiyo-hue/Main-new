@@ -301,6 +301,56 @@ async def me(user: Dict[str, Any] = Depends(get_current_user)) -> MeOut:
     return MeOut(subscription=state, gate=gate)
 
 
+@router.get("/health")
+async def health(request: Request) -> Dict[str, Any]:
+    """Public config-state check. Returns whether Paystack is wired up
+    and which mode (test/live) the keys are in, without exposing
+    secrets. Useful for debugging live checkouts that 4xx unexpectedly.
+    """
+    import os
+
+    secret = (os.getenv("PAYSTACK_SECRET_KEY") or "").strip()
+    pub = (os.getenv("PAYSTACK_PUBLIC_KEY") or "").strip()
+
+    def _mode(k: str) -> str:
+        if k.startswith("sk_live_") or k.startswith("pk_live_"):
+            return "live"
+        if k.startswith("sk_test_") or k.startswith("pk_test_"):
+            return "test"
+        return "unset" if not k else "unknown"
+
+    plan_code = get_plan_code()
+    # Attempt a live plan lookup so we know whether ensure_premium_plan
+    # actually landed a plan against the current key.
+    plan_lookup_ok = None
+    plan_lookup_err = None
+    if secret:
+        try:
+            plans = await paystack.list_plans()
+            plan_lookup_ok = any(
+                (p.get("plan_code") == plan_code) or (p.get("name") == PREMIUM_PLAN_NAME)
+                for p in plans
+            )
+        except paystack.PaystackError as e:
+            plan_lookup_ok = False
+            plan_lookup_err = str(e)
+
+    return {
+        "app": "Oromona",
+        "paystack": {
+            "secret_key_mode": _mode(secret),
+            "public_key_mode": _mode(pub),
+            "keys_match_mode": _mode(secret) == _mode(pub) and _mode(secret) != "unset",
+            "cached_plan_code": plan_code,
+            "plan_exists_on_paystack": plan_lookup_ok,
+            "plan_lookup_error": plan_lookup_err,
+        },
+        "callback_url_the_checkout_will_use": _paystack_callback_url(request),
+        "webhook_url_paystack_should_hit": f"{_public_base_url(request)}/api/subs/webhook",
+        "public_base_url_detected": _public_base_url(request),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Webhook
 # ---------------------------------------------------------------------------
@@ -420,21 +470,60 @@ def _to_dt(v: Any) -> Optional[datetime]:
 APP_DEEP_LINK_SCHEME = "oromona"
 
 
-def _paystack_callback_url(request: Request) -> str:
-    """Where Paystack should redirect the buyer after payment.
+def _public_base_url(request: Request) -> str:
+    """Reconstructs the public HTTPS base URL of this backend.
 
-    We prefer an explicit ``PAYSTACK_CALLBACK_URL`` env var (useful when
-    Emergent runs the backend behind a different public hostname than
-    the request base_url reports), otherwise we derive it from the
-    incoming request so it works transparently in both preview and
-    production without config changes.
+    Behind Emergent's Kubernetes ingress ``request.base_url`` returns
+    an internal HTTP cluster URL (e.g.
+    ``http://fit-finder-app-5.cluster-12.preview.emergentcf.cloud``)
+    which is NOT reachable from Paystack and is NOT HTTPS — Paystack
+    Live mode rejects such callback URLs with 403.
+
+    Resolution order (first non-empty wins):
+      1. ``PUBLIC_BACKEND_URL`` env var — highest precedence, lets the
+         operator pin the exact public URL Paystack should redirect to.
+      2. ``X-Forwarded-Proto`` + ``X-Forwarded-Host`` headers set by
+         the ingress (the standard reverse-proxy pattern).
+      3. Fall back to ``request.base_url`` — works for local dev.
     """
     import os
 
-    env = os.getenv("PAYSTACK_CALLBACK_URL", "").strip()
+    env = (os.getenv("PUBLIC_BACKEND_URL") or "").strip()
+    if env:
+        return env.rstrip("/")
+
+    fwd_host = (request.headers.get("x-forwarded-host") or "").split(",")[0].strip()
+    fwd_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
+    host = (request.headers.get("host") or "").strip()
+    if fwd_host:
+        proto = fwd_proto or "https"
+        return f"{proto}://{fwd_host}".rstrip("/")
+    if host and not host.startswith("localhost") and "cluster" not in host:
+        # Ingress didn't set X-Forwarded-Host but the Host header is
+        # already the public one — trust it and upgrade to HTTPS.
+        return f"https://{host}".rstrip("/")
+    return str(request.base_url).rstrip("/")
+
+
+def _paystack_callback_url(request: Request) -> str:
+    """Where Paystack should redirect the buyer after payment. Always
+    HTTPS — Paystack Live rejects HTTP callbacks with 403.
+
+    An explicit ``PAYSTACK_CALLBACK_URL`` env var takes precedence for
+    the rare case where the operator wants callbacks to land on a
+    different domain (e.g. a marketing site that then hands off to the
+    app store).
+    """
+    import os
+
+    env = (os.getenv("PAYSTACK_CALLBACK_URL") or "").strip()
     if env:
         return env.rstrip("/") + "/api/subs/paystack-return"
-    base = str(request.base_url).rstrip("/")
+    base = _public_base_url(request)
+    if base.startswith("http://"):
+        # Force HTTPS for Paystack — the internal cluster proto is HTTP
+        # but the public ingress terminates TLS.
+        base = "https://" + base[len("http://"):]
     return f"{base}/api/subs/paystack-return"
 
 
@@ -612,7 +701,7 @@ async def pay_web_form(request: Request) -> HTMLResponse:
     share this URL with people who understand that.
     """
     amount_kes = PREMIUM_PLAN_AMOUNT_KOBO // 100
-    action = f"{str(request.base_url).rstrip('/')}/api/subs/pay-web"
+    action = f"{_public_base_url(request)}/api/subs/pay-web"
     return HTMLResponse(f"""<!doctype html>
 <html lang=\"en\">
 <head>
