@@ -1,0 +1,33 @@
+{
+  "summary": "Phase 3 variants layer backend testing — 15/15 pytest tests passed against the preview backend. Verified startup migration (7 items backfilled per backend log: 'variants bootstrap: backfilled=7 merged_duplicates=0'), GET /api/items and /api/items/{id} include populated variants array, POST /api/items auto-generates variants from sizes x colors with even qty split and unique ids (also verified single-color and no-colors cases + explicit variants preserved verbatim), PATCH sizes/colors regenerates variants while preserving qty + price_cents_override for retained (size,color) combos and drops removed combos, POST /api/payments/checkout resolves variant from variant_id AND from size+color fallback (variant_id persisted on order document), returns 409 on disabled variant and 409 on quantity=0. GET /api/items excludes items with merged_into (only 200 non-merged items returned, all with unique ids). Subscription endpoints unaffected: /api/subs/health=200, /api/subs/pay-web=200 (HTML), /api/subs/webhook=401 without signature, /api/subs/checkout=401 without auth (both endpoints reachable and enforce guards).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration23_variants.py",
+    "/app/test_reports/pytest/iteration23_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "core/variants.py:generate_variants — quantity split logic is correct: divmod(base_qty, n_colors) with extras distributed to earliest colors so per-size row totals stay consistent with SizeOption.available_qty (verified via test_auto_generate_variants_from_sizes_x_colors).",
+    "routers/items.py:patch_item — when sizes or colors change, generate_variants(existing=doc.get('variants')) is invoked so seller edits to quantity/price_cents_override survive across catalog edits (verified via test_patch_sizes_regenerates_and_preserves_qty).",
+    "routers/payments.py — variant lookup precedence is variant_id → (size, color) fallback with disabled/OOS pre-checks returning 409 before hitting Paystack. order.variant_id is persisted for later stock decrement.",
+    "routers/items.py:duplicate_item does NOT generate variants for the clone (missing from the duplicate() dict) — this is a minor gap: cloned items lose their variants array until the seller PATCHes sizes/colors or the next boot backfill runs. Not covered in this iteration's scope but worth flagging for a follow-up."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration23_variants.py (new)"
+  ],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "N/A — backend-only per request"},
+  "seed_data_creation": "Tests create and delete their own TEST_-prefixed items via seller session so seed catalog is untouched. Buyer address auto-created if none present.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Preview URL: https://fit-finder-app-5.preview.emergentagent.com. Seller (atelier@aurafit.com) + Buyer (buyer@aurafit.com) creds confirmed working. Backend startup event 'bootstrap_item_variants' migrated 7 legacy items on first boot post-deploy; subsequent boots are no-ops (idempotent). Note: items/duplicate_item route in routers/items.py does not include variants in the clone dict — flagged as a minor pre-existing gap not in scope for Phase 3 acceptance.",
+  "rca_of_issue": "N/A — all requested behaviours passed."
+}

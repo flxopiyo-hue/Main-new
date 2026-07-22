@@ -220,6 +220,18 @@ export interface ColorOption {
   hex: string;
 }
 
+export interface ItemVariant {
+  id: string;
+  size_label: string;
+  color_name?: string | null;
+  color_hex?: string | null;
+  quantity: number;
+  // When set, buyer sees THIS instead of item.price_cents for the
+  // combo — e.g. XXL priced 10% higher.
+  price_cents_override?: number | null;
+  disabled?: boolean;
+}
+
 export interface FitScoreDimension {
   key: string;
   label: string;
@@ -265,6 +277,10 @@ export interface Item {
   images?: string[];
   sizes: SizeOption[];
   colors: ColorOption[];
+  // Per (size × color) inventory + optional per-variant price overrides.
+  // Phase 3+ items always have this; older items are auto-backfilled by
+  // the backend so this field is safe to depend on.
+  variants?: ItemVariant[];
   audience: Audience;
   is_paused?: boolean;
   created_at: string;
@@ -844,6 +860,7 @@ export const api = {
     item_id: string;
     size: string;
     color?: string;
+    variant_id?: string;
     origin_url: string;
     address_id: string;
   }) =>

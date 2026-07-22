@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import * as WebBrowser from "expo-web-browser";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -25,6 +25,7 @@ import {
   ColorOption,
   isPaywallError,
   Item,
+  ItemVariant,
   SizeOption,
   TryOnAngle,
   TryOnImageOut,
@@ -112,6 +113,28 @@ export default function ItemDetail() {
       setLoading(false);
     }
   }, [id, toast, user?.role]);
+
+  // Resolve the active (size × color) variant. Falls back to the raw
+  // SizeOption's available_qty when variants haven't been generated
+  // (super-legacy items). The variant's ``price_cents_override`` wins
+  // over the item base price for the buy button + total.
+  const selectedVariant: ItemVariant | null = useMemo(() => {
+    if (!item?.variants || item.variants.length === 0 || !selectedSize) return null;
+    const target = (selectedColor?.name || "").trim().toLowerCase();
+    const same = item.variants.filter((v) => v.size_label === selectedSize.label && !v.disabled);
+    if (!same.length) return null;
+    if (!target) return same[0];
+    const hit = same.find((v) => (v.color_name || "").trim().toLowerCase() === target);
+    return hit ?? same[0];
+  }, [item?.variants, selectedSize, selectedColor]);
+
+  const availableQtyForSelection: number = selectedVariant
+    ? Math.max(0, selectedVariant.quantity | 0)
+    : (selectedSize?.available_qty ?? 0);
+
+  const chargedPriceCents: number = selectedVariant?.price_cents_override
+    ?? item?.price_cents
+    ?? 0;
 
   useEffect(() => {
     load();
@@ -293,6 +316,7 @@ export default function ItemDetail() {
         item_id: item.id,
         size: selectedSize.label,
         color: selectedColor?.name,
+        variant_id: selectedVariant?.id,
         origin_url: BACKEND_URL,
         address_id: addressId,
       });
@@ -495,7 +519,15 @@ export default function ItemDetail() {
           <View style={styles.sizeRow}>
             {item.sizes.map((s) => {
               const selected = selectedSize?.label === s.label;
-              const out = s.available_qty <= 0;
+              // Stock across all variants of this size (any color).
+              // Legacy items fall back to the size's available_qty.
+              const sizeVariants = (item.variants || []).filter(
+                (v) => v.size_label === s.label && !v.disabled,
+              );
+              const sizeStock = sizeVariants.length
+                ? sizeVariants.reduce((n, v) => n + Math.max(0, v.quantity | 0), 0)
+                : s.available_qty;
+              const out = sizeStock <= 0;
               return (
                 <TouchableOpacity
                   key={s.label}
@@ -539,7 +571,7 @@ export default function ItemDetail() {
           ) : null}
           {selectedSize ? (
             (() => {
-              const badge = stockBadge(selectedSize.available_qty);
+              const badge = stockBadge(availableQtyForSelection);
               // Pull the narrative entries from the fit score for the
               // currently selected size, if loaded. We surface up to 3
               // descriptors so the buyer doesn't get a wall of text.
@@ -801,10 +833,10 @@ export default function ItemDetail() {
           <View style={{ height: spacing.md }} />
           <AppButton
             testID="item-buy-btn"
-            label={`Buy · ${formatPriceIn(item.price_cents, item.currency, user?.preferred_currency)}`}
+            label={`Buy · ${formatPriceIn(chargedPriceCents, item.currency, user?.preferred_currency)}`}
             onPress={startBuy}
             loading={buying}
-            disabled={!selectedSize || selectedSize.available_qty <= 0}
+            disabled={!selectedSize || availableQtyForSelection <= 0}
           />
           <View style={{ height: spacing.xxl }} />
         </View>

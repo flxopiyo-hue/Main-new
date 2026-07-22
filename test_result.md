@@ -1,52 +1,62 @@
-# Oromona - Item Purchase Migration: Stripe → Paystack
+# Oromona — Phase 3: Item Variants
 
 ## Original Problem Statement
-User (Kenya-based) reports that Premium subscription (Paystack) works and deducts real money, but the regular item-purchase flow shows a Stripe checkout popup that ONLY accepts test cards ("Your card was declined. Your request was in test mode..."). The item-purchase flow needs to migrate from Stripe (which doesn't work in Kenya) to Paystack.
+Buyers see duplicate item tiles when a seller has the same T-shirt in multiple sizes/colors. Sellers can't override price per (size × color) or disable specific combos. Add a `variants` layer that resolves both.
 
-## What Changed
-1. Rewrote `/app/backend/routers/payments.py` to use Paystack for item purchases instead of Stripe.
-2. Added `POST /api/payments/checkout` — creates a Paystack one-shot transaction (channels: card, mobile_money, bank).
-3. Added `GET /api/payments/paystack-return` — Paystack callback bridge that verifies + updates order + deep-links to `oromona://checkout/result`.
-4. Kept `GET /api/payments/status/{session_id}` — polls Paystack for order status; `session_id` is now the Paystack reference.
-5. Updated `/api/subs/webhook` to ALSO handle item-purchase `charge.success` events (since Paystack Dashboard has one webhook URL).
-6. Fixed the callback URL builder to always produce HTTPS from `X-Forwarded-Host`/`X-Forwarded-Proto` (Paystack Live 403s on HTTP callbacks).
+## What Changed (Backend)
+1. New Pydantic model `ItemVariant` in `/app/backend/models.py`:
+   - `{id, size_label, color_name, color_hex, quantity, price_cents_override, disabled}`
+2. Added `variants: List[ItemVariant]` to `ItemIn`, `ItemOut`, `ItemPatch`, and `item_to_out`.
+3. New module `/app/backend/core/variants.py`:
+   - `generate_variants(sizes, colors, existing=None)` — auto-generate variants from a size × color cartesian; preserves quantities/pricing/disabled from `existing` array when combo keys match.
+   - `variant_lookup(item, variant_id)` — by id.
+   - `find_variant_by_size_color(item, size_label, color_name)` — legacy checkout fallback.
+   - `ensure_item_variants(item)` — lazy backfill (idempotent).
+   - `backfill_all_variants()` — startup migration to backfill every item once.
+   - `group_duplicate_items()` — merges items with same `(seller_id, lowercase(name), brand_name)` — oldest wins, children get `merged_into`.
+   - `total_available_qty(variants)`.
+4. `models.total_qty()` prefers variants when present.
+5. Startup: `bootstrap_item_variants` on-event in `/app/backend/server.py`.
+6. `/api/items` `list_items` excludes items with `merged_into` set.
+7. `/api/items` `create_item` auto-generates variants when caller doesn't send them.
+8. `PATCH /api/items/{id}` regenerates variants when sizes or colors change (preserving prior qty/pricing for combos that still exist).
+9. `CheckoutIn` now accepts `variant_id` (optional).
+10. `POST /api/payments/checkout` resolves the variant (by id, then by size+color), 409 on disabled/out-of-stock, uses variant's `price_cents_override` if set, stores `variant_id` on the order.
+11. New helper `_decrement_variant_stock(order)` decrements variant qty (or legacy size qty) after successful charge — called by both `/api/payments/webhook` and `/api/subs/webhook` for item-purchase events.
 
-## Test Credentials (in /app/memory/test_credentials.md)
-- Admin: admin@oromona.com / oromona-admin-2026
-- Various buyer/seller accounts seeded
+## What Changed (Frontend)
+- `ItemVariant` type + `variants?` on `Item` in `/app/frontend/src/lib/api.ts`.
+- `api.checkout()` accepts optional `variant_id`.
+- `/app/frontend/app/item/[id].tsx`: `selectedVariant` useMemo, `availableQtyForSelection`, `chargedPriceCents`; size chip stock aggregates across variants; buy CTA + stock badge respect variant qty and price override; checkout passes `variant_id`.
 
-## Backend URLs
-- Preview: https://fit-finder-app-5.preview.emergentagent.com
-- Deployed (production): https://fit-finder-app-5.emergent.host (user has clicked Deploy)
+## Test Credentials
+- Admin: `admin@oromona.com` / `oromona-admin-2026`
+- Buyer: `buyer@aurafit.com` / `demo-buyer-2026`
+- Seller: `atelier@aurafit.com` / `demo-seller-2026`
 
 ## What to Test (Backend Only)
-1. `POST /api/payments/checkout` — authenticated buyer creates a checkout for an item. Assert response has `session_id` (starts with `oromona_order_`) and `url` (contains `paystack.com`). Assert a `pending` order is created in `db.orders` with `session_id == reference`.
-2. `GET /api/payments/status/{session_id}` — authenticated buyer polls status. Should return `pending` initially; after Paystack verification (may not be reachable in tests but shouldn't crash).
-3. `GET /api/payments/paystack-return?reference=<invalid>` — Should return 502 or 400 with the branded HTML page (Paystack verify will fail for random reference).
-4. `GET /api/payments/paystack-return` (no reference) — Should return 400 with the "Missing reference" HTML.
-5. `POST /api/payments/webhook` (no signature) — Should return 401.
-6. `POST /api/subs/webhook` with a mock item-purchase event (`event=charge.success`, `data.reference=oromona_order_...`) — the endpoint short-circuits with `{"status":"ok","kind":"item_purchase"}` if signature verifies. Since signature won't verify in tests, expect 401.
-7. Confirm `/api/subs/health` still works and shows Paystack config state.
-8. Confirm all subscription endpoints (`/api/subs/*`) still function.
-
-## Files of Reference
-- /app/backend/routers/payments.py (COMPLETELY REWRITTEN — Stripe → Paystack)
-- /app/backend/routers/subs.py (Extended webhook to also handle item purchases)
-- /app/backend/core/paystack.py (Paystack REST client — unchanged, reused)
-- /app/backend/models.py (CheckoutIn/CheckoutOut — unchanged interface)
-- /app/frontend/src/lib/api.ts (Frontend API contract — unchanged)
-- /app/frontend/app/checkout/result.tsx (Reads session_id from URL params — supports both browser and deep link)
+1. **Startup migration ran** — GET `/api/items` returns items with populated `variants` arrays (backend logs during startup for `variants bootstrap` line). Existing 4 seed items should each have `sizes × colors` variants.
+2. **Variant fields present** — every item has `variants[]` with proper shape (id, size_label, color_name, color_hex, quantity, price_cents_override=None, disabled=False).
+3. **Create item** — POST `/api/items` without variants → response includes auto-generated variants matching sizes × colors.
+4. **Create item WITH variants** — POST `/api/items` with an explicit variants array → those variants are stored verbatim (no overwrite by auto-gen).
+5. **Patch sizes** — PATCH sizes on an item with existing variants → variants are regenerated but any prior qty/pricing preserved for combos that still exist; new combos get default qty.
+6. **Patch colors** — same behavior when colors change.
+7. **Checkout by variant_id** — POST `/api/payments/checkout` with `variant_id` → order.variant_id populated, response includes valid Paystack authorization URL.
+8. **Checkout fallback (legacy)** — POST `/api/payments/checkout` WITHOUT variant_id but with size+color → backend resolves the variant, stores variant_id on the order.
+9. **Checkout disabled variant** — should 409.
+10. **Checkout out-of-stock variant** — should 409.
+11. **Item list excludes merged** — items marked `merged_into=<parent-id>` are filtered out of `GET /api/items` unless explicitly requested via `include_paused=true` context (or another mechanism).
+12. **Variant total** — `total_qty(item)` for an item with variants sums enabled variant.quantity, ignoring disabled ones.
+13. **Subscription flow still works** — POST `/api/subs/checkout`, `/api/subs/verify`, `/api/subs/webhook`, `/api/subs/health` all unchanged.
+14. **`_decrement_variant_stock`** — after a paid item order, the variant's quantity is reduced by 1 (positional array update).
 
 ## NOT Mocked
-- Paystack keys in preview .env are REAL TEST keys (sk_test_...). Deployed backend uses LIVE keys.
-- All Paystack API calls are real network calls (respect DEFAULT_TIMEOUT=20s).
+- Paystack test keys in preview `.env` are real test keys, sandbox API calls happen.
 
-## Non-Goals for This Test
-- Actually initiating a real Paystack payment (would require live keys + real money).
-- Frontend UI testing (backend contract testing is enough for this migration).
+## Non-Goals
+- Frontend UI testing (variants layer surfaces through existing item detail — no new screens).
+- Real payment charging.
 
-Please run backend integration tests to confirm:
-- No stale Stripe references crash any endpoint.
-- All new Paystack-based payment endpoints respond correctly.
-- Existing subscription endpoints unaffected.
-- Order state transitions correctly.
+## Notes
+- Preview backend Paystack mode: TEST. Deployed backend (emergent.host): LIVE.
+- The migration on the DEPLOYED backend runs only on next Publish → Deploy.

@@ -522,6 +522,32 @@ class ColorOption(BaseModel):
     hex: str  # "#000000"
 
 
+class ItemVariant(BaseModel):
+    """A concrete (size × color) inventory unit.
+
+    Modelled as a computed layer on top of ``sizes`` + ``colors`` so
+    existing items (single-color / single-variant) keep working without
+    a data migration and sellers who don't care about variant-level
+    accounting see zero UI change. When present, ``variants`` is the
+    authoritative source of stock; the legacy ``SizeOption.available_qty``
+    still exists as the per-size roll-up for backwards compatibility.
+
+    A variant with ``disabled=True`` means the seller confirmed that
+    combo doesn't exist (e.g. "M in Red is out of stock permanently").
+    """
+
+    id: str  # stable variant UUID — used by orders + carts
+    size_label: str  # matches a SizeOption.label on the same item
+    color_name: Optional[str] = None  # None = single-color item
+    color_hex: Optional[str] = None
+    quantity: int = 0
+    # When set, buyers see this price instead of the item's base price
+    # for this specific variant (e.g. XXL priced higher). Stored in the
+    # item's listing currency so the display code doesn't need to know.
+    price_cents_override: Optional[int] = Field(default=None, ge=0)
+    disabled: bool = False
+
+
 class ItemIn(BaseModel):
     name: str
     description: str = ""
@@ -540,6 +566,11 @@ class ItemIn(BaseModel):
     extra_images: List[str] = Field(default_factory=list, max_length=4)
     sizes: List[SizeOption]
     colors: List[ColorOption] = []
+    # Optional per-(size × color) inventory + pricing overrides. When
+    # empty, the server auto-generates a variant per (size, color) using
+    # the size's ``available_qty`` split evenly across colors — sellers
+    # opting into variant-level accounting can send an explicit list.
+    variants: List[ItemVariant] = Field(default_factory=list)
     audience: Audience = "unisex"
 
 
@@ -564,6 +595,7 @@ class ItemOut(BaseModel):
     images: List[str] = Field(default_factory=list)  # full gallery, primary first
     sizes: List[SizeOption]
     colors: List[ColorOption]
+    variants: List[ItemVariant] = Field(default_factory=list)
     audience: Audience = "unisex"
     # Paused listings are hidden from buyer Discover/search but still
     # appear in the seller's Inventory dashboard with a "Paused" badge so
@@ -592,6 +624,7 @@ class ItemPatch(BaseModel):
     extra_images: Optional[List[str]] = Field(default=None, max_length=4)
     sizes: Optional[List[SizeOption]] = None
     colors: Optional[List[ColorOption]] = None
+    variants: Optional[List[ItemVariant]] = None
     audience: Optional[Audience] = None
     is_paused: Optional[bool] = None
 
@@ -668,6 +701,9 @@ class CheckoutIn(BaseModel):
     item_id: str
     size: str
     color: Optional[str] = None
+    # Optional variant_id — Phase-3 clients pass this; legacy clients
+    # omit it and the backend resolves the variant from (size, color).
+    variant_id: Optional[str] = None
     origin_url: str  # frontend base url for redirect targets
     address_id: Optional[str] = None  # required at endpoint level — graceful 400 if missing
 
@@ -880,6 +916,7 @@ def item_to_out(doc: Dict[str, Any], seller_verified: bool = False) -> ItemOut:
         images=gallery,
         sizes=[SizeOption(**s) for s in doc.get("sizes", [])],
         colors=[ColorOption(**c) for c in doc.get("colors", [])],
+        variants=[ItemVariant(**v) for v in doc.get("variants", [])],
         audience=doc.get("audience", "unisex"),
         is_paused=bool(doc.get("is_paused", False)),
         created_at=doc["created_at"],
@@ -900,5 +937,17 @@ def collection_to_out(doc: Dict[str, Any]) -> CollectionOut:
 
 
 def total_qty(item: Dict[str, Any]) -> int:
-    """Sum available_qty across all sizes of an item."""
+    """Total available quantity for the item.
+
+    When variants are present (post-Phase-3 items), they are the
+    authoritative stock source and disabled variants don't count.
+    Legacy items fall back to summing ``sizes[*].available_qty``.
+    """
+    variants = item.get("variants") or []
+    if variants:
+        return sum(
+            int(v.get("quantity") or 0)
+            for v in variants
+            if not v.get("disabled")
+        )
     return sum(int(s.get("available_qty", 0)) for s in item.get("sizes", []))

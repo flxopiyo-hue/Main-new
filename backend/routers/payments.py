@@ -115,7 +115,27 @@ async def create_checkout(
 
     listing_currency = (item.get("currency") or "KES").upper()
     pay_currency = listing_currency if listing_currency in _PAYSTACK_CURRENCIES else "KES"
-    amount_minor = _amount_for_paystack(item["price_cents"], pay_currency)
+
+    # Resolve the (size, color) → variant so we can honour any per-
+    # variant price override and store variant_id on the order for
+    # accurate stock-decrementing later.
+    from core.variants import find_variant_by_size_color, variant_lookup
+
+    variant: Optional[Dict[str, Any]] = None
+    if body.variant_id:
+        variant = variant_lookup(item, body.variant_id)
+    if not variant:
+        variant = find_variant_by_size_color(item, body.size, body.color)
+    if variant and variant.get("disabled"):
+        raise HTTPException(status_code=409, detail="This variant is unavailable")
+    if variant and int(variant.get("quantity") or 0) <= 0:
+        raise HTTPException(status_code=409, detail="Out of stock")
+
+    # Price precedence: variant override → item price.
+    charged_price_cents = int(
+        (variant or {}).get("price_cents_override") or item["price_cents"]
+    )
+    amount_minor = _amount_for_paystack(charged_price_cents, pay_currency)
 
     order_id = str(uuid.uuid4())
     reference = f"oromona_order_{order_id[:8]}_{uuid.uuid4().hex[:8]}"
@@ -126,6 +146,7 @@ async def create_checkout(
         "order_id": order_id,
         "size": body.size,
         "color": body.color or "",
+        "variant_id": (variant or {}).get("id") or "",
         "currency": listing_currency,
         "address_id": body.address_id,
         "purpose": "item_purchase",
@@ -150,8 +171,8 @@ async def create_checkout(
         raise HTTPException(status_code=502, detail=f"Paystack error: {e}") from e
 
     now = datetime.now(timezone.utc)
-    platform_fee_cents = (item["price_cents"] * PLATFORM_FEE_BPS) // 10000
-    seller_net_cents = item["price_cents"] - platform_fee_cents
+    platform_fee_cents = (charged_price_cents * PLATFORM_FEE_BPS) // 10000
+    seller_net_cents = charged_price_cents - platform_fee_cents
     shipping_snapshot = {
         k: addr.get(k)
         for k in (
@@ -179,7 +200,8 @@ async def create_checkout(
             "item_name": item["name"],
             "size": body.size,
             "color": body.color,
-            "amount_cents": item["price_cents"],
+            "variant_id": (variant or {}).get("id"),
+            "amount_cents": charged_price_cents,
             "currency": listing_currency,
             "paystack_currency": pay_currency,
             "cents_normalized": True,
@@ -298,8 +320,10 @@ async def paystack_return(reference: str = "") -> HTMLResponse:
             {"id": order["id"]},
             {"$set": {"status": order_status, "paystack_status": pstatus}},
         )
-        if ok and order.get("seller_id"):
-            await maybe_verify_seller(order["seller_id"])
+        if ok:
+            await _decrement_variant_stock(order)
+            if order.get("seller_id"):
+                await maybe_verify_seller(order["seller_id"])
 
     if ok:
         body_txt = "Your order is confirmed. Returning you to the Oromona app…"
@@ -343,6 +367,7 @@ async def payments_webhook(request: Request) -> Dict[str, Any]:
             await db.orders.update_one(
                 {"id": order["id"]}, {"$set": {"status": "paid", "paystack_status": "success"}}
             )
+            await _decrement_variant_stock(order)
             if order.get("seller_id"):
                 await maybe_verify_seller(order["seller_id"])
     elif event in {"charge.failed"}:
@@ -351,6 +376,37 @@ async def payments_webhook(request: Request) -> Dict[str, Any]:
         )
 
     return {"received": True}
+
+
+async def _decrement_variant_stock(order: Dict[str, Any]) -> None:
+    """Reduce the purchased variant's ``quantity`` by 1.
+
+    Silent-fails when the variant can't be resolved (older orders may
+    not carry variant_id) — Paystack has already been paid, so we don't
+    want to explode; the seller can reconcile from the analytics
+    dashboard if inventory looks off.
+    """
+    variant_id = order.get("variant_id")
+    item_id = order.get("item_id")
+    if not item_id:
+        return
+    try:
+        if variant_id:
+            # Positional array update decrement.
+            await db.items.update_one(
+                {"id": item_id, "variants.id": variant_id, "variants.quantity": {"$gt": 0}},
+                {"$inc": {"variants.$.quantity": -1}},
+            )
+        else:
+            # Legacy fallback — decrement the sizes row for the size label.
+            size_label = order.get("size")
+            if size_label:
+                await db.items.update_one(
+                    {"id": item_id, "sizes.label": size_label, "sizes.available_qty": {"$gt": 0}},
+                    {"$inc": {"sizes.$.available_qty": -1}},
+                )
+    except Exception as e:  # pragma: no cover
+        logger.warning("stock decrement skipped for order %s: %s", order.get("id"), e)
 
 
 # ---------------------------------------------------------------------------

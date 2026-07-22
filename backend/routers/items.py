@@ -77,6 +77,15 @@ async def create_item(
         "cents_normalized": True,
         "created_at": now,
     }
+    # Auto-generate variants (one per size × color combo) unless the
+    # seller sent an explicit list. This keeps single-color legacy items
+    # working while giving new items the per-variant inventory & pricing
+    # layer described in :mod:`core.variants`.
+    from core.variants import generate_variants
+    if body.variants:
+        doc["variants"] = [v.model_dump() for v in body.variants]
+    else:
+        doc["variants"] = generate_variants(doc["sizes"], doc["colors"])
     await db.items.insert_one(doc)
     return item_to_out(doc)
 
@@ -95,6 +104,9 @@ async def list_items(
     creds: Optional[HTTPAuthorizationCredentials] = Depends(auth_scheme),
 ) -> List[ItemOut]:
     query: Dict[str, Any] = {}
+    # Hide items that have been merged into a parent duplicate. Legacy
+    # items don't have this field so we can't just check equality.
+    query["merged_into"] = {"$exists": False}
     if category:
         query["category"] = category
     if size:
@@ -329,6 +341,22 @@ async def patch_item(
         update["sizes"] = [s.model_dump() for s in body.sizes]
     if body.colors is not None:
         update["colors"] = [c.model_dump() for c in body.colors]
+    if body.variants is not None:
+        update["variants"] = [v.model_dump() for v in body.variants]
+
+    # If sizes or colors changed but variants weren't explicitly sent,
+    # regenerate variants (preserving prior quantities/pricing where
+    # the (size, color) combo still exists) so stock stays coherent
+    # with the visible size × color matrix.
+    if ("sizes" in update or "colors" in update) and "variants" not in update:
+        from core.variants import generate_variants
+        merged_sizes = update.get("sizes") or (doc.get("sizes") or [])
+        merged_colors = update.get("colors") or (doc.get("colors") or [])
+        update["variants"] = generate_variants(
+            merged_sizes,
+            merged_colors,
+            existing=doc.get("variants") or [],
+        )
 
     if not update:
         # Empty patch — return current state instead of a no-op write so

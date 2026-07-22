@@ -218,6 +218,31 @@ async def bootstrap_premium_plan() -> None:
         logger.warning("premium plan bootstrap skipped: %s", e)
 
 
+@app.on_event("startup")
+async def bootstrap_item_variants() -> None:
+    """One-time migration on boot: backfill every legacy item with a
+    ``variants`` array (auto-generated from sizes × colors) and merge
+    duplicate items (same seller + name + brand) into single parents
+    with combined variants. Fully idempotent — items already migrated
+    are skipped.
+    """
+    try:
+        from core.variants import backfill_all_variants, group_duplicate_items
+
+        backfilled = await backfill_all_variants()
+        merged = await group_duplicate_items()
+        if backfilled or merged:
+            logger.info(
+                "variants bootstrap: backfilled=%d merged_duplicates=%d",
+                backfilled,
+                merged,
+            )
+    except Exception as e:  # pragma: no cover
+        logger.warning("variants bootstrap skipped: %s", e)
+
+
+
+
 @app.on_event("shutdown")
 async def shutdown_db_client() -> None:
     close_db()
