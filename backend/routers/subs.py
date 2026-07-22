@@ -382,6 +382,36 @@ async def webhook(
 
     event = payload.get("event") or ""
     data = payload.get("data") or {}
+    reference = data.get("reference") or ""
+
+    # Item-purchase reconciliation. Item checkouts create pending orders
+    # with ``session_id == paystack_reference`` — reconcile the moment
+    # Paystack tells us the money moved (redundant with the browser
+    # redirect bridge but essential on mobile where the buyer may kill
+    # the app before returning to it).
+    if reference and reference.startswith("oromona_order_"):
+        order = await db.users.database["orders"].find_one({"session_id": reference}, {"_id": 0})
+        if order:
+            new_status: Optional[str] = None
+            if event == "charge.success":
+                new_status = "paid"
+            elif event == "charge.failed":
+                new_status = "failed"
+            if new_status and order.get("status") != new_status:
+                await db.users.database["orders"].update_one(
+                    {"id": order["id"]},
+                    {"$set": {"status": new_status, "paystack_status": event}},
+                )
+                if new_status == "paid" and order.get("seller_id"):
+                    try:
+                        from core.seller_verify import maybe_verify_seller
+                        await maybe_verify_seller(order["seller_id"])
+                    except Exception as _e:  # pragma: no cover
+                        logger.warning("seller verify skipped for %s: %s", order["seller_id"], _e)
+        # An item purchase does not touch the subscription document, so
+        # we short-circuit here.
+        return {"status": "ok", "kind": "item_purchase"}
+
     customer = data.get("customer") or {}
     customer_code = customer.get("customer_code")
     email = customer.get("email")

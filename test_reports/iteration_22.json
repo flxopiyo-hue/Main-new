@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 22 — Item-purchase Stripe→Paystack migration + HTTPS callback fix + /api/subs/health diagnostic all VERIFIED. 17/17 pytest cases pass in /app/backend/tests/test_iteration22_paystack_item_migration.py. Key checks: (1) GET /api/subs/health returns 200 with Oromona app tag, secret_key_mode='test', public_key_mode='test', keys_match_mode=true, cached_plan_code='PLN_vh12k4j5951wd9v', plan_exists_on_paystack=true, and — critically — callback_url_the_checkout_will_use='https://fit-finder-app-5.preview.emergentagent.com/api/subs/paystack-return' (HTTPS as required by Paystack Live). public_base_url_detected is also HTTPS, confirming the X-Forwarded-Proto/Host handling works end-to-end behind the ingress. (2) POST /api/payments/checkout (buyer JWT + valid item + buyer address) returns 200 with session_id='oromona_order_<hex>_<hex>' and url containing 'paystack' — a real Paystack test-mode transaction is initialized. Order document is persisted with session_id==paystack_reference, status='pending', and shows up in GET /api/orders. (3) GET /api/payments/status/<ref> returns 200 with status in {pending,failed,cancelled} + amount_cents + item_name; graceful when Paystack verify hasn't yet flipped state. (4) GET /api/payments/paystack-return with no reference returns 400 branded HTML containing 'Missing reference' and 'Oromona'; with an invalid reference the endpoint returns 502 (branded body body is transparently replaced by the Cloudflare ingress 502 page in preview — status code + no crash is what matters). (5) POST /api/payments/webhook without or with a bad signature returns 401 (signature enforced BEFORE any DB work). (6) POST /api/subs/webhook without/with bad signature returns 401 even for oromona_order_* payloads. (7) Regression: /api/subs/me still returns plan_amount_kes=199; /api/subs/pay-web returns 200 HTML form with action pointing back to /api/subs/pay-web; /api/subs/checkout returns 400 (buyer already has premium fixture) or 200 with a paystack.com authorization_url — both are non-crashing paths. /api/subs/paystack-return with no ref returns 400 branded HTML. (8) Sanity: /api/items and /api/orders still 200 — no stale Stripe imports break these surfaces. grep confirms payments.py has zero stripe/emergentintegrations imports; remaining STRIPE_API_KEY / stripe_account_id references live only in routers/seller.py (Stripe Connect payouts — out of scope for this migration).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration22_paystack_item_migration.py",
+    "/app/test_reports/pytest/iteration22_results.xml"
+  ],
+  "action_items": [
+    "None blocking. The Stripe→Paystack migration for item purchases is complete and the HTTPS callback bug is fixed. Consider a follow-up cleanup: (a) prune the now-dead STRIPE_API_KEY entry in /app/backend/.env if Stripe Connect for seller payouts is also being retired; (b) tighten the Paystack invalid-reference branded HTML — currently the browser sees the Cloudflare 502 page instead of our nice one because the ingress replaces 502 origin bodies. If the branded page matters here, return 200 + branded HTML instead of 502 on Paystack verify failures.",
+    "OPTIONAL: /api/subs/webhook processes oromona_order_* references but the endpoint prefix is /api/subs — arguably these should route to /api/payments/webhook. Not a bug (Paystack lets you configure only one URL globally, and the current webhook correctly short-circuits with kind='item_purchase'), but worth documenting in a code comment for future maintainers."
+  ],
+  "critical_code_review_comments": [
+    "payments.py cleanly replaces Stripe: no stale imports, session_id preserved as CheckoutOut field for API compatibility, and paystack_reference duplicated into orders for future querying (good defence-in-depth).",
+    "_paystack_return_url and _public_base_url correctly prioritise PUBLIC_BACKEND_URL → X-Forwarded-Host/Proto → Host header, and forcibly upgrade http→https before returning. This is the exact fix required for Paystack Live rejecting HTTP callbacks with 403. Verified live via /api/subs/health.",
+    "subs.webhook item-purchase short-circuit is signature-verified BEFORE the reference check — good ordering; unauthenticated callers cannot use the endpoint to enumerate orders.",
+    "payments.paystack_return: `order_status = 'paid' if ok else ('cancelled' if pstatus == 'abandoned' else 'failed')` correctly mirrors payment_status polling logic — no state divergence between the two entry points.",
+    "Duplicate helper: _public_base_url exists in BOTH routers/payments.py (lines 55-72) and routers/subs.py (lines 503-535). Not a bug (avoids circular import), but a future refactor could hoist this into core/http.py to keep them in lock-step; today they are identical."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration22_paystack_item_migration.py (new — 17 tests, 100% pass)",
+    "/app/test_reports/pytest/iteration22_results.xml (new)",
+    "/app/test_reports/iteration_22.json (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "N/A (backend-only iteration)"},
+  "seed_data_creation": "No new seed data created. Test buyer buyer@aurafit.com already had a default address so no /api/addresses POST fired. The test does create one Paystack test-mode pending order per run (via /api/payments/checkout) — that is expected & harmless (order stays 'pending' and can be reconciled or ignored).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Rerun with `python -m pytest /app/backend/tests/test_iteration22_paystack_item_migration.py -v`. All 17 expected to pass. Base URL comes from EXPO_PUBLIC_BACKEND_URL env (falls back to the preview host). One gotcha: the test creates a real Paystack test-mode pending order per run — over time this pollutes db.orders for buyer@aurafit.com, but does not affect correctness. If you clean seed data, ensure buyer has ≥1 saved address before rerunning (fixture will auto-create one otherwise). The invalid-reference case correctly returns 502 from FastAPI, but Cloudflare ingress replaces the body — do NOT assert Oromona-branding on 502 responses in this preview environment.",
+  "rca_of_issue": "N/A — no defects found in this iteration. All migration objectives from the review request are verified working."
+}

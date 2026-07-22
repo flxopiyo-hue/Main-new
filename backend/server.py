@@ -12,7 +12,8 @@ ROUTE LAYOUT (all under ``/api`` prefix)
   • wishlist     — wishlist add/remove/list with restock detection
   • tryon        — multi-angle Gemini Nano Banana try-on + share
   • orders       — buyer orders + fit feedback
-  • payments     — Stripe Checkout + webhook + status polling
+  • payments     — Paystack Checkout + return bridge + status polling (item purchases)
+  • subs         — Paystack subscriptions (Premium tier)
   • seller       — analytics + mocked Stripe Connect onboarding
   • collections  — designer drops (collections)
 """
