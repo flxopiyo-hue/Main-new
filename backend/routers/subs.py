@@ -23,7 +23,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, Header, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
 from core import paystack
@@ -124,12 +125,16 @@ class MeOut(BaseModel):
 
 
 @router.post("/checkout", response_model=CheckoutOut)
-async def checkout(user: Dict[str, Any] = Depends(get_current_user)) -> CheckoutOut:
+async def checkout(
+    request: Request,
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> CheckoutOut:
     """Start a Paystack hosted checkout session. Client redirects to
-    ``authorization_url`` and Paystack redirects back to
-    ``FRONTEND_PUBLIC_URL/subscription/success?reference=...`` after
-    the buyer pays (or cancels). The ``/verify`` endpoint completes the
-    flow and flips the user to premium.
+    ``authorization_url`` and Paystack redirects back to the backend
+    bridge at ``/api/subs/paystack-return?reference=...`` which then
+    deep-links into the mobile app (``oromona://subscription/success``).
+    The ``/verify`` endpoint completes the flow and flips the user to
+    premium.
     """
     if user.get("subscription_tier") == "premium" and user.get("subscription_status") in {
         "active",
@@ -147,8 +152,8 @@ async def checkout(user: Dict[str, Any] = Depends(get_current_user)) -> Checkout
             status_code=503,
             detail="Payments temporarily unavailable — please retry in a moment",
         )
-    reference = f"drape_{user['id'][:8]}_{uuid.uuid4().hex[:12]}"
-    callback_url = f"{FRONTEND_PUBLIC_URL.rstrip('/')}/subscription/success"
+    reference = f"oromona_{user['id'][:8]}_{uuid.uuid4().hex[:12]}"
+    callback_url = _paystack_callback_url(request)
     try:
         data = await paystack.initialize_transaction(
             email=user["email"],
@@ -392,3 +397,341 @@ def _to_dt(v: Any) -> Optional[datetime]:
         except ValueError:
             return None
     return None
+
+
+
+# ---------------------------------------------------------------------------
+# Paystack callback bridge + browser test flow
+# ---------------------------------------------------------------------------
+#
+# Because Oromona is a mobile-only app (no public web frontend URL is
+# provisioned by Emergent), Paystack's ``callback_url`` cannot point to a
+# frontend route. Instead we route it to the BACKEND at
+# ``/api/subs/paystack-return`` which:
+#   1. Verifies the transaction (server-to-server) using the Paystack API.
+#   2. Optimistically upgrades the buyer's subscription if their email
+#      matches an Oromona account.
+#   3. Renders a small HTML page that tries to deep-link back into the
+#      Oromona mobile app via the ``oromona://`` scheme registered in
+#      ``app.json``, falling back to a friendly branded "Return to app"
+#      screen for browser-based testing.
+
+
+APP_DEEP_LINK_SCHEME = "oromona"
+
+
+def _paystack_callback_url(request: Request) -> str:
+    """Where Paystack should redirect the buyer after payment.
+
+    We prefer an explicit ``PAYSTACK_CALLBACK_URL`` env var (useful when
+    Emergent runs the backend behind a different public hostname than
+    the request base_url reports), otherwise we derive it from the
+    incoming request so it works transparently in both preview and
+    production without config changes.
+    """
+    import os
+
+    env = os.getenv("PAYSTACK_CALLBACK_URL", "").strip()
+    if env:
+        return env.rstrip("/") + "/api/subs/paystack-return"
+    base = str(request.base_url).rstrip("/")
+    return f"{base}/api/subs/paystack-return"
+
+
+def _success_html(*, headline: str, body: str, ref: str, ok: bool) -> str:
+    """Branded HTML shown after Paystack redirects back. Also attempts a
+    deep link into the app via ``oromona://subscription/success``.
+    """
+    deep = f"{APP_DEEP_LINK_SCHEME}://subscription/success?reference={ref}"
+    color = "#111827" if ok else "#B91C1C"
+    accent = "#7C3AED" if ok else "#B91C1C"
+    icon = "✓" if ok else "✕"
+    return f"""<!doctype html>
+<html lang=\"en\">
+<head>
+  <meta charset=\"utf-8\" />
+  <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\" />
+  <title>Oromona — {headline}</title>
+  <style>
+    :root {{ color-scheme: light; }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      min-height: 100vh;
+      background: linear-gradient(180deg, #FAF7F2 0%, #F1EBE1 100%);
+      color: {color};
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      display: flex; align-items: center; justify-content: center; padding: 24px;
+    }}
+    .card {{
+      max-width: 460px; width: 100%;
+      background: #fff; border-radius: 24px;
+      box-shadow: 0 12px 40px rgba(17, 24, 39, 0.08);
+      padding: 40px 28px 28px; text-align: center;
+    }}
+    .badge {{
+      width: 72px; height: 72px; border-radius: 36px;
+      background: {accent}; color: #fff; margin: 0 auto 20px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 36px; font-weight: 700;
+    }}
+    h1 {{ margin: 0 0 12px; font-size: 22px; font-weight: 700; }}
+    p {{ margin: 0 0 20px; color: #4B5563; font-size: 15px; line-height: 1.5; }}
+    .ref {{ font-family: 'SF Mono', Menlo, monospace; font-size: 12px; color: #9CA3AF; word-break: break-all; }}
+    .btn {{
+      display: inline-block; margin-top: 20px; padding: 14px 24px;
+      background: {accent}; color: #fff; text-decoration: none;
+      border-radius: 14px; font-weight: 600; font-size: 15px;
+    }}
+    .btn.secondary {{ background: transparent; color: {accent}; border: 1px solid {accent}; margin-left: 8px; }}
+    .foot {{ margin-top: 24px; font-size: 12px; color: #9CA3AF; }}
+  </style>
+  <script>
+    // Try to hand off to the mobile app immediately. If the scheme is not
+    // registered (e.g. desktop browser), we stay on this page so the buyer
+    // can see the confirmation.
+    (function() {{
+      try {{ window.location.replace({deep!r}); }} catch (e) {{ /* no-op */ }}
+    }})();
+  </script>
+</head>
+<body>
+  <div class=\"card\">
+    <div class=\"badge\">{icon}</div>
+    <h1>{headline}</h1>
+    <p>{body}</p>
+    <p class=\"ref\">Reference: {ref}</p>
+    <a class=\"btn\" href=\"{deep}\">Open Oromona app</a>
+    <div class=\"foot\">You can safely close this window.</div>
+  </div>
+</body>
+</html>"""
+
+
+@router.get("/paystack-return", response_class=HTMLResponse)
+async def paystack_return(reference: str = "", request: Request = None) -> HTMLResponse:  # type: ignore[assignment]
+    """Bridge hit by Paystack after checkout completes. Verifies the
+    transaction server-to-server, upgrades the matching Oromona user if
+    the email exists, then renders a branded HTML page that deep-links
+    back into the mobile app.
+    """
+    if not reference:
+        return HTMLResponse(
+            _success_html(
+                headline="Missing reference",
+                body="We couldn't find a payment reference in the redirect. If you were charged, please contact support and we'll resolve it.",
+                ref="—",
+                ok=False,
+            ),
+            status_code=400,
+        )
+    try:
+        data = await paystack.verify_transaction(reference)
+    except paystack.PaystackError as e:
+        logger.warning("paystack-return verify failed for %s: %s", reference, e)
+        return HTMLResponse(
+            _success_html(
+                headline="Verification failed",
+                body="We couldn't confirm your payment with Paystack right now. If money was deducted, we'll reconcile it — please contact support with the reference below.",
+                ref=reference,
+                ok=False,
+            ),
+            status_code=502,
+        )
+
+    status_ = data.get("status")
+    if status_ != "success":
+        return HTMLResponse(
+            _success_html(
+                headline="Payment not completed",
+                body=f"Paystack reports the transaction as '{status_ or 'unknown'}'. No changes were made to your account.",
+                ref=reference,
+                ok=False,
+            ),
+            status_code=200,
+        )
+
+    # Try to match the paying customer to an Oromona user by email and
+    # upgrade them optimistically. The webhook still owns authoritative
+    # state (subscription code, renewal date) — this just unlocks the UI
+    # immediately after redirect.
+    customer = (data.get("customer") or {})
+    email = (customer.get("email") or "").lower().strip()
+    metadata = data.get("metadata") or {}
+    if isinstance(metadata, str):
+        try:
+            metadata = json.loads(metadata)
+        except Exception:
+            metadata = {}
+    user_id = (metadata or {}).get("user_id")
+    user_doc = None
+    if user_id:
+        user_doc = await db.users.find_one({"id": user_id})
+    if user_doc is None and email:
+        user_doc = await db.users.find_one({"email": email})
+
+    if user_doc is not None:
+        now = datetime.now(timezone.utc)
+        trial_end = now + timedelta(days=PREMIUM_PLAN_TRIAL_DAYS)
+        update: Dict[str, Any] = {
+            "subscription_tier": "premium",
+            "subscription_status": "trialing",
+            "cancel_at_period_end": False,
+            "pending_paystack_reference": None,
+            "pending_paystack_reference_at": None,
+            "trial_end": trial_end,
+            "current_period_end": trial_end,
+        }
+        cc = customer.get("customer_code")
+        if cc:
+            update["paystack_customer_code"] = cc
+        await db.users.update_one({"id": user_doc["id"]}, {"$set": update})
+        body = "Your Oromona Premium subscription is now active. Returning you to the app…"
+    else:
+        # Test payment or unmatched email — payment succeeded but no
+        # user to upgrade. That's a valid state for a browser test run.
+        body = "Payment successful. This transaction wasn't linked to an Oromona account, so no subscription was activated."
+
+    return HTMLResponse(
+        _success_html(
+            headline="Payment successful",
+            body=body,
+            ref=reference,
+            ok=True,
+        )
+    )
+
+
+@router.get("/pay-web", response_class=HTMLResponse)
+async def pay_web_form(request: Request) -> HTMLResponse:
+    """Simple browser-testable checkout page. Lets the user enter an
+    email + name and initiates a real Paystack transaction so payments
+    can be smoke-tested end-to-end without booting the mobile app.
+
+    WARNING: In LIVE mode this initiates a REAL KES 199 charge. Only
+    share this URL with people who understand that.
+    """
+    amount_kes = PREMIUM_PLAN_AMOUNT_KOBO // 100
+    action = f"{str(request.base_url).rstrip('/')}/api/subs/pay-web"
+    return HTMLResponse(f"""<!doctype html>
+<html lang=\"en\">
+<head>
+  <meta charset=\"utf-8\" />
+  <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\" />
+  <title>Oromona — Test Payment</title>
+  <style>
+    :root {{ color-scheme: light; }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0; min-height: 100vh;
+      background: linear-gradient(180deg, #FAF7F2 0%, #F1EBE1 100%);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+      display: flex; align-items: center; justify-content: center; padding: 24px;
+    }}
+    .card {{
+      max-width: 460px; width: 100%;
+      background: #fff; border-radius: 24px;
+      box-shadow: 0 12px 40px rgba(17, 24, 39, 0.08);
+      padding: 36px 28px 28px;
+    }}
+    h1 {{ margin: 0 0 4px; font-size: 24px; font-weight: 700; color: #111827; }}
+    .sub {{ margin: 0 0 24px; color: #6B7280; font-size: 14px; }}
+    label {{ display: block; margin-top: 14px; font-size: 13px; font-weight: 600; color: #374151; }}
+    input {{
+      display: block; width: 100%; margin-top: 6px; padding: 12px 14px;
+      border: 1px solid #E5E7EB; border-radius: 12px; font-size: 15px;
+      background: #F9FAFB; color: #111827;
+    }}
+    button {{
+      margin-top: 22px; width: 100%; padding: 14px 20px;
+      background: #7C3AED; color: #fff; border: 0; border-radius: 14px;
+      font-weight: 700; font-size: 16px; cursor: pointer;
+    }}
+    button:hover {{ background: #6D28D9; }}
+    .warn {{
+      margin-top: 14px; padding: 10px 12px; border-radius: 10px;
+      background: #FEF3C7; color: #92400E; font-size: 12px; line-height: 1.4;
+    }}
+    .amount {{ display: inline-block; margin-left: 4px; font-weight: 700; color: #7C3AED; }}
+  </style>
+</head>
+<body>
+  <div class=\"card\">
+    <h1>Oromona Premium</h1>
+    <p class=\"sub\">You'll pay <span class=\"amount\">KES {amount_kes:,}</span> / month via Paystack (Card or M-Pesa). 7-day free trial is included on new subscriptions.</p>
+    <form method=\"POST\" action=\"{action}\">
+      <label for=\"email\">Email</label>
+      <input id=\"email\" name=\"email\" type=\"email\" required placeholder=\"you@example.com\" />
+      <label for=\"name\">Full name (optional)</label>
+      <input id=\"name\" name=\"name\" type=\"text\" placeholder=\"Jane Doe\" />
+      <button type=\"submit\">Continue to Paystack</button>
+      <div class=\"warn\">⚠️ This initiates a REAL payment via Paystack Live mode.</div>
+    </form>
+  </div>
+</body>
+</html>""")
+
+
+@router.post("/pay-web")
+async def pay_web_submit(
+    request: Request,
+    email: str = Form(...),
+    name: str = Form(""),
+) -> RedirectResponse:
+    """Handles the /pay-web form submission. Kicks off a Paystack
+    hosted checkout for the given email and 302-redirects the browser
+    to the ``authorization_url`` Paystack returns.
+    """
+    email_clean = (email or "").strip().lower()
+    if "@" not in email_clean:
+        raise HTTPException(status_code=400, detail="Invalid email")
+
+    plan_code = get_plan_code()
+    if not plan_code:
+        plan_code = await ensure_premium_plan()
+        set_plan_code(plan_code)
+    if not plan_code:
+        raise HTTPException(
+            status_code=503,
+            detail="Payments temporarily unavailable — please retry in a moment",
+        )
+
+    # Match to an existing Oromona account if possible so the webhook +
+    # the paystack-return bridge can upgrade the right user. If no
+    # match, we still allow the payment to go through — the return
+    # page will explain that no account was linked.
+    user_doc = await db.users.find_one({"email": email_clean})
+    metadata: Dict[str, Any] = {"purpose": "premium_subscription", "source": "pay-web"}
+    if user_doc:
+        metadata["user_id"] = user_doc["id"]
+    if name:
+        metadata["display_name"] = name.strip()
+
+    ref_prefix = "web"
+    if user_doc:
+        ref_prefix = f"web_{user_doc['id'][:6]}"
+    reference = f"oromona_{ref_prefix}_{uuid.uuid4().hex[:12]}"
+
+    try:
+        data = await paystack.initialize_transaction(
+            email=email_clean,
+            amount_kobo=PREMIUM_PLAN_AMOUNT_KOBO,
+            plan_code=plan_code,
+            callback_url=_paystack_callback_url(request),
+            reference=reference,
+            metadata=metadata,
+        )
+    except paystack.PaystackError as e:
+        raise HTTPException(status_code=502, detail=f"Paystack error: {e}") from e
+
+    if user_doc:
+        await db.users.update_one(
+            {"id": user_doc["id"]},
+            {
+                "$set": {
+                    "pending_paystack_reference": data["reference"],
+                    "pending_paystack_reference_at": datetime.now(timezone.utc),
+                }
+            },
+        )
+    return RedirectResponse(url=data["authorization_url"], status_code=303)

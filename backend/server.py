@@ -55,7 +55,7 @@ api_router = APIRouter(prefix="/api")
 
 @api_router.get("/")
 async def root() -> dict:
-    return {"app": "AuraFit", "status": "ok"}
+    return {"app": "Oromona", "status": "ok"}
 
 
 # Order doesn't matter for routing (paths are disjoint) but the order below
