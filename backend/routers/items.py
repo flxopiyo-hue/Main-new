@@ -398,6 +398,21 @@ async def duplicate_item(
 
     new_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
+    # Deep-copy variants with FRESH ids so the two items track their
+    # own inventory independently (a sale against the duplicate must
+    # not decrement the original's stock).
+    from core.variants import generate_variants
+    src_variants = doc.get("variants") or []
+    if src_variants:
+        cloned_variants = []
+        for v in src_variants:
+            vv = dict(v)
+            vv["id"] = str(uuid.uuid4())
+            cloned_variants.append(vv)
+    else:
+        cloned_variants = generate_variants(
+            doc.get("sizes") or [], doc.get("colors") or []
+        )
     clone = {
         "id": new_id,
         "seller_id": doc["seller_id"],
@@ -414,6 +429,7 @@ async def duplicate_item(
         "images": list(doc.get("images") or [doc["image_b64"]]),
         "sizes": list(doc.get("sizes") or []),
         "colors": list(doc.get("colors") or []),
+        "variants": cloned_variants,
         "audience": doc.get("audience", "unisex"),
         "is_paused": True,  # paused by default — let the seller review first
         "cents_normalized": True,
