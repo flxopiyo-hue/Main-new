@@ -20,9 +20,9 @@ import { fonts, spacing } from "@/src/lib/theme";
 const IVORY = "#FFF7EE";
 const MAROON_TOP = "#1F0A08";
 
-const HERO_A = require("@/assets/brand/hero-option-A-0.png") as ImageSourcePropType;
-const HERO_B = require("@/assets/brand/hero-option-B-0.png") as ImageSourcePropType;
-const HERO_C = require("@/assets/brand/hero-option-C-0.png") as ImageSourcePropType;
+const HERO_A = require("@/assets/brand/hero-option-A.png") as ImageSourcePropType;
+const HERO_B = require("@/assets/brand/hero-option-B.png") as ImageSourcePropType;
+const HERO_C = require("@/assets/brand/hero-option-C.png") as ImageSourcePropType;
 const LOGO = require("@/assets/brand/oromona-logo-transparent.png") as ImageSourcePropType;
 
 interface Variant {
