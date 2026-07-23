@@ -53,6 +53,6 @@ FREE_MAX_PROFILES: int = 2
 PREMIUM_MAX_PROFILES: int = 10
 
 CONNECT_MOCKED_NOTE: str = (
-    "Demo onboarding — replace `STRIPE_API_KEY` with a real Stripe test key "
-    "to enable real Stripe Connect Express accounts and live payouts."
+    "Add your Kenyan bank or M-Pesa payout account so escrow-released funds "
+    "can be transferred via Paystack after buyer delivery confirmation."
 )
