@@ -14,6 +14,8 @@ interface Props {
   testID?: string;
   style?: ViewStyle;
   fullWidth?: boolean;
+  /** Override the label color — useful when the button sits on a dark hero. */
+  labelColor?: string;
 }
 
 export function AppButton({
@@ -25,8 +27,10 @@ export function AppButton({
   testID,
   style,
   fullWidth = true,
+  labelColor,
 }: Props) {
   const isPrimary = variant === "primary";
+  const resolvedColor = labelColor ?? (isPrimary ? colors.primaryFg : colors.primary);
   return (
     <TouchableOpacity
       testID={testID}
@@ -42,16 +46,9 @@ export function AppButton({
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={isPrimary ? colors.primaryFg : colors.primary} />
+        <ActivityIndicator color={resolvedColor} />
       ) : (
-        <Text
-          style={[
-            tp.buttonLabel,
-            { color: isPrimary ? colors.primaryFg : colors.primary },
-          ]}
-        >
-          {label}
-        </Text>
+        <Text style={[tp.buttonLabel, { color: resolvedColor }]}>{label}</Text>
       )}
     </TouchableOpacity>
   );
