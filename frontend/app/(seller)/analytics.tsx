@@ -21,12 +21,18 @@ export default function Analytics() {
   const [connect, setConnect] = useState<ConnectStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
+  const [hasPayoutRecipient, setHasPayoutRecipient] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [a, c] = await Promise.all([api.sellerAnalytics(), api.connectStatus()]);
+      const [a, c, pa] = await Promise.all([
+        api.sellerAnalytics(),
+        api.connectStatus(),
+        api.sellerGetPayoutAccount().catch(() => null),
+      ]);
       setData(a);
       setConnect(c);
+      setHasPayoutRecipient(!!pa?.has_recipient);
     } catch (e: any) {
       toast.show(e?.message ?? "Failed to load analytics", "error");
     } finally {
@@ -34,17 +40,10 @@ export default function Analytics() {
     }
   }, [toast]);
 
-  const setupConnect = async () => {
+  const goToPayoutAccount = () => {
     setConnecting(true);
     try {
-      const res = await api.connectSetup();
-      setConnect(res);
-      toast.show("Payouts enabled — demo Stripe account active", "success");
-      // Refresh analytics to pick up new connect_status
-      const a = await api.sellerAnalytics();
-      setData(a);
-    } catch (e: any) {
-      toast.show(e?.message ?? "Could not enable payouts", "error");
+      router.push("/(seller)/payout-account");
     } finally {
       setConnecting(false);
     }
@@ -106,22 +105,19 @@ export default function Analytics() {
           ) : null}
         </View>
 
-        {data.connect_status !== "active" ? (
+        {!hasPayoutRecipient ? (
           <View style={styles.connectCard} testID="analytics-connect-card">
             <View style={{ flex: 1 }}>
               <Text style={tp.caption}>Payouts</Text>
-              <Text style={[tp.h3, { marginTop: 4 }]}>Turn on Stripe Connect</Text>
+              <Text style={[tp.h3, { marginTop: 4 }]}>Set up your payout account</Text>
               <Text style={[tp.bodyMuted, { marginTop: 4 }]}>
-                Receive paid orders directly. Oromona takes a {data.platform_fee_bps / 100}% platform fee.
+                Add a Kenyan bank or M-Pesa number. Buyer funds are held in
+                escrow and released to you after delivery. Oromona keeps a
+                {" "}{data.platform_fee_bps / 100}% platform fee per sale.
               </Text>
-              {connect?.note ? (
-                <Text style={styles.note} testID="analytics-connect-note">
-                  {connect.note}
-                </Text>
-              ) : null}
               <TouchableOpacity
                 testID="analytics-connect-btn"
-                onPress={setupConnect}
+                onPress={goToPayoutAccount}
                 disabled={connecting}
                 style={[styles.connectBtn, connecting && { opacity: 0.6 }]}
                 activeOpacity={0.85}
@@ -130,8 +126,8 @@ export default function Analytics() {
                   <ActivityIndicator color={colors.primaryFg} size="small" />
                 ) : (
                   <>
-                    <Feather name="zap" size={14} color={colors.primaryFg} />
-                    <Text style={styles.connectBtnLabel}>Enable demo payouts</Text>
+                    <Feather name="dollar-sign" size={14} color={colors.primaryFg} />
+                    <Text style={styles.connectBtnLabel}>Add payout account</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -141,9 +137,9 @@ export default function Analytics() {
           <View style={styles.connectedCard} testID="analytics-connected-card">
             <Feather name="check-circle" size={20} color={colors.success} />
             <View style={{ flex: 1 }}>
-              <Text style={[tp.bodyMedium]}>Payouts active</Text>
+              <Text style={[tp.bodyMedium]}>Payout account active</Text>
               <Text style={tp.bodyMuted}>
-                {connect?.stripe_account_id ?? "—"}
+                Escrow release: buyer confirmation or 48h auto-release
               </Text>
             </View>
           </View>

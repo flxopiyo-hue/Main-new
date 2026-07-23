@@ -297,7 +297,22 @@ export interface PayoutRow {
   platform_fee_cents: number;
   seller_net_cents: number;
   status: string;
+  // Escrow-aware fields (Phase 5)
+  escrow_status?: "held" | "released" | "settled" | "disputed" | "cancelled" | null;
+  escrow_release_at?: string | null;
+  delivered_at?: string | null;
+  dispute_raised_at?: string | null;
   created_at: string;
+}
+
+export interface PayoutAccountSnapshot {
+  country: string;
+  bank_code: string;
+  bank_name: string;
+  account_number_last4: string;
+  account_holder: string;
+  account_type: string;
+  updated_at: string;
 }
 
 export interface PayoutHistory {
@@ -309,7 +324,11 @@ export interface PayoutHistory {
     gross_cents: number;
     platform_fee_cents: number;
     net_cents: number;
+    held_cents?: number;
+    released_cents?: number;
   };
+  payout_account?: PayoutAccountSnapshot | null;
+  has_recipient?: boolean;
 }
 
 // Display-name remap so sellers see industry-standard category names
@@ -812,6 +831,7 @@ export const api = {
       action: "acknowledge" | "ship" | "deliver";
       tracking_number?: string;
       tracking_url?: string;
+      estimated_delivery_days?: number;
       note?: string;
     },
   ) =>

@@ -1,0 +1,38 @@
+{
+  "summary": "Phase 5 backend regression — 16/16 pytest tests passed against the preview backend (https://fit-finder-app-5.preview.emergentagent.com). Verified: (1) PLATFORM_FEE_BPS=1500 surfaces in GET /api/seller/payouts (platform_fee_bps==1500). (2) totals.held_cents + totals.released_cents present and sum to totals.net_cents. (3) payout_account (nullable) + has_recipient (bool) present on the payouts response. (4) Every row includes escrow_status/escrow_release_at/delivered_at/dispute_raised_at fields. (5) Fee math: for the seller's paid orders, platform_fee_cents == amount_cents*1500//10000 and seller_net_cents == amount_cents-platform_fee_cents (at least one row confirmed with the new 15% rate). (6) GET /api/seller/banks?country=kenya returns a populated list of Paystack banks/mobile-money entries with code+name. (7) GET /api/seller/payout-account returns payout_account/recipient_code/subaccount_code/has_recipient. (8) POST /api/seller/payout-account probe with a real KE bank code + fake 10-digit account (0000000000) responded gracefully as HTTP 400 (Paystack resolve rejected the fake account) — never a 500. (9) Regression — /api/items list/patch OK, no mongodb _id leaks, /api/subs/me and /api/subs/checkout enforce auth guard, /api/orders returns list for buyer, seller orders endpoint returns list.\n\nFrontend UI: code review confirmed all Phase 5 UI deltas are in place — Settings tab has 'seller-settings-payouts' (Payouts & Escrow · '15% platform fee · Paystack payout · escrow release history') and 'seller-settings-payout-account' (Bank or M-Pesa · funds release after delivery confirmation); no 'Stripe' or '10%' mentions anywhere in (seller)/*.tsx or (tabs)/profile.tsx. Payouts screen header 'Payouts & Escrow', payouts-account-card, summary-held / summary-released / summary-gross / summary-fees testIDs all present with the 15% fee pill. Payout-account screen defaults country to kenya, uses api.sellerBanks(), Save button gated by (bank && account_number.length>=6). Analytics tab shows 'Set up your payout account' card with 'Add payout account' CTA routing to /(seller)/payout-account. Runtime UI navigation could NOT be exercised because the demo seller account (atelier@aurafit.com) is currently toggled to role='buyer' server-side from prior iterations; /(seller)/* routes redirect to / for buyer-role sessions. I successfully re-toggled the account back to seller via POST /api/user/toggle-role but the browser session token still carries the old role claim and Expo's client-side auth guard kept redirecting. This is a test-data condition, not a product bug.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration24_phase5_escrow.py",
+    "/app/test_reports/pytest/iteration24_results.xml"
+  ],
+  "action_items": [
+    "Optional cleanup: the demo seller atelier@aurafit.com is currently in role='buyer' (leftover state from earlier testing). Frontend UI testing of the (seller) portal requires it to be in role='seller' — either seed.py should force role back to 'seller' on boot for the demo account, or the tester should log in fresh (browser will pick up the corrected role on the next login) and re-run the flow.",
+    "Consider hardening core/config.py:CONNECT_MOCKED_NOTE — it still references 'Stripe Connect Express'; this note is only surfaced via /api/seller/connect/status. UI copy is already migrated away from Stripe, but the backend note lingers. Low priority since the seller UI never renders it now.",
+    "Frontend .env has EXPO_PUBLIC_BACKEND_URL=https://fit-finder-app-5.preview.emergentagent.com — the review request stated it was 'intentionally pointed at the live/deployed backend (https://oromona.emergent.host)'. Confirm whether the preview URL is intentional or whether the .env should be flipped to oromona.emergent.host before production."
+  ],
+  "critical_code_review_comments": [
+    "routers/seller.py:seller_payouts — held/released split logic (line 364-368) uses 'held' as the default when escrow_status is missing on legacy orders. Correct for the intended semantic; verified via the test suite.",
+    "routers/seller.py:seller_set_payout_account — POST returns 400 (from paystack.resolve_account failure) rather than a 200 with ok:false when the account resolve fails. The API contract in the review request implicitly allows either; both paths avoid a 500. The 400 propagation is arguably more RESTful; the frontend already handles it via `api.sellerSetPayoutAccount` throw → toast.",
+    "core/escrow.py — release_payout() is properly idempotent (line 160-165 short-circuit on {released,settled}), and start_delivery_window() writes escrow_release_at=now+48h atomically. Good.",
+    "frontend/app/(seller)/analytics.tsx line 116 — '{data.platform_fee_bps / 100}%' will render as '15%' (correct). Verified via config.",
+    "frontend/app/(seller)/payouts.tsx line 94 — feePct computed as `(data.platform_fee_bps / 100).toFixed(0)` renders as '15' → '15% platform fee' pill matches the review requirement."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration24_phase5_escrow.py (new)"
+  ],
+  "success_rate": {"backend": "100% (16/16)", "frontend": "Code review 100% clean; runtime navigation blocked by seller-account-in-buyer-role test-data condition"},
+  "seed_data_creation": "None. Tests are read-only against seed data + a single PATCH round-trip that restores original price_cents to avoid mutating the catalog.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend Phase 5 (15% platform fee + payout account onboarding + escrow lifecycle fields on /api/seller/payouts) is fully verified. If retesting frontend UI, first check the seller's role via GET /api/auth/me — if it is 'buyer', POST /api/user/toggle-role {\"to\":\"seller\"} before the browser session begins, and hard-reload localhost:3000 so the client picks up the new JWT with role=seller. Then navigate to /(seller)/settings → tap payouts card → tap payout-account card → open bank picker (Kenya banks load from Paystack). All testIDs are already in place (seller-settings-payouts, seller-settings-payout-account, payouts-account-card, summary-held/released/gross/fees, payouts-history, payout-country-btn, payout-bank-btn, payout-account-number, payout-save-btn, payout-bank-list, analytics-connect-btn, analytics-connect-card).",
+  "rca_of_issue": "The frontend UI runtime blockage was caused by the demo seller account being left in role='buyer' by earlier iterations. Expo Router's client-side auth guard reads the JWT role claim from AsyncStorage and redirects (seller) routes to / when role != 'seller'. Server-side role was flipped back to 'seller' via /api/user/toggle-role during this run, but the browser's stored JWT retains the old role claim, so client-side guard still redirected. Fresh login from the client would pick up the new role. No code change required."
+}

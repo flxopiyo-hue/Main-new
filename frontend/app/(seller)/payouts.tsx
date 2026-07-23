@@ -1,64 +1,73 @@
-// Payout Management — sellers configure their payout method and review the
-// full ledger of paid orders here.
+// Payout Dashboard — sellers review escrow status of paid orders and jump
+// into the Payout Account screen to configure their Paystack payout
+// destination (Kenyan bank / M-Pesa).
+//
+// Escrow model (Phase 5):
+//   • Buyer pays via Paystack → funds are held by Oromona.
+//   • Seller marks the order shipped → later delivered.
+//   • Buyer confirms delivery (instant release) OR 48h passes with no
+//     dispute (auto-release) OR buyer reports a problem (funds frozen).
+//   • Platform retains a flat 15% fee per sale; the rest is transferred
+//     to the seller's Paystack Transfer Recipient.
 //
 // Sections:
-//   1. Connect status card (Connected ✓ / Pending / Unstarted)
-//   2. Payment terms (10% platform fee per transaction)
-//   3. Historical payout transactions — one row per paid order, mirroring
-//      `GET /api/seller/payouts`.
+//   1. Payout account status card (linked to /(seller)/payout-account).
+//   2. Escrow summary (held / released totals + platform fee headline).
+//   3. Historical payouts table — one row per paid order, each with its
+//      current escrow state (held / released / disputed).
 
 import { Feather } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
-import * as WebBrowser from "expo-web-browser";
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
-  Modal,
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   useWindowDimensions,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { AppInput } from "@/src/components/AppInput";
 import { useToast } from "@/src/components/Toast";
-import {
-  api,
-  BankDetails,
-  ConnectStatus,
-  PayoutHistory,
-  PayoutRow,
-} from "@/src/lib/api";
+import { api, PayoutHistory, PayoutRow } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
 import { formatPrice } from "@/src/lib/currency";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
 /* -------------------------------------------------------------------------- */
 
+type EscrowState = "held" | "released" | "settled" | "disputed" | "cancelled";
+
+const ESCROW_META: Record<
+  EscrowState,
+  { label: string; color: string; bg: string; icon: keyof typeof Feather.glyphMap }
+> = {
+  held: { label: "Held", color: "#92400E", bg: "rgba(245, 158, 11, 0.15)", icon: "clock" },
+  released: { label: "Released", color: "#065F46", bg: "rgba(5, 150, 105, 0.15)", icon: "check-circle" },
+  settled: { label: "Paid out", color: "#065F46", bg: "rgba(5, 150, 105, 0.15)", icon: "check-circle" },
+  disputed: { label: "Disputed", color: "#991B1B", bg: "rgba(220, 38, 38, 0.15)", icon: "alert-triangle" },
+  cancelled: { label: "Cancelled", color: colors.mutedFg, bg: colors.muted, icon: "x-circle" },
+};
+
+/* -------------------------------------------------------------------------- */
+
 export default function Payouts() {
   const toast = useToast();
-  const { user, refresh } = useAuth();
+  const { user } = useAuth();
   const { width } = useWindowDimensions();
   const isWide = width >= 720;
 
   const [data, setData] = useState<PayoutHistory | null>(null);
-  const [connect, setConnect] = useState<ConnectStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [connecting, setConnecting] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [p, c] = await Promise.all([api.sellerPayouts(), api.connectStatus()]);
+      const p = await api.sellerPayouts();
       setData(p);
-      setConnect(c);
     } catch (e: any) {
       toast.show(e?.message ?? "Failed to load payouts", "error");
     } finally {
@@ -73,25 +82,6 @@ export default function Payouts() {
     }, [load]),
   );
 
-  const startConnect = async () => {
-    setConnecting(true);
-    try {
-      const res = await api.connectSetup({});
-      setConnect(res);
-      if (res.onboarding_url) {
-        await WebBrowser.openBrowserAsync(res.onboarding_url);
-        toast.show("Finish KYC in the browser, then pull-to-refresh.", "success");
-      } else {
-        toast.show("Payouts enabled (demo)", "success");
-      }
-      await load();
-    } catch (e: any) {
-      toast.show(e?.message ?? "Could not start payout onboarding", "error");
-    } finally {
-      setConnecting(false);
-    }
-  };
-
   if (loading || !data) {
     return (
       <SafeAreaView style={[styles.root, styles.center]} edges={["top"]}>
@@ -100,12 +90,10 @@ export default function Payouts() {
     );
   }
 
-  const dispCurrency = user?.preferred_currency ?? "USD";
-  const status: "active" | "pending" | "unstarted" =
-    (data.connect_status ?? connect?.connect_status ?? "unstarted") as
-      | "active"
-      | "pending"
-      | "unstarted";
+  const dispCurrency = user?.preferred_currency ?? "KES";
+  const feePct = (data.platform_fee_bps / 100).toFixed(0);
+  const account = data.payout_account ?? null;
+  const hasRecipient = !!data.has_recipient;
 
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
@@ -124,98 +112,103 @@ export default function Payouts() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <View>
-            <Text style={tp.caption}>SELLER PORTAL · PAYOUTS</Text>
-            <Text style={[tp.h2, { marginTop: 4 }]}>Payout management</Text>
-          </View>
-        </View>
-
-        {/* Connection status card */}
-        <View style={styles.section} testID="payouts-connection">
-          <View style={styles.sectionHead}>
-            <Text style={tp.caption}>Connection</Text>
-            <StatusPill status={status} />
-          </View>
-          <Text style={[tp.body, { marginTop: spacing.sm }]}>
-            {status === "active"
-              ? "Stripe Connect is active — net revenue routes automatically to your bank or M-Pesa account."
-              : status === "pending"
-                ? "Stripe is reviewing your KYC submission. Payouts will start once approved."
-                : "Connect your payout account to receive funds for paid orders. Oromona uses Stripe Connect Express."}
+          <Text style={tp.caption}>SELLER PORTAL · PAYOUTS</Text>
+          <Text style={[tp.h2, { marginTop: 4 }]}>Payouts & Escrow</Text>
+          <Text style={[tp.bodyMuted, { marginTop: 4 }]}>
+            Buyer funds are held in escrow. Released to your Paystack
+            payout account on delivery confirmation (or 48h auto-release).
           </Text>
-          {connect?.note ? (
-            <Text style={[tp.bodyMuted, { marginTop: spacing.sm, fontStyle: "italic" }]}>
-              {connect.note}
-            </Text>
-          ) : null}
-          <View style={styles.connectActions}>
-            {status !== "active" ? (
-              <TouchableOpacity
-                testID="payouts-connect-btn"
-                onPress={startConnect}
-                disabled={connecting}
-                style={[styles.primaryBtn, connecting && styles.primaryBtnDisabled]}
-                activeOpacity={0.85}
-              >
-                {connecting ? (
-                  <ActivityIndicator color={colors.primaryFg} size="small" />
-                ) : (
-                  <>
-                    <Feather name="zap" size={14} color={colors.primaryFg} />
-                    <Text style={styles.primaryLabel}>Set up payouts</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            ) : null}
-            <TouchableOpacity
-              testID="payouts-edit-method-btn"
-              onPress={() => setEditOpen(true)}
-              style={styles.outlineBtn}
-              activeOpacity={0.85}
-            >
-              <Feather name="edit-2" size={14} color={colors.primary} />
-              <Text style={styles.outlineLabel}>Edit method</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.methodCard} testID="payouts-method-summary">
-            <PayoutMethodSummary bank={user?.bank_details ?? undefined} />
-          </View>
         </View>
 
-        {/* Payment terms */}
-        <View style={styles.section} testID="payouts-terms">
-          <View style={styles.sectionHead}>
-            <Text style={tp.caption}>Payment terms</Text>
-          </View>
-          <View style={[styles.termsGrid, isWide && styles.termsGridWide]}>
-            <TermsCard
-              icon="percent"
-              label="Platform fee"
-              value={`${(data.platform_fee_bps / 100).toFixed(0)}%`}
-              hint="Oromona's commission, deducted automatically per paid transaction."
-              testID="terms-fee"
+        {/* Payout account status card */}
+        <Pressable
+          testID="payouts-account-card"
+          onPress={() => router.push("/(seller)/payout-account")}
+          style={({ pressed }) => [
+            styles.accountCard,
+            account && hasRecipient ? styles.accountCardActive : styles.accountCardEmpty,
+            pressed && { opacity: 0.85 },
+          ]}
+        >
+          <View style={styles.accountIcon}>
+            <Feather
+              name={account && hasRecipient ? "check-circle" : "credit-card"}
+              size={20}
+              color={account && hasRecipient ? "#059669" : colors.primary}
             />
-            <TermsCard
+          </View>
+          <View style={{ flex: 1 }}>
+            {account && hasRecipient ? (
+              <>
+                <Text style={styles.accountTitle}>Payout account active</Text>
+                <Text style={styles.accountLine}>
+                  {account.bank_name} · •••{account.account_number_last4}
+                </Text>
+                <Text style={[tp.bodyMuted, { fontSize: 11, marginTop: 2 }]}>
+                  {account.account_holder} · {account.country.toUpperCase()}
+                </Text>
+              </>
+            ) : account ? (
+              <>
+                <Text style={styles.accountTitle}>Setup pending on Paystack</Text>
+                <Text style={[tp.bodyMuted, { fontSize: 12, marginTop: 4 }]}>
+                  Tap to retry — {account.bank_name} · •••{account.account_number_last4}
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.accountTitle}>Add your payout account</Text>
+                <Text style={[tp.bodyMuted, { fontSize: 12, marginTop: 4 }]}>
+                  Bank or M-Pesa · required before your first payout releases.
+                </Text>
+              </>
+            )}
+          </View>
+          <Feather name="chevron-right" size={18} color={colors.mutedFg} />
+        </Pressable>
+
+        {/* Escrow summary grid */}
+        <View style={styles.section} testID="payouts-summary">
+          <View style={styles.sectionHead}>
+            <Text style={tp.caption}>Escrow summary</Text>
+            <View style={styles.feePill}>
+              <Feather name="percent" size={10} color={colors.primaryFg} />
+              <Text style={styles.feePillLabel}>{feePct}% platform fee</Text>
+            </View>
+          </View>
+          <View style={[styles.summaryGrid, isWide && styles.summaryGridWide]}>
+            <SummaryCard
+              icon="clock"
+              tint="#92400E"
+              tintBg="rgba(245, 158, 11, 0.12)"
+              label="Held in escrow"
+              value={formatPrice(data.totals.held_cents ?? 0, dispCurrency)}
+              hint="Awaiting delivery confirmation or 48h auto-release."
+              testID="summary-held"
+            />
+            <SummaryCard
+              icon="check-circle"
+              tint="#065F46"
+              tintBg="rgba(5, 150, 105, 0.12)"
+              label="Released to you"
+              value={formatPrice(data.totals.released_cents ?? 0, dispCurrency)}
+              hint="Cleared for Paystack transfer to your payout account."
+              testID="summary-released"
+            />
+            <SummaryCard
               icon="trending-up"
               label="Lifetime gross"
               value={formatPrice(data.totals.gross_cents, dispCurrency)}
-              hint={`${data.totals.count} paid transaction${data.totals.count === 1 ? "" : "s"}`}
-              testID="terms-gross"
+              hint={`${data.totals.count} paid order${data.totals.count === 1 ? "" : "s"}`}
+              testID="summary-gross"
             />
-            <TermsCard
+            <SummaryCard
               icon="minus-circle"
-              label="Lifetime fees"
+              tint={colors.error}
+              label="Platform fees"
               value={`−${formatPrice(data.totals.platform_fee_cents, dispCurrency)}`}
-              hint="Sum of all platform fees deducted to date."
-              testID="terms-fees"
-            />
-            <TermsCard
-              icon="dollar-sign"
-              label="Net to you"
-              value={formatPrice(data.totals.net_cents, dispCurrency)}
-              hint="Sum of what we've paid (or will pay) out."
-              testID="terms-net"
+              hint={`${feePct}% deducted per paid transaction.`}
+              testID="summary-fees"
             />
           </View>
         </View>
@@ -235,7 +228,8 @@ export default function Payouts() {
                 No payouts yet
               </Text>
               <Text style={[tp.bodyMuted, { textAlign: "center", marginTop: 4 }]}>
-                Paid orders appear here as soon as a buyer checks out.
+                Paid orders will appear here in escrow. Funds release after
+                buyer confirmation or 48h auto-release.
               </Text>
             </View>
           ) : isWide ? (
@@ -249,19 +243,20 @@ export default function Payouts() {
           )}
         </View>
 
+        {/* Help block */}
+        <View style={styles.helpBox}>
+          <Feather name="shield" size={14} color={colors.primary} />
+          <Text style={styles.helpText}>
+            How escrow works: buyers pay via Paystack, funds are held by
+            Oromona. Once the buyer confirms delivery — or 48 hours pass
+            after the courier marks delivered — the seller net (after 15%
+            platform fee) is transferred to your saved payout account.
+            Reported problems freeze the transfer until resolved.
+          </Text>
+        </View>
+
         <View style={{ height: spacing.xxl }} />
       </ScrollView>
-
-      <EditPayoutModal
-        visible={editOpen}
-        initial={user?.bank_details ?? undefined}
-        onCancel={() => setEditOpen(false)}
-        onSaved={async () => {
-          setEditOpen(false);
-          await refresh();
-          toast.show("Payout method updated", "success");
-        }}
-      />
     </SafeAreaView>
   );
 }
@@ -270,84 +265,50 @@ export default function Payouts() {
 /* Sub-components                                                             */
 /* -------------------------------------------------------------------------- */
 
-function StatusPill({ status }: { status: "active" | "pending" | "unstarted" }) {
-  const map: Record<
-    typeof status,
-    { label: string; color: string; bg: string; icon: keyof typeof Feather.glyphMap }
-  > = {
-    active: { label: "Connected", color: colors.primaryFg, bg: colors.success, icon: "check" },
-    pending: { label: "In review", color: colors.primary, bg: "#FFD60A", icon: "clock" },
-    unstarted: { label: "Unstarted", color: colors.primary, bg: colors.muted, icon: "alert-circle" },
-  };
-  const s = map[status];
+function EscrowPill({ status }: { status?: EscrowState | null }) {
+  const s = ESCROW_META[status ?? "held"] || ESCROW_META.held;
   return (
-    <View
-      style={[styles.statusPill, { backgroundColor: s.bg }]}
-      testID={`payouts-status-${status}`}
-    >
-      <Feather name={s.icon} size={12} color={s.color} />
-      <Text style={[styles.statusPillLabel, { color: s.color }]}>
+    <View style={[styles.escrowPill, { backgroundColor: s.bg }]}>
+      <Feather name={s.icon} size={11} color={s.color} />
+      <Text style={[styles.escrowPillLabel, { color: s.color }]}>
         {s.label.toUpperCase()}
       </Text>
     </View>
   );
 }
 
-function PayoutMethodSummary({ bank }: { bank?: BankDetails }) {
-  if (!bank || !Object.values(bank).some(Boolean)) {
-    return (
-      <Text style={tp.bodyMuted}>
-        No payout method on file. Tap “Edit method” to add a bank account or
-        M-Pesa Paybill/Till.
-      </Text>
-    );
-  }
-  return (
-    <View style={{ gap: 6 }}>
-      {bank.bank_name ? (
-        <Text style={tp.body}>
-          <Text style={styles.summaryLabel}>Bank</Text>{"  "}
-          {bank.bank_name}
-          {bank.account_number ? `  ·  ••• ${bank.account_number.slice(-4)}` : ""}
-        </Text>
-      ) : null}
-      {bank.mpesa_paybill ? (
-        <Text style={tp.body}>
-          <Text style={styles.summaryLabel}>M-Pesa Paybill</Text>{"  "}
-          {bank.mpesa_paybill}
-        </Text>
-      ) : null}
-      {bank.mpesa_till ? (
-        <Text style={tp.body}>
-          <Text style={styles.summaryLabel}>M-Pesa Till</Text>{"  "}
-          {bank.mpesa_till}
-        </Text>
-      ) : null}
-    </View>
-  );
-}
-
-function TermsCard({
+function SummaryCard({
   icon,
   label,
   value,
   hint,
   testID,
+  tint,
+  tintBg,
 }: {
   icon: keyof typeof Feather.glyphMap;
   label: string;
   value: string;
   hint?: string;
   testID?: string;
+  tint?: string;
+  tintBg?: string;
 }) {
   return (
-    <View style={styles.termsCard} testID={testID}>
-      <View style={styles.termsCardTop}>
+    <View style={styles.summaryCard} testID={testID}>
+      <View style={styles.summaryCardTop}>
         <Text style={[tp.caption, { color: colors.mutedFg }]}>{label}</Text>
-        <Feather name={icon} size={16} color={colors.primary} />
+        <View
+          style={[
+            styles.summaryIcon,
+            tintBg ? { backgroundColor: tintBg } : null,
+          ]}
+        >
+          <Feather name={icon} size={14} color={tint || colors.primary} />
+        </View>
       </View>
-      <Text style={styles.termsValue}>{value}</Text>
-      {hint ? <Text style={styles.termsHint}>{hint}</Text> : null}
+      <Text style={[styles.summaryValue, tint ? { color: tint } : null]}>{value}</Text>
+      {hint ? <Text style={styles.summaryHint}>{hint}</Text> : null}
     </View>
   );
 }
@@ -361,7 +322,7 @@ function PayoutsTable({ rows }: { rows: PayoutRow[] }) {
         <Text style={[styles.cellMoney, styles.tableHeadText]}>GROSS</Text>
         <Text style={[styles.cellMoney, styles.tableHeadText]}>FEE</Text>
         <Text style={[styles.cellMoney, styles.tableHeadText]}>NET</Text>
-        <Text style={[styles.cellStatus, styles.tableHeadText]}>STATUS</Text>
+        <Text style={[styles.cellStatus, styles.tableHeadText]}>ESCROW</Text>
       </View>
       {rows.map((r) => (
         <Pressable
@@ -395,24 +356,7 @@ function PayoutsTable({ rows }: { rows: PayoutRow[] }) {
             {formatPrice(r.seller_net_cents, r.currency)}
           </Text>
           <View style={styles.cellStatus}>
-            <View
-              style={[
-                styles.statusPill,
-                { backgroundColor: r.status === "paid" ? colors.success : colors.muted },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.statusPillLabel,
-                  {
-                    color:
-                      r.status === "paid" ? colors.primaryFg : colors.primary,
-                  },
-                ]}
-              >
-                {r.status.toUpperCase()}
-              </Text>
-            </View>
+            <EscrowPill status={r.escrow_status as EscrowState | null} />
           </View>
         </Pressable>
       ))}
@@ -427,172 +371,44 @@ function PayoutCard({ row }: { row: PayoutRow }) {
       onPress={() => router.push(`/order/${row.id}`)}
       style={({ pressed }) => [styles.payoutCard, pressed && { opacity: 0.7 }]}
     >
-      <View style={{ flex: 1 }}>
-        <Text style={styles.itemName} numberOfLines={1}>
-          {row.item_name}
-        </Text>
-        <Text style={[tp.bodyMuted, { fontSize: 11 }]}>
-          Size {row.size}
-          {row.color ? ` · ${row.color}` : ""}
-          {" · "}
-          {new Date(row.created_at).toLocaleDateString()}
-        </Text>
-        <View style={styles.payoutBreakdown}>
-          <Text style={styles.breakdownItem}>
-            <Text style={styles.breakdownLabel}>GROSS </Text>
-            {formatPrice(row.amount_cents, row.currency)}
+      <View style={styles.payoutCardHead}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.itemName} numberOfLines={1}>
+            {row.item_name}
           </Text>
-          <Text style={[styles.breakdownItem, { color: colors.error }]}>
-            <Text style={styles.breakdownLabel}>FEE </Text>−
-            {formatPrice(row.platform_fee_cents, row.currency)}
-          </Text>
-          <Text style={[styles.breakdownItem, { color: colors.success }]}>
-            <Text style={styles.breakdownLabel}>NET </Text>
-            {formatPrice(row.seller_net_cents, row.currency)}
+          <Text style={[tp.bodyMuted, { fontSize: 11 }]}>
+            Size {row.size}
+            {row.color ? ` · ${row.color}` : ""}
+            {" · "}
+            {new Date(row.created_at).toLocaleDateString()}
           </Text>
         </View>
+        <EscrowPill status={row.escrow_status as EscrowState | null} />
       </View>
+      <View style={styles.payoutBreakdown}>
+        <Text style={styles.breakdownItem}>
+          <Text style={styles.breakdownLabel}>GROSS </Text>
+          {formatPrice(row.amount_cents, row.currency)}
+        </Text>
+        <Text style={[styles.breakdownItem, { color: colors.error }]}>
+          <Text style={styles.breakdownLabel}>FEE </Text>−
+          {formatPrice(row.platform_fee_cents, row.currency)}
+        </Text>
+        <Text style={[styles.breakdownItem, { color: colors.success }]}>
+          <Text style={styles.breakdownLabel}>NET </Text>
+          {formatPrice(row.seller_net_cents, row.currency)}
+        </Text>
+      </View>
+      {row.escrow_status === "held" && row.escrow_release_at ? (
+        <Text style={styles.escrowFooter}>
+          Auto-releases {new Date(row.escrow_release_at).toLocaleString()}
+        </Text>
+      ) : row.escrow_status === "disputed" && row.dispute_raised_at ? (
+        <Text style={[styles.escrowFooter, { color: colors.error }]}>
+          Dispute raised {new Date(row.dispute_raised_at).toLocaleDateString()} · frozen
+        </Text>
+      ) : null}
     </Pressable>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Edit payout method modal                                                   */
-/* -------------------------------------------------------------------------- */
-
-interface EditPayoutModalProps {
-  visible: boolean;
-  initial?: BankDetails;
-  onCancel: () => void;
-  onSaved: () => Promise<void>;
-}
-
-function EditPayoutModal({ visible, initial, onCancel, onSaved }: EditPayoutModalProps) {
-  const toast = useToast();
-  const [bankName, setBankName] = useState(initial?.bank_name ?? "");
-  const [accountName, setAccountName] = useState(initial?.account_name ?? "");
-  const [accountNumber, setAccountNumber] = useState(initial?.account_number ?? "");
-  const [mpesaPaybill, setMpesaPaybill] = useState(initial?.mpesa_paybill ?? "");
-  const [mpesaTill, setMpesaTill] = useState(initial?.mpesa_till ?? "");
-  const [saving, setSaving] = useState(false);
-
-  React.useEffect(() => {
-    if (visible) {
-      setBankName(initial?.bank_name ?? "");
-      setAccountName(initial?.account_name ?? "");
-      setAccountNumber(initial?.account_number ?? "");
-      setMpesaPaybill(initial?.mpesa_paybill ?? "");
-      setMpesaTill(initial?.mpesa_till ?? "");
-    }
-  }, [visible, initial]);
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      await api.updatePayoutDetails({
-        bank_name: bankName.trim() || null,
-        account_name: accountName.trim() || null,
-        account_number: accountNumber.trim() || null,
-        mpesa_paybill: mpesaPaybill.trim() || null,
-        mpesa_till: mpesaTill.trim() || null,
-      });
-      await onSaved();
-    } catch (e: any) {
-      toast.show(e?.message ?? "Could not save payout details", "error");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent
-      onRequestClose={onCancel}
-    >
-      <Pressable style={styles.modalBackdrop} onPress={onCancel}>
-        <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
-          <View style={styles.modalHandle} />
-          <Text style={[tp.h3, { marginBottom: spacing.sm }]}>Edit payout method</Text>
-          <Text style={[tp.bodyMuted, { marginBottom: spacing.md }]}>
-            Save bank and/or M-Pesa info. Both are optional — fill at least one
-            before your first payout.
-          </Text>
-          <ScrollView style={{ maxHeight: Platform.OS === "web" ? 480 : 520 }}>
-            <Text style={[tp.caption, { marginTop: spacing.sm, marginBottom: 6 }]}>Bank</Text>
-            <AppInput
-              testID="payouts-bank-name"
-              label="Bank name"
-              value={bankName}
-              onChangeText={setBankName}
-              placeholder="Equity Bank"
-            />
-            <AppInput
-              testID="payouts-account-name"
-              label="Account name"
-              value={accountName}
-              onChangeText={setAccountName}
-              placeholder="Maison Lumière Ltd"
-            />
-            <AppInput
-              testID="payouts-account-number"
-              label="Account number"
-              value={accountNumber}
-              onChangeText={setAccountNumber}
-              keyboardType="number-pad"
-              placeholder="0123456789"
-            />
-            <Text style={[tp.caption, { marginTop: spacing.md, marginBottom: 6 }]}>M-Pesa</Text>
-            <View style={{ flexDirection: "row", gap: spacing.md }}>
-              <View style={{ flex: 1 }}>
-                <AppInput
-                  testID="payouts-mpesa-paybill"
-                  label="Paybill"
-                  value={mpesaPaybill}
-                  onChangeText={setMpesaPaybill}
-                  keyboardType="number-pad"
-                  placeholder="247247"
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <AppInput
-                  testID="payouts-mpesa-till"
-                  label="Till"
-                  value={mpesaTill}
-                  onChangeText={setMpesaTill}
-                  keyboardType="number-pad"
-                  placeholder="123456"
-                />
-              </View>
-            </View>
-          </ScrollView>
-          <View style={styles.modalActions}>
-            <TouchableOpacity
-              testID="payouts-cancel-btn"
-              onPress={onCancel}
-              style={[styles.modalBtn, styles.modalBtnGhost]}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.modalGhostLabel}>CANCEL</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              testID="payouts-save-btn"
-              onPress={save}
-              disabled={saving}
-              style={[styles.modalBtn, styles.modalBtnPrimary]}
-              activeOpacity={0.85}
-            >
-              {saving ? (
-                <ActivityIndicator color={colors.primaryFg} />
-              ) : (
-                <Text style={styles.modalPrimaryLabel}>SAVE</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
   );
 }
 
@@ -605,49 +421,52 @@ const styles = StyleSheet.create({
   center: { alignItems: "center", justifyContent: "center" },
   scroll: { paddingBottom: spacing.xxl },
   header: {
-    flexDirection: "row",
-    alignItems: "flex-end",
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
-    paddingBottom: spacing.lg,
+    paddingBottom: spacing.md,
   },
-  primaryBtn: {
+  // Account card
+  accountCard: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.sm,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 12,
-    minHeight: 44,
-  },
-  primaryBtnDisabled: { opacity: 0.5 },
-  primaryLabel: {
-    color: colors.primaryFg,
-    fontFamily: fonts.bodySemi,
-    fontSize: 12,
-    letterSpacing: 1.5,
-    textTransform: "uppercase",
-  },
-  outlineBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 12,
+    gap: spacing.md,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: colors.primary,
+  },
+  accountCardActive: {
+    backgroundColor: "rgba(5, 150, 105, 0.08)",
+    borderColor: "rgba(5, 150, 105, 0.35)",
+  },
+  accountCardEmpty: {
     backgroundColor: colors.surface,
-    minHeight: 44,
+    borderColor: colors.border,
   },
-  outlineLabel: {
-    color: colors.primary,
+  accountIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: colors.background,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  accountTitle: {
     fontFamily: fonts.bodySemi,
-    fontSize: 12,
-    letterSpacing: 1.5,
-    textTransform: "uppercase",
+    fontSize: 14,
+    color: colors.primary,
   },
+  accountLine: {
+    marginTop: 4,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13,
+    color: colors.primary,
+  },
+  // Section
   section: {
     marginHorizontal: spacing.lg,
     marginTop: spacing.md,
@@ -655,6 +474,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
+    borderRadius: 12,
   },
   sectionHead: {
     flexDirection: "row",
@@ -662,81 +482,103 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: spacing.sm,
   },
-  connectActions: {
+  feePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+  },
+  feePillLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 10,
+    color: colors.primaryFg,
+    letterSpacing: 0.8,
+  },
+  // Summary grid
+  summaryGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm,
-    marginTop: spacing.md,
   },
-  methodCard: {
-    marginTop: spacing.md,
+  summaryGridWide: { flexWrap: "nowrap" },
+  summaryCard: {
+    flexGrow: 1,
+    flexBasis: "45%",
+    minWidth: 150,
     padding: spacing.md,
-    backgroundColor: colors.muted,
     borderWidth: 1,
     borderColor: colors.border,
+    backgroundColor: colors.background,
+    borderRadius: 10,
   },
-  summaryLabel: { fontFamily: fonts.bodySemi, color: colors.primary },
-  statusPill: {
+  summaryCardTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  summaryIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surface,
+  },
+  summaryValue: {
+    fontFamily: fonts.heading,
+    fontSize: 20,
+    color: colors.primary,
+    marginTop: 8,
+  },
+  summaryHint: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: colors.mutedFg,
+    marginTop: 4,
+    lineHeight: 15,
+  },
+  // Escrow pill
+  escrowPill: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    backgroundColor: colors.muted,
+    borderRadius: 6,
   },
-  statusPillLabel: {
+  escrowPillLabel: {
     fontFamily: fonts.bodySemi,
     fontSize: 10,
-    letterSpacing: 1.2,
-    color: colors.primary,
+    letterSpacing: 1.0,
   },
-  termsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.md,
-  },
-  termsGridWide: { flexWrap: "nowrap" },
-  termsCard: {
-    flexGrow: 1,
-    flexBasis: "45%",
-    minWidth: 180,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.background,
-  },
-  termsCardTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  termsValue: {
-    fontFamily: fonts.heading,
-    fontSize: 24,
-    color: colors.primary,
-    marginTop: 8,
-  },
-  termsHint: {
-    fontFamily: fonts.body,
-    fontSize: 11,
-    color: colors.mutedFg,
-    marginTop: 4,
-  },
+  // History
   empty: {
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: spacing.xl,
     gap: 6,
   },
-  // Card layout for mobile
   payoutCard: {
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-    gap: 4,
+    gap: 6,
+  },
+  payoutCardHead: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: spacing.sm,
   },
   itemName: { fontFamily: fonts.bodySemi, fontSize: 14, color: colors.primary },
-  payoutBreakdown: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md, marginTop: 6 },
+  payoutBreakdown: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.md,
+    marginTop: 6,
+  },
   breakdownItem: {
     fontFamily: fonts.bodySemi,
     fontSize: 13,
@@ -748,8 +590,19 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     color: colors.mutedFg,
   },
-  // Table layout for wide screens
-  table: { borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
+  escrowFooter: {
+    marginTop: 4,
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: colors.mutedFg,
+  },
+  // Table
+  table: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    borderRadius: 8,
+  },
   tableRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -770,54 +623,30 @@ const styles = StyleSheet.create({
   cellDate: { width: 100 },
   cellItem: { flex: 3, minWidth: 160 },
   cellMoney: { flex: 1, minWidth: 90, textAlign: "right" },
-  cellStatus: { width: 90, alignItems: "flex-end" },
+  cellStatus: { width: 96, alignItems: "flex-end" },
   cellText: {
     fontFamily: fonts.bodySemi,
     fontSize: 13,
     color: colors.primary,
   },
-  // Modal
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    justifyContent: "flex-end",
-  },
-  modalSheet: {
-    backgroundColor: colors.background,
-    padding: spacing.lg,
-    paddingBottom: spacing.xxl,
-    maxHeight: "90%",
-  },
-  modalHandle: {
-    width: 48,
-    height: 4,
-    backgroundColor: colors.border,
-    alignSelf: "center",
-    marginBottom: spacing.md,
-  },
-  modalActions: {
-    flexDirection: "row",
-    gap: spacing.md,
+  // Help box
+  helpBox: {
+    marginHorizontal: spacing.lg,
     marginTop: spacing.lg,
+    padding: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 10,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  modalBtn: {
+  helpText: {
     flex: 1,
-    height: 48,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  modalBtnPrimary: { backgroundColor: colors.primary },
-  modalBtnGhost: { borderWidth: 1, borderColor: colors.border },
-  modalPrimaryLabel: {
-    fontFamily: fonts.bodySemi,
+    fontFamily: fonts.body,
     fontSize: 12,
-    letterSpacing: 1.5,
-    color: colors.primaryFg,
-  },
-  modalGhostLabel: {
-    fontFamily: fonts.bodySemi,
-    fontSize: 12,
-    letterSpacing: 1.5,
-    color: colors.primary,
+    color: colors.mutedFg,
+    lineHeight: 17,
   },
 });

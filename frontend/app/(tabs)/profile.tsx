@@ -514,7 +514,7 @@ export default function Profile() {
                 <Text style={tp.caption}>Atelier control center</Text>
                 <Text style={[tp.h3, { marginTop: 4 }]}>Seller dashboard</Text>
                 <Text style={[tp.bodyMuted, { marginTop: 4 }]}>
-                  Revenue · orders · payouts · Stripe Connect
+                  Revenue · orders · Paystack payouts · escrow
                 </Text>
               </View>
               <Feather name="layout" size={28} color={colors.primary} />

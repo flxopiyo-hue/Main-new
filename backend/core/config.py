@@ -41,7 +41,7 @@ FRONTEND_PUBLIC_URL: str = os.environ.get(
 # ---- Domain constants ----------------------------------------------------
 NANO_BANANA_MODEL: str = "gemini-3.1-flash-image-preview"
 VISION_MODEL: str = "gemini-2.5-flash"
-PLATFORM_FEE_BPS: int = 1000  # 10% take rate (per seller portal spec)
+PLATFORM_FEE_BPS: int = 1500  # 15% take rate (Paystack escrow model — released after buyer confirmation or 48h auto-release)
 MAX_TRYON_ANGLES: int = 4
 DEFAULT_CURRENCY: str = "KES"  # Kenyan Shilling — product originates in Kenya
 

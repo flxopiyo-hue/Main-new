@@ -352,6 +352,8 @@ async def seller_payouts(
     gross_total = 0
     fee_total = 0
     net_total = 0
+    held_total = 0
+    released_total = 0
     for d in docs:
         amount = int(d.get("amount_cents", 0))
         fee = int(d.get("platform_fee_cents") or (amount * PLATFORM_FEE_BPS) // 10000)
@@ -359,6 +361,11 @@ async def seller_payouts(
         gross_total += amount
         fee_total += fee
         net_total += net
+        escrow_status = d.get("escrow_status") or "held"
+        if escrow_status in ("released", "settled"):
+            released_total += net
+        else:
+            held_total += net
         rows.append(
             {
                 "id": d["id"],
@@ -371,10 +378,17 @@ async def seller_payouts(
                 "platform_fee_cents": fee,
                 "seller_net_cents": net,
                 "status": d.get("status", "paid"),
+                "escrow_status": escrow_status,
+                "escrow_release_at": d.get("escrow_release_at"),
+                "delivered_at": d.get("delivered_at"),
+                "dispute_raised_at": d.get("dispute_raised_at"),
                 # Mirror the order created_at so the UI can render an ISO date.
                 "created_at": d["created_at"],
             }
         )
+    # Load current payout account snapshot so the UI can render a one-shot
+    # dashboard without a second round-trip.
+    fresh = await db.users.find_one({"id": user["id"]}, {"_id": 0}) or {}
     return {
         "platform_fee_bps": PLATFORM_FEE_BPS,
         "connect_status": user.get("connect_status", "unstarted"),
@@ -384,7 +398,11 @@ async def seller_payouts(
             "gross_cents": gross_total,
             "platform_fee_cents": fee_total,
             "net_cents": net_total,
+            "held_cents": held_total,
+            "released_cents": released_total,
         },
+        "payout_account": fresh.get("payout_account"),
+        "has_recipient": bool(fresh.get("paystack_recipient_code")),
     }
 
 

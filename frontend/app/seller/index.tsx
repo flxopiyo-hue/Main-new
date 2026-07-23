@@ -154,7 +154,7 @@ export default function SellerDashboard() {
               <Text style={[tp.bodySemi, { fontSize: 14 }]}>Activate payouts</Text>
               <Text style={[tp.bodyMuted, { fontSize: 12, marginTop: 2 }]}>
                 {connect?.note ??
-                  "Stripe Connect Express is required before we can disburse funds to your bank."}
+                  "Add a Kenyan bank or M-Pesa payout account so Oromona can release escrow funds to you after delivery."}
               </Text>
             </View>
             <TouchableOpacity
@@ -177,7 +177,7 @@ export default function SellerDashboard() {
             <View style={{ flex: 1 }}>
               <Text style={[tp.bodySemi, { fontSize: 14 }]}>Payouts active</Text>
               <Text style={[tp.bodyMuted, { fontSize: 12, marginTop: 2 }]}>
-                Connected to Stripe — net revenue routes automatically to your account.
+                Connected — Paystack routes escrow-released funds to your saved payout account.
               </Text>
             </View>
           </View>

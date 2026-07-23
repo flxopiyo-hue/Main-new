@@ -147,6 +147,7 @@ export default function SellerOrders() {
     order: Order,
     tracking_number: string,
     tracking_url: string,
+    estimated_delivery_days: number | null,
   ) => {
     setBusyId(order.id);
     try {
@@ -154,6 +155,7 @@ export default function SellerOrders() {
         action: "ship",
         tracking_number,
         tracking_url: tracking_url || undefined,
+        estimated_delivery_days: estimated_delivery_days || undefined,
       });
       toast.show(`Marked "${order.item_name}" as shipped`, "success");
       setShipModal({ open: false, order: null });
@@ -287,8 +289,8 @@ export default function SellerOrders() {
         state={shipModal}
         busy={!!busyId}
         onCancel={() => setShipModal({ open: false, order: null })}
-        onSubmit={(num, url) => {
-          if (shipModal.order) submitShip(shipModal.order, num, url);
+        onSubmit={(num, url, eta) => {
+          if (shipModal.order) submitShip(shipModal.order, num, url, eta);
         }}
       />
     </SafeAreaView>
@@ -470,15 +472,21 @@ function ShipModal({
   state: ShipModalState;
   busy: boolean;
   onCancel: () => void;
-  onSubmit: (tracking_number: string, tracking_url: string) => void;
+  onSubmit: (
+    tracking_number: string,
+    tracking_url: string,
+    estimated_delivery_days: number | null,
+  ) => void;
 }) {
   const [num, setNum] = useState("");
   const [url, setUrl] = useState("");
+  const [eta, setEta] = useState<number | null>(2);
 
   React.useEffect(() => {
     if (state.open) {
       setNum("");
       setUrl("");
+      setEta(2);
     }
   }, [state.open]);
 
@@ -517,6 +525,34 @@ function ShipModal({
             autoCapitalize="none"
             keyboardType="url"
           />
+          <Text style={[tp.caption, { marginTop: 12, marginBottom: 8 }]}>
+            EXPECTED DELIVERY (BUSINESS DAYS)
+          </Text>
+          <Text style={styles.etaHint}>
+            Buyer sees this as a target date. Cap is 5 days for same-county deliveries.
+          </Text>
+          <View style={styles.etaRow}>
+            {[1, 2, 3, 4, 5].map((d) => (
+              <TouchableOpacity
+                key={d}
+                testID={`seller-ship-eta-${d}`}
+                onPress={() => setEta(eta === d ? null : d)}
+                style={[
+                  styles.etaChip,
+                  eta === d ? styles.etaChipActive : styles.etaChipInactive,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.etaLabel,
+                    eta === d ? styles.etaLabelActive : styles.etaLabelInactive,
+                  ]}
+                >
+                  {d}d
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
           <View style={styles.modalActions}>
             <TouchableOpacity
               testID="seller-orders-ship-cancel"
@@ -529,7 +565,7 @@ function ShipModal({
               <AppButton
                 testID="seller-orders-ship-submit"
                 label="Confirm ship"
-                onPress={() => onSubmit(num.trim(), url.trim())}
+                onPress={() => onSubmit(num.trim(), url.trim(), eta)}
                 loading={busy}
                 disabled={!num.trim() || busy}
               />
@@ -737,6 +773,39 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   modalBtnGhost: { borderWidth: 1, borderColor: colors.border },
+  etaHint: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: colors.mutedFg,
+    marginBottom: 8,
+  },
+  etaRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  etaChip: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  etaChipInactive: {
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  etaChipActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  etaLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 14,
+    letterSpacing: 0.5,
+  },
+  etaLabelInactive: { color: colors.primary },
+  etaLabelActive: { color: colors.primaryFg },
   modalGhostLabel: {
     fontFamily: fonts.bodySemi,
     fontSize: 12,

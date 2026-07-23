@@ -147,9 +147,27 @@ export default function SellerSettings() {
             <Feather name="credit-card" size={18} color={colors.primary} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.linkTitle}>Payouts</Text>
+            <Text style={styles.linkTitle}>Payouts & Escrow</Text>
             <Text style={[tp.bodyMuted, { fontSize: 12 }]}>
-              Stripe Connect status · 10% platform fee · payout history
+              15% platform fee · Paystack payout · escrow release history
+            </Text>
+          </View>
+          <Feather name="chevron-right" size={18} color={colors.mutedFg} />
+        </Pressable>
+
+        {/* Payout account shortcut */}
+        <Pressable
+          testID="seller-settings-payout-account"
+          onPress={() => router.push("/(seller)/payout-account")}
+          style={({ pressed }) => [styles.linkCard, pressed && { opacity: 0.7 }]}
+        >
+          <View style={styles.linkIcon}>
+            <Feather name="dollar-sign" size={18} color={colors.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.linkTitle}>Payout account</Text>
+            <Text style={[tp.bodyMuted, { fontSize: 12 }]}>
+              Bank or M-Pesa · funds release after delivery confirmation
             </Text>
           </View>
           <Feather name="chevron-right" size={18} color={colors.mutedFg} />

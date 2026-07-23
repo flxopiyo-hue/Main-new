@@ -110,9 +110,10 @@ export default function Analytics() {
           <View style={styles.connectCard} testID="analytics-connect-card">
             <View style={{ flex: 1 }}>
               <Text style={tp.caption}>Payouts</Text>
-              <Text style={[tp.h3, { marginTop: 4 }]}>Turn on Stripe Connect</Text>
+              <Text style={[tp.h3, { marginTop: 4 }]}>Set up your payout account</Text>
               <Text style={[tp.bodyMuted, { marginTop: 4 }]}>
-                Receive paid orders directly. Oromona takes a {data.platform_fee_bps / 100}% platform fee.
+                Add a Kenyan bank or M-Pesa number. Funds held in escrow release
+                after delivery. Oromona keeps a {data.platform_fee_bps / 100}% platform fee.
               </Text>
               {connect?.note ? (
                 <Text style={styles.note} testID="analytics-connect-note">

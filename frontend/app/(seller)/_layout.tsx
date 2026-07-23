@@ -82,6 +82,10 @@ export default function SellerTabsLayout() {
         name="payouts"
         options={{ title: "Payouts", href: null }}
       />
+      <Tabs.Screen
+        name="payout-account"
+        options={{ title: "Payout account", href: null }}
+      />
     </Tabs>
   );
 }

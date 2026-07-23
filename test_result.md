@@ -1,62 +1,94 @@
-# Oromona — Phase 3: Item Variants
+# Oromona — Phase 5: Seller Payout UI + 15% Escrow Model
 
 ## Original Problem Statement
-Buyers see duplicate item tiles when a seller has the same T-shirt in multiple sizes/colors. Sellers can't override price per (size × color) or disable specific combos. Add a `variants` layer that resolves both.
+Phase 5 completes the seller payout onboarding UI and aligns the platform-fee wording with the new **15%** Paystack escrow model. Legacy "Stripe Connect · 10%" references are removed from all seller-facing screens.
 
 ## What Changed (Backend)
-1. New Pydantic model `ItemVariant` in `/app/backend/models.py`:
-   - `{id, size_label, color_name, color_hex, quantity, price_cents_override, disabled}`
-2. Added `variants: List[ItemVariant]` to `ItemIn`, `ItemOut`, `ItemPatch`, and `item_to_out`.
-3. New module `/app/backend/core/variants.py`:
-   - `generate_variants(sizes, colors, existing=None)` — auto-generate variants from a size × color cartesian; preserves quantities/pricing/disabled from `existing` array when combo keys match.
-   - `variant_lookup(item, variant_id)` — by id.
-   - `find_variant_by_size_color(item, size_label, color_name)` — legacy checkout fallback.
-   - `ensure_item_variants(item)` — lazy backfill (idempotent).
-   - `backfill_all_variants()` — startup migration to backfill every item once.
-   - `group_duplicate_items()` — merges items with same `(seller_id, lowercase(name), brand_name)` — oldest wins, children get `merged_into`.
-   - `total_available_qty(variants)`.
-4. `models.total_qty()` prefers variants when present.
-5. Startup: `bootstrap_item_variants` on-event in `/app/backend/server.py`.
-6. `/api/items` `list_items` excludes items with `merged_into` set.
-7. `/api/items` `create_item` auto-generates variants when caller doesn't send them.
-8. `PATCH /api/items/{id}` regenerates variants when sizes or colors change (preserving prior qty/pricing for combos that still exist).
-9. `CheckoutIn` now accepts `variant_id` (optional).
-10. `POST /api/payments/checkout` resolves the variant (by id, then by size+color), 409 on disabled/out-of-stock, uses variant's `price_cents_override` if set, stores `variant_id` on the order.
-11. New helper `_decrement_variant_stock(order)` decrements variant qty (or legacy size qty) after successful charge — called by both `/api/payments/webhook` and `/api/subs/webhook` for item-purchase events.
+- `/app/backend/core/config.py` — `PLATFORM_FEE_BPS: int = 1500` (was 1000). This drives escrow fee math in `core/escrow.py`, `payments.py`, `orders.py`, `seller.py`, `admin.py`.
+- `/app/backend/routers/seller.py` — `GET /api/seller/payouts` now returns:
+  - `totals.held_cents` and `totals.released_cents` (breakdown by escrow status).
+  - `payout_account` snapshot (bank_name, account_number_last4, account_holder, country, ...).
+  - `has_recipient` boolean.
+  - Per-row: `escrow_status`, `escrow_release_at`, `delivered_at`, `dispute_raised_at`.
 
 ## What Changed (Frontend)
-- `ItemVariant` type + `variants?` on `Item` in `/app/frontend/src/lib/api.ts`.
-- `api.checkout()` accepts optional `variant_id`.
-- `/app/frontend/app/item/[id].tsx`: `selectedVariant` useMemo, `availableQtyForSelection`, `chargedPriceCents`; size chip stock aggregates across variants; buy CTA + stock badge respect variant qty and price override; checkout passes `variant_id`.
+- `/app/frontend/app/(seller)/payouts.tsx` — full rewrite. Replaces old Stripe Connect setup card with:
+  - "Payout account" pressable card that navigates to `/(seller)/payout-account`.
+  - Escrow summary grid (Held / Released / Gross / Fees).
+  - Historical payouts with an **escrow pill** per row (`held`, `released`, `disputed`, `cancelled`).
+  - Auto-release timestamps for held rows.
+  - Help block explaining the escrow lifecycle.
+- `/app/frontend/app/(seller)/settings.tsx` — link description updated (no more Stripe Connect / 10% wording), added new "Payout account" quick link.
+- `/app/frontend/app/(seller)/analytics.tsx` — banner rewritten. Now says "Set up your payout account" and navigates to `/(seller)/payout-account`. Also checks `has_recipient` from the new payout endpoint.
+- `/app/frontend/app/seller/index.tsx` + `/app/frontend/app/seller/analytics.tsx` (legacy routes) — copy updated to remove Stripe wording.
+- `/app/frontend/app/(tabs)/profile.tsx` — buyer profile Atelier card no longer mentions Stripe Connect.
+- `/app/frontend/src/lib/api.ts` — `PayoutRow` gained `escrow_status`, `escrow_release_at`, `delivered_at`, `dispute_raised_at`. `PayoutHistory` gained `payout_account`, `has_recipient`, `totals.held_cents`, `totals.released_cents`. New `PayoutAccountSnapshot` type.
+- `/app/frontend/app/(seller)/payout-account.tsx` — already created in previous session; verified compiles clean and is registered as a non-tab route in `/(seller)/_layout.tsx`.
 
 ## Test Credentials
 - Admin: `admin@oromona.com` / `oromona-admin-2026`
 - Buyer: `buyer@aurafit.com` / `demo-buyer-2026`
 - Seller: `atelier@aurafit.com` / `demo-seller-2026`
 
-## What to Test (Backend Only)
-1. **Startup migration ran** — GET `/api/items` returns items with populated `variants` arrays (backend logs during startup for `variants bootstrap` line). Existing 4 seed items should each have `sizes × colors` variants.
-2. **Variant fields present** — every item has `variants[]` with proper shape (id, size_label, color_name, color_hex, quantity, price_cents_override=None, disabled=False).
-3. **Create item** — POST `/api/items` without variants → response includes auto-generated variants matching sizes × colors.
-4. **Create item WITH variants** — POST `/api/items` with an explicit variants array → those variants are stored verbatim (no overwrite by auto-gen).
-5. **Patch sizes** — PATCH sizes on an item with existing variants → variants are regenerated but any prior qty/pricing preserved for combos that still exist; new combos get default qty.
-6. **Patch colors** — same behavior when colors change.
-7. **Checkout by variant_id** — POST `/api/payments/checkout` with `variant_id` → order.variant_id populated, response includes valid Paystack authorization URL.
-8. **Checkout fallback (legacy)** — POST `/api/payments/checkout` WITHOUT variant_id but with size+color → backend resolves the variant, stores variant_id on the order.
-9. **Checkout disabled variant** — should 409.
-10. **Checkout out-of-stock variant** — should 409.
-11. **Item list excludes merged** — items marked `merged_into=<parent-id>` are filtered out of `GET /api/items` unless explicitly requested via `include_paused=true` context (or another mechanism).
-12. **Variant total** — `total_qty(item)` for an item with variants sums enabled variant.quantity, ignoring disabled ones.
-13. **Subscription flow still works** — POST `/api/subs/checkout`, `/api/subs/verify`, `/api/subs/webhook`, `/api/subs/health` all unchanged.
-14. **`_decrement_variant_stock`** — after a paid item order, the variant's quantity is reduced by 1 (positional array update).
+## Backend Verification Already Done
+```
+POST /api/auth/login (atelier@aurafit.com) → token
+GET  /api/seller/payouts
+→ fee_bps: 1500
+→ totals: {count: 1, gross_cents: 1690000, platform_fee_cents: 253500,
+           net_cents: 1436500, held_cents: 1436500, released_cents: 0}
+→ payout_account: None  (seller hasn't set up yet)
+→ has_recipient: False
+→ sample row keys include: escrow_status, escrow_release_at, delivered_at, dispute_raised_at
+→ sample row escrow_status: "held"
+```
 
-## NOT Mocked
-- Paystack test keys in preview `.env` are real test keys, sandbox API calls happen.
+## What to Test (Both — Backend + Frontend)
 
-## Non-Goals
-- Frontend UI testing (variants layer surfaces through existing item detail — no new screens).
-- Real payment charging.
+### Backend (higher priority)
+1. `GET /api/seller/payouts` returns `platform_fee_bps: 1500` (15%) — regression check.
+2. `GET /api/seller/payouts` totals include `held_cents` and `released_cents`.
+3. `GET /api/seller/payouts` includes `payout_account` and `has_recipient`.
+4. Each row includes `escrow_status`, `escrow_release_at`, `delivered_at`, `dispute_raised_at`.
+5. `GET /api/seller/banks?country=kenya` returns a non-empty list of Paystack-supported banks/mobile-money entries.
+6. `GET /api/seller/payout-account` returns the current shape (payout_account, recipient_code, subaccount_code, has_recipient).
+7. `POST /api/seller/payout-account` — safe to test with test bank code + valid test account number. **Do NOT hit live Paystack with real bank details.** The API returns a graceful `ok: false` with `recipient_error` if Paystack rejects.
+8. Escrow lifecycle end-to-end (already exercised in phase 4, but re-verify):
+   - Paid order → escrow_status: "held", escrow_release_at set to ~48h out after delivery.
+   - Buyer confirms delivery → escrow_status: "released".
+   - Buyer reports problem → escrow_status: "disputed", no auto-release.
+9. Fee math regression: paid orders correctly compute `platform_fee_cents = amount_cents * 1500 // 10000` and `seller_net_cents = amount_cents - platform_fee_cents`.
+
+### Frontend
+1. Log in as seller `atelier@aurafit.com` / `demo-seller-2026` → land in seller portal.
+2. Settings tab → see two payout links:
+   - "Payouts & Escrow" (15% platform fee · Paystack payout · escrow release history).
+   - "Payout account" (Bank or M-Pesa · funds release after delivery confirmation).
+3. Payouts screen:
+   - Header shows "Payouts & Escrow" with escrow blurb.
+   - Payout-account card shows CTA to add a payout account.
+   - "Escrow summary" grid renders four cards: Held / Released / Lifetime gross / Platform fees.
+   - History section shows at least one paid order with a "HELD" pill.
+4. Payout account screen (from Settings → Payout account OR from Payouts card):
+   - Country picker defaults to Kenya, other countries visible but disabled ("coming soon").
+   - Bank/M-Pesa picker loads Paystack banks (non-empty).
+   - Account number field accepts input.
+   - Help box mentions "15% platform fee" and escrow release.
+   - Save button is disabled until bank is chosen + account number ≥ 6 digits.
+5. Analytics screen: "Set up your payout account" card CTA navigates to /(seller)/payout-account.
+6. Legacy screens: `/seller/index` and `/seller/analytics` — no "Stripe Connect" text visible.
+7. **No** "Stripe Connect" or "10% platform fee" strings anywhere in seller-facing screens.
+
+## Not Mocked
+- Paystack integration is live (`/app/backend/.env` has real Paystack keys). Backend calls Paystack `/bank`, `/subaccount`, `/transferrecipient` endpoints when the seller submits their payout account.
+- Escrow release engine runs a background sweeper (see `/app/backend/core/escrow.py`).
+
+## Non-Goals for Phase 5
+- Not testing an actual live Paystack transfer end-to-end (requires real seller bank details).
+- Not testing 48h auto-release path (time-based; not realistic to wait).
+- Not touching Apple Pay (deferred).
 
 ## Notes
-- Preview backend Paystack mode: TEST. Deployed backend (emergent.host): LIVE.
-- The migration on the DEPLOYED backend runs only on next Publish → Deploy.
+- Frontend `.env` intentionally points at the deployed/live backend (`https://oromona.emergent.host`) — do NOT reset to preview during testing.
+- Preview backend uses Paystack TEST keys; deployed backend uses LIVE keys.
+- The 15% fee change on backend applies immediately to all newly-paid orders and to historical orders' recomputed rows (since backend recomputes fee if not stored).
