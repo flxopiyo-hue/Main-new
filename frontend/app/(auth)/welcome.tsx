@@ -30,7 +30,16 @@ export default function Welcome() {
         locations={[0, 0.22, 0.5, 0.75, 1]}
         style={StyleSheet.absoluteFill}
       />
-      {/* Layer 2 — dark maroon vignette top so the logo pops. */}
+      {/* Layer 2 — very subtle plaster/paper grain to add materiality
+          without adding an actual photograph. Low-opacity overlay so the
+          underlying gradient still carries the colour. */}
+      <Image
+        source={require("@/assets/brand/plaster-texture.png")}
+        style={styles.grain}
+        resizeMode="cover"
+        pointerEvents="none"
+      />
+      {/* Layer 3 — dark maroon vignette top so the logo pops. */}
       <LinearGradient
         colors={[MAROON_DEEP, "rgba(31,10,8,0.75)", "rgba(31,10,8,0)"]}
         locations={[0, 0.35, 1]}
@@ -87,6 +96,13 @@ export default function Welcome() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: MAROON_DEEP },
+  grain: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.22,
+    // On web this blends more naturally. On native it just overlays at low
+    // opacity which still produces a pleasant plaster-like variation.
+    ...(typeof window !== "undefined" ? { mixBlendMode: "overlay" as any } : {}),
+  },
   topFade: {
     position: "absolute",
     top: 0,
