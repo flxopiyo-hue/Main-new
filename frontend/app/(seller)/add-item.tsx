@@ -42,6 +42,7 @@ import {
   DIMENSION_LABELS,
   DimensionKey,
   Item,
+  ItemVariant,
   PRIMARY_DIMENSION_BY_TYPE,
   SizeOption,
   SUBCATEGORIES_BY_CATEGORY,
@@ -194,6 +195,15 @@ export default function AddItem() {
   // Step 3
   const [sizes, setSizes] = useState<Record<string, SizeOption>>({});
   const [pickedColors, setPickedColors] = useState<ColorOption[]>([]);
+  // Opt-in variant grid — when the seller has 2+ colors they can toggle
+  // this on to specify per (size × color) quantity + optional price
+  // override + disabled state. When OFF the backend auto-splits size
+  // quantity evenly across colors.
+  const [managePerVariant, setManagePerVariant] = useState<boolean>(false);
+  // Keyed by `${sizeLabel}::${colorName}` — matches how we render the grid.
+  const [variantCells, setVariantCells] = useState<
+    Record<string, { quantity: number; disabled: boolean; price_cents_override?: number | null }>
+  >({});
   const [saving, setSaving] = useState(false);
 
   // -----------------------------------------------------------------------
@@ -227,6 +237,31 @@ export default function AddItem() {
         for (const s of item.sizes) sizesMap[s.label] = s;
         setSizes(sizesMap);
         setPickedColors(item.colors || []);
+        // Hydrate variant grid from existing item variants when the seller
+        // is editing something they'd previously customised. If any single
+        // variant has non-default state (custom qty, override, disabled),
+        // auto-open the per-variant editor.
+        if (item.variants && item.variants.length > 0) {
+          const cells: Record<
+            string,
+            { quantity: number; disabled: boolean; price_cents_override?: number | null }
+          > = {};
+          for (const v of item.variants) {
+            const key = `${v.size_label}::${v.color_name ?? ""}`;
+            cells[key] = {
+              quantity: v.quantity,
+              disabled: !!v.disabled,
+              price_cents_override: v.price_cents_override ?? null,
+            };
+          }
+          setVariantCells(cells);
+          const looksCustomised = item.variants.some(
+            (v) => v.disabled || (v.price_cents_override ?? null) !== null,
+          );
+          if (looksCustomised && (item.colors?.length ?? 0) >= 2) {
+            setManagePerVariant(true);
+          }
+        }
       } catch (e: any) {
         toast.show(e?.message ?? "Couldn't load item for editing", "error");
         router.replace("/(seller)");
@@ -379,6 +414,34 @@ export default function AddItem() {
 
   const back = () => setStep((s) => (s === 1 ? 1 : ((s - 1) as 1 | 2)));
 
+  // When the seller opts into per-variant stock — or picks new sizes /
+  // colors while it's on — seed the grid with an even split of the
+  // per-size quantity across the picked colors. Existing user-entered
+  // cells are preserved.
+  React.useEffect(() => {
+    if (!managePerVariant) return;
+    if (pickedColors.length < 2) return;
+    const sizeList = Object.values(sizes);
+    if (sizeList.length === 0) return;
+    setVariantCells((prev) => {
+      const next = { ...prev };
+      for (const sz of sizeList) {
+        const perColor = Math.floor((sz.available_qty || 0) / pickedColors.length);
+        for (const col of pickedColors) {
+          const key = `${sz.label}::${col.name}`;
+          if (next[key] == null) {
+            next[key] = {
+              quantity: perColor,
+              disabled: false,
+              price_cents_override: null,
+            };
+          }
+        }
+      }
+      return next;
+    });
+  }, [managePerVariant, pickedColors, sizes]);
+
   const submit = async () => {
     if (!step1Valid || !step2Valid || !step3Valid) {
       toast.show("Resolve form errors before publishing", "error");
@@ -390,6 +453,36 @@ export default function AddItem() {
     setSaving(true);
     try {
       const [primary, ...extras] = photos;
+
+      // Build the explicit variants payload when the seller opted into
+      // per-variant management. Backend accepts a partial variants list;
+      // any (size × color) combo missing here is auto-generated at the
+      // default per-size quantity.
+      const buildVariants = (): ItemVariant[] | undefined => {
+        if (!managePerVariant) return undefined;
+        if (pickedColors.length < 2) return undefined;
+        const list: ItemVariant[] = [];
+        for (const sz of Object.values(sizes)) {
+          for (const col of pickedColors) {
+            const key = `${sz.label}::${col.name}`;
+            const cell = variantCells[key];
+            if (!cell) continue; // fallback to auto-split
+            list.push({
+              id: "",
+              size_label: sz.label,
+              color_name: col.name,
+              color_hex: col.hex,
+              quantity: Math.max(0, Math.floor(cell.quantity || 0)),
+              price_cents_override: cell.price_cents_override ?? null,
+              disabled: !!cell.disabled,
+            });
+          }
+        }
+        return list;
+      };
+
+      const variantsPayload = buildVariants();
+
       if (isEditing && editId) {
         await api.patchItem(editId, {
           name: name.trim(),
@@ -403,6 +496,7 @@ export default function AddItem() {
           extra_images: extras,
           sizes: Object.values(sizes),
           colors: pickedColors,
+          variants: variantsPayload,
           audience,
         });
         toast.show("Changes saved", "success");
@@ -419,6 +513,7 @@ export default function AddItem() {
           extra_images: extras,
           sizes: Object.values(sizes),
           colors: pickedColors,
+          variants: variantsPayload,
           audience,
         });
         toast.show("Item published", "success");
@@ -538,6 +633,16 @@ export default function AddItem() {
             onToggleSize={toggleSize}
             onUpdateSize={updateSize}
             onToggleColor={toggleColor}
+            managePerVariant={managePerVariant}
+            onToggleManagePerVariant={setManagePerVariant}
+            variantCells={variantCells}
+            onUpdateVariantCell={(key, patch) =>
+              setVariantCells((prev) => {
+                const existing = prev[key] ?? { quantity: 0, disabled: false };
+                return { ...prev, [key]: { ...existing, ...patch } };
+              })
+            }
+            currency={currency}
           />
         )}
       </KeyboardAwareScrollView>
@@ -979,6 +1084,19 @@ interface StepSizingProps {
   onToggleSize: (label: string) => void;
   onUpdateSize: (label: string, patch: Partial<SizeOption>) => void;
   onToggleColor: (c: ColorOption) => void;
+  // Opt-in variant grid state — provided by the parent so it survives step
+  // navigation and gets included in the final payload.
+  managePerVariant: boolean;
+  onToggleManagePerVariant: (on: boolean) => void;
+  variantCells: Record<
+    string,
+    { quantity: number; disabled: boolean; price_cents_override?: number | null }
+  >;
+  onUpdateVariantCell: (
+    key: string,
+    patch: Partial<{ quantity: number; disabled: boolean; price_cents_override: number | null }>,
+  ) => void;
+  currency: string;
 }
 
 function StepSizing({
@@ -994,6 +1112,11 @@ function StepSizing({
   onToggleSize,
   onUpdateSize,
   onToggleColor,
+  managePerVariant,
+  onToggleManagePerVariant,
+  variantCells,
+  onUpdateVariantCell,
+  currency,
 }: StepSizingProps) {
   // Shoes have a fundamentally different size system (EU numbers + cm)
   // than tops/bottoms (S/M/L). We swap the label list based on category.
@@ -1338,6 +1461,149 @@ function ColorEditor({ picked, presets, palette, onAdd, onRemove }: ColorEditorP
           </View>
         </View>
       )}
+
+      {/* --------------------------------------------------------------- */}
+      {/* Opt-in per-variant grid (size × color)                          */}
+      {/* --------------------------------------------------------------- */}
+      {pickedColors.length >= 2 && Object.keys(sizes).length >= 1 ? (
+        <View style={styles.variantSection} testID="wizard-variant-section">
+          <TouchableOpacity
+            testID="wizard-variant-toggle"
+            onPress={() => onToggleManagePerVariant(!managePerVariant)}
+            style={styles.variantToggle}
+            activeOpacity={0.85}
+          >
+            <View style={styles.variantToggleLeft}>
+              <Text style={styles.variantToggleLabel}>Manage stock per color</Text>
+              <Text style={styles.variantToggleHint}>
+                {managePerVariant
+                  ? "Set exact quantity for each size × color combo below."
+                  : "Off: your size quantities split evenly across colors."}
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.variantSwitch,
+                managePerVariant ? styles.variantSwitchOn : styles.variantSwitchOff,
+              ]}
+            >
+              <View
+                style={[
+                  styles.variantSwitchThumb,
+                  managePerVariant && styles.variantSwitchThumbOn,
+                ]}
+              />
+            </View>
+          </TouchableOpacity>
+
+          {managePerVariant ? (
+            <View style={styles.variantGrid} testID="wizard-variant-grid">
+              {/* Header row: color names */}
+              <View style={styles.variantGridRow}>
+                <View style={[styles.variantGridCell, styles.variantGridHead]}>
+                  <Text style={styles.variantGridHeadText}>SIZE ↓ / COLOR →</Text>
+                </View>
+                {pickedColors.map((c) => (
+                  <View
+                    key={c.name}
+                    style={[styles.variantGridCell, styles.variantGridHead]}
+                  >
+                    <View style={styles.variantColorSwatchWrap}>
+                      <View
+                        style={[
+                          styles.variantColorSwatch,
+                          { backgroundColor: c.hex },
+                        ]}
+                      />
+                      <Text
+                        style={styles.variantGridHeadText}
+                        numberOfLines={1}
+                      >
+                        {c.name.toUpperCase()}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+              {/* Data rows: one per size */}
+              {Object.keys(sizes).map((sizeLabel) => (
+                <View
+                  key={sizeLabel}
+                  style={styles.variantGridRow}
+                  testID={`wizard-variant-row-${sizeLabel}`}
+                >
+                  <View style={[styles.variantGridCell, styles.variantGridRowHead]}>
+                    <Text style={styles.variantGridRowLabel}>{sizeLabel}</Text>
+                  </View>
+                  {pickedColors.map((c) => {
+                    const key = `${sizeLabel}::${c.name}`;
+                    const cell = variantCells[key] ?? {
+                      quantity: 0,
+                      disabled: false,
+                    };
+                    return (
+                      <View
+                        key={c.name}
+                        style={[
+                          styles.variantGridCell,
+                          cell.disabled && styles.variantGridCellDisabled,
+                        ]}
+                      >
+                        <TextInput
+                          testID={`wizard-variant-qty-${sizeLabel}-${c.name}`}
+                          value={cell.quantity ? String(cell.quantity) : ""}
+                          onChangeText={(t) => {
+                            const n = parseInt(t.replace(/\D/g, ""), 10);
+                            onUpdateVariantCell(key, {
+                              quantity: Number.isFinite(n) ? n : 0,
+                            });
+                          }}
+                          keyboardType="number-pad"
+                          placeholder="0"
+                          placeholderTextColor={colors.mutedFg}
+                          editable={!cell.disabled}
+                          style={styles.variantQtyInput}
+                        />
+                        <TouchableOpacity
+                          onPress={() =>
+                            onUpdateVariantCell(key, {
+                              disabled: !cell.disabled,
+                            })
+                          }
+                          testID={`wizard-variant-toggle-${sizeLabel}-${c.name}`}
+                          style={styles.variantDisableBtn}
+                        >
+                          <Feather
+                            name={cell.disabled ? "eye-off" : "eye"}
+                            size={11}
+                            color={
+                              cell.disabled ? colors.mutedFg : colors.primary
+                            }
+                          />
+                          <Text
+                            style={[
+                              styles.variantDisableLabel,
+                              cell.disabled && { color: colors.mutedFg },
+                            ]}
+                          >
+                            {cell.disabled ? "Off" : "On"}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  })}
+                </View>
+              ))}
+              <Text style={styles.variantGridHint}>
+                Tap the eye icon to disable a combo (e.g. no Small in Red).
+                Quantities count towards your total stock; the item goes
+                out-of-stock automatically when all combos hit zero.
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
       <View style={{ height: spacing.xxl }} />
     </View>
   );
@@ -1978,4 +2244,138 @@ const styles = StyleSheet.create({
   },
   unitChipLabelActive: { color: colors.primaryFg },
   unitChipLabelInactive: { color: colors.primary },
+  variantSection: {
+    marginTop: spacing.xl,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  variantToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+  },
+  variantToggleLeft: { flex: 1, marginRight: spacing.md },
+  variantToggleLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 14,
+    color: colors.primary,
+  },
+  variantToggleHint: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: colors.mutedFg,
+    marginTop: 3,
+    lineHeight: 15,
+  },
+  variantSwitch: {
+    width: 44,
+    height: 26,
+    borderRadius: 14,
+    paddingHorizontal: 2,
+    justifyContent: "center",
+  },
+  variantSwitchOff: { backgroundColor: colors.border },
+  variantSwitchOn: { backgroundColor: colors.primary },
+  variantSwitchThumb: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: colors.background,
+  },
+  variantSwitchThumbOn: { alignSelf: "flex-end" },
+  variantGrid: {
+    marginTop: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+  },
+  variantGridRow: {
+    flexDirection: "row",
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  variantGridCell: {
+    flex: 1,
+    minWidth: 76,
+    padding: 8,
+    borderRightWidth: 1,
+    borderRightColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  variantGridHead: {
+    backgroundColor: colors.surface,
+    minHeight: 48,
+  },
+  variantGridHeadText: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 9,
+    letterSpacing: 1.2,
+    color: colors.mutedFg,
+    textAlign: "center",
+  },
+  variantGridRowHead: {
+    backgroundColor: colors.surface,
+    minHeight: 62,
+  },
+  variantGridRowLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 13,
+    color: colors.primary,
+  },
+  variantGridCellDisabled: {
+    backgroundColor: "rgba(0,0,0,0.04)",
+  },
+  variantColorSwatchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  variantColorSwatch: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.15)",
+  },
+  variantQtyInput: {
+    width: "100%",
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+    fontFamily: fonts.bodySemi,
+    fontSize: 14,
+    color: colors.primary,
+    textAlign: "center",
+    borderRadius: 4,
+    marginBottom: 4,
+  },
+  variantDisableBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingVertical: 2,
+    paddingHorizontal: 4,
+  },
+  variantDisableLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 9,
+    letterSpacing: 1,
+    color: colors.primary,
+  },
+  variantGridHint: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: colors.mutedFg,
+    padding: spacing.sm,
+    lineHeight: 15,
+  },
+
 });

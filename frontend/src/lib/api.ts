@@ -773,6 +773,7 @@ export const api = {
     extra_images?: string[];
     sizes: SizeOption[];
     colors: ColorOption[];
+    variants?: ItemVariant[];
     audience: Audience;
   }) => request<Item>("/items", { method: "POST", body }),
   deleteItem: (id: string) => request<{ ok: boolean }>(`/items/${id}`, { method: "DELETE" }),
@@ -858,6 +859,7 @@ export const api = {
       extra_images?: string[];
       sizes?: SizeOption[];
       colors?: ColorOption[];
+      variants?: ItemVariant[];
       audience?: Audience;
       is_paused?: boolean;
     },
