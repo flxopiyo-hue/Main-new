@@ -12,26 +12,23 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useToast } from "@/src/components/Toast";
-import { api, ConnectStatus, SellerAnalytics } from "@/src/lib/api";
+import { api, SellerAnalytics } from "@/src/lib/api";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
 export default function Analytics() {
   const toast = useToast();
   const [data, setData] = useState<SellerAnalytics | null>(null);
-  const [connect, setConnect] = useState<ConnectStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [hasPayoutRecipient, setHasPayoutRecipient] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [a, c, pa] = await Promise.all([
+      const [a, pa] = await Promise.all([
         api.sellerAnalytics(),
-        api.connectStatus(),
         api.sellerGetPayoutAccount().catch(() => null),
       ]);
       setData(a);
-      setConnect(c);
       setHasPayoutRecipient(!!pa?.has_recipient);
     } catch (e: any) {
       toast.show(e?.message ?? "Failed to load analytics", "error");
@@ -52,12 +49,6 @@ export default function Analytics() {
   useEffect(() => {
     load();
   }, [load]);
-
-  useEffect(() => {
-    api.connectStatus()
-      .then(setConnect)
-      .catch(() => {});
-  }, []);
 
   if (loading || !data) {
     return (

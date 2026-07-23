@@ -1,94 +1,125 @@
-# Oromona — Phase 5: Seller Payout UI + 15% Escrow Model
+# Oromona — Full Regression: Stripe Purge + Feature Verification
 
-## Original Problem Statement
-Phase 5 completes the seller payout onboarding UI and aligns the platform-fee wording with the new **15%** Paystack escrow model. Legacy "Stripe Connect · 10%" references are removed from all seller-facing screens.
+## Original Problem Statement (this iteration)
+User asked us to:
+1. **Fully purge Stripe** from the codebase (was mostly dead code but confusing).
+2. Then run **comprehensive testing** covering:
+   - AI multi-angle try-on capture with free vs premium limits.
+   - Login for new buyers.
+   - Try-on fit matching against physical images at all angles.
+   - Try-on slider.
+   - Multi-item purchase + layering.
+   - Recommended sizes matching user dimensions.
+   - Seller registration + add-item flow.
 
-## What Changed (Backend)
-- `/app/backend/core/config.py` — `PLATFORM_FEE_BPS: int = 1500` (was 1000). This drives escrow fee math in `core/escrow.py`, `payments.py`, `orders.py`, `seller.py`, `admin.py`.
-- `/app/backend/routers/seller.py` — `GET /api/seller/payouts` now returns:
-  - `totals.held_cents` and `totals.released_cents` (breakdown by escrow status).
-  - `payout_account` snapshot (bank_name, account_number_last4, account_holder, country, ...).
-  - `has_recipient` boolean.
-  - Per-row: `escrow_status`, `escrow_release_at`, `delivered_at`, `dispute_raised_at`.
+After tests pass the user will republish & deploy.
 
-## What Changed (Frontend)
-- `/app/frontend/app/(seller)/payouts.tsx` — full rewrite. Replaces old Stripe Connect setup card with:
-  - "Payout account" pressable card that navigates to `/(seller)/payout-account`.
-  - Escrow summary grid (Held / Released / Gross / Fees).
-  - Historical payouts with an **escrow pill** per row (`held`, `released`, `disputed`, `cancelled`).
-  - Auto-release timestamps for held rows.
-  - Help block explaining the escrow lifecycle.
-- `/app/frontend/app/(seller)/settings.tsx` — link description updated (no more Stripe Connect / 10% wording), added new "Payout account" quick link.
-- `/app/frontend/app/(seller)/analytics.tsx` — banner rewritten. Now says "Set up your payout account" and navigates to `/(seller)/payout-account`. Also checks `has_recipient` from the new payout endpoint.
-- `/app/frontend/app/seller/index.tsx` + `/app/frontend/app/seller/analytics.tsx` (legacy routes) — copy updated to remove Stripe wording.
-- `/app/frontend/app/(tabs)/profile.tsx` — buyer profile Atelier card no longer mentions Stripe Connect.
-- `/app/frontend/src/lib/api.ts` — `PayoutRow` gained `escrow_status`, `escrow_release_at`, `delivered_at`, `dispute_raised_at`. `PayoutHistory` gained `payout_account`, `has_recipient`, `totals.held_cents`, `totals.released_cents`. New `PayoutAccountSnapshot` type.
-- `/app/frontend/app/(seller)/payout-account.tsx` — already created in previous session; verified compiles clean and is registered as a non-tab route in `/(seller)/_layout.tsx`.
+## What Changed in This Iteration
+
+### Stripe purge — backend
+- `/app/backend/core/config.py` — removed `STRIPE_API_KEY` and `CONNECT_MOCKED_NOTE`.
+- `/app/backend/.env` — removed `STRIPE_API_KEY` line.
+- `/app/backend/requirements.txt` — removed `stripe` SDK (pip uninstall + freeze).
+- `/app/backend/routers/seller.py` — removed `POST /seller/connect/setup` and `GET /seller/connect/status` endpoints. Removed `_is_real_stripe_key`, `_try_import_stripe`, `_OnboardLinkIn`. Removed `uuid` import.
+- `/app/backend/routers/admin.py` — removed `connect_status` field from `AdminUserPatch`. Removed `ConnectStatus` import. `pending_connect_sellers` metric now counts sellers without a `paystack_recipient_code`.
+- `/app/backend/models.py` — removed `stripe_account_id` from `UserOut` and `ConnectStatusOut`. Removed from `user_to_out()`. Updated Stripe comment to Paystack.
+- `/app/backend/routers/seller.py` — analytics + payouts endpoints now derive `connect_status` from `paystack_recipient_code` presence.
+- `/app/backend/tests/test_iteration7_refactor.py` and `test_iteration8_order_detail.py` — moved to `.deprecated` (they exercised the removed endpoints).
+
+### Stripe purge — frontend
+- `/app/frontend/app/seller/` (legacy duplicate route folder) — moved to `/tmp/legacy_seller_backup` (no code references it).
+- `/app/frontend/src/lib/api.ts` — removed `stripe_account_id` from `User` and `ConnectStatus`. Removed `connectStatus()` and `connectSetup()` API bindings. Removed `connect_status` from `adminPatchUser` body.
+- `/app/frontend/app/(seller)/analytics.tsx` — no longer calls `api.connectStatus()`. Uses `has_recipient` from `api.sellerGetPayoutAccount()` for the payout onboarding banner.
+- `/app/frontend/src/components/AddressPickerSheet.tsx` — comment cleaned (Stripe → Paystack).
+
+### Prior work still in place (from earlier phases in this job)
+- 15% platform fee (`PLATFORM_FEE_BPS = 1500`).
+- Paystack banks/subaccount/transfer helpers in `core/paystack.py`.
+- Escrow lifecycle + 48h sweeper in `core/escrow.py`.
+- Seller payout dashboard + payout-account screen (Kenya banks + M-Pesa).
+- Delivery tracking + carrier detection + buyer confirm/dispute UI.
+- Item variants (size × colour with per-combo quantity and price override).
+- Buyer currency picker + size setup banner + recommended-size confirmation.
+- Multi-angle body capture with free/premium gating.
 
 ## Test Credentials
 - Admin: `admin@oromona.com` / `oromona-admin-2026`
 - Buyer: `buyer@aurafit.com` / `demo-buyer-2026`
 - Seller: `atelier@aurafit.com` / `demo-seller-2026`
+- New buyers must sign up via the welcome flow; use `.com` emails (Paystack rejects `.demo`).
 
-## Backend Verification Already Done
+## Backend Confirmation Already Done (this session)
 ```
-POST /api/auth/login (atelier@aurafit.com) → token
-GET  /api/seller/payouts
-→ fee_bps: 1500
-→ totals: {count: 1, gross_cents: 1690000, platform_fee_cents: 253500,
-           net_cents: 1436500, held_cents: 1436500, released_cents: 0}
-→ payout_account: None  (seller hasn't set up yet)
-→ has_recipient: False
-→ sample row keys include: escrow_status, escrow_release_at, delivered_at, dispute_raised_at
-→ sample row escrow_status: "held"
+GET /api/seller/connect/status → 404 (endpoint removed)
+GET /api/seller/payouts        → 200; platform_fee_bps=1500
+GET /api/seller/analytics      → 200; connect_status derived from payout account presence
+GET /api/seller/banks?country=kenya → 99 banks
 ```
 
-## What to Test (Both — Backend + Frontend)
+## What to Test — Full App Regression + Feature Coverage
 
-### Backend (higher priority)
-1. `GET /api/seller/payouts` returns `platform_fee_bps: 1500` (15%) — regression check.
-2. `GET /api/seller/payouts` totals include `held_cents` and `released_cents`.
-3. `GET /api/seller/payouts` includes `payout_account` and `has_recipient`.
-4. Each row includes `escrow_status`, `escrow_release_at`, `delivered_at`, `dispute_raised_at`.
-5. `GET /api/seller/banks?country=kenya` returns a non-empty list of Paystack-supported banks/mobile-money entries.
-6. `GET /api/seller/payout-account` returns the current shape (payout_account, recipient_code, subaccount_code, has_recipient).
-7. `POST /api/seller/payout-account` — safe to test with test bank code + valid test account number. **Do NOT hit live Paystack with real bank details.** The API returns a graceful `ok: false` with `recipient_error` if Paystack rejects.
-8. Escrow lifecycle end-to-end (already exercised in phase 4, but re-verify):
-   - Paid order → escrow_status: "held", escrow_release_at set to ~48h out after delivery.
-   - Buyer confirms delivery → escrow_status: "released".
-   - Buyer reports problem → escrow_status: "disputed", no auto-release.
-9. Fee math regression: paid orders correctly compute `platform_fee_cents = amount_cents * 1500 // 10000` and `seller_net_cents = amount_cents - platform_fee_cents`.
+### 1. Login + new buyer signup
+- POST /api/auth/register (buyer role) with a fresh `.com` email → 200, token returned, user in DB with role=buyer.
+- POST /api/auth/login for the new buyer → 200; `role: 'buyer'`.
+- Frontend welcome → create-account → email/password → land in buyer discover feed.
 
-### Frontend
-1. Log in as seller `atelier@aurafit.com` / `demo-seller-2026` → land in seller portal.
-2. Settings tab → see two payout links:
-   - "Payouts & Escrow" (15% platform fee · Paystack payout · escrow release history).
-   - "Payout account" (Bank or M-Pesa · funds release after delivery confirmation).
-3. Payouts screen:
-   - Header shows "Payouts & Escrow" with escrow blurb.
-   - Payout-account card shows CTA to add a payout account.
-   - "Escrow summary" grid renders four cards: Held / Released / Lifetime gross / Platform fees.
-   - History section shows at least one paid order with a "HELD" pill.
-4. Payout account screen (from Settings → Payout account OR from Payouts card):
-   - Country picker defaults to Kenya, other countries visible but disabled ("coming soon").
-   - Bank/M-Pesa picker loads Paystack banks (non-empty).
-   - Account number field accepts input.
-   - Help box mentions "15% platform fee" and escrow release.
-   - Save button is disabled until bank is chosen + account number ≥ 6 digits.
-5. Analytics screen: "Set up your payout account" card CTA navigates to /(seller)/payout-account.
-6. Legacy screens: `/seller/index` and `/seller/analytics` — no "Stripe Connect" text visible.
-7. **No** "Stripe Connect" or "10% platform fee" strings anywhere in seller-facing screens.
+### 2. Multi-angle body capture (free vs premium gating)
+- Free users: can complete 7 tryons/week and up to 2 profiles (see `FREE_TRYONS_PER_WEEK = 7`, `FREE_MAX_PROFILES = 2` in `core/config.py`).
+- Premium: up to 10 profiles.
+- Endpoints:
+  - POST /api/tryon (or the current tryon route) — respects weekly gate.
+  - POST /api/profiles — respects the 2/10 profile cap.
+- Frontend flow: `/app/frontend/app/onboarding/measurements.tsx` (multi-angle capture) + gating banner via `PaywallModal`.
+- Verify: 8th tryon in a week → 402 or 429 (paywall) response.
+
+### 3. Physical image try-on quality
+- POST /api/tryon returns a Gemini-generated image where the garment is composed onto the user's body photos.
+- Confirm: response contains base64 image; endpoint accepts front/side/back angles.
+- This is Gemini Nano Banana via Emergent Universal Key — do NOT change model params. Just verify the API completes and returns a valid image.
+
+### 4. Try-on slider
+- The item detail screen `/app/frontend/app/item/[id].tsx` exposes a before/after slider between the user's body photo and the try-on result.
+- Verify: slider renders, drag/pan gesture works, ends stay within track bounds.
+
+### 5. Multi-item purchase / layering
+- The buyer can layer multiple tryon results — e.g. try shoe A, then try shirt B on the same body photo.
+- Verify: layering does not overwrite the base photo permanently in state; each new try-on is a separate composition.
+- API side: repeated /api/tryon calls with different `item_id`s all succeed within the free weekly quota.
+
+### 6. Sizes match user dimensions
+- Onboarding measurements screen `/app/frontend/app/onboarding/measurements.tsx` accepts chest/waist/hip/height/inseam.
+- Recommended-size confirmation card renders after entering measurements and matches sizes on stocked items.
+- Item detail screen shows the buyer's `preferred_size` (from user profile) as pre-selected size chip when available.
+
+### 7. Seller registration + add clothes flow
+- POST /api/auth/register with role=seller + company_name + location (see `/app/backend/routers/auth.py`).
+- Frontend: welcome → Create Account → Seller → form → land in seller portal.
+- Add-item flow: `/app/frontend/app/(seller)/add-item.tsx` — verify wizard steps:
+  - Upload photos.
+  - Name / description / brand.
+  - Category / subcategory.
+  - Sizes (multi-select).
+  - Colors (custom named + hex).
+  - Price + currency.
+  - Garment dimension fields.
+  - Variants auto-generation (size × color).
+  - Save → item appears in seller's inventory list.
+
+### 8. Regression: All previously green flows
+- Buyer purchase flow (Paystack item checkout) end-to-end using test card `4084 0840 8408 4081`, CVV `408`, OTP `123456`, PIN `1234`.
+- Subscription flow (Paystack subscription) using same test card.
+- Order tracking / delivery confirmation / dispute report / escrow release.
+- Seller payout account setup — with a fake account number, verify graceful error (no 500).
+- 15% platform fee applied on paid orders.
 
 ## Not Mocked
-- Paystack integration is live (`/app/backend/.env` has real Paystack keys). Backend calls Paystack `/bank`, `/subaccount`, `/transferrecipient` endpoints when the seller submits their payout account.
-- Escrow release engine runs a background sweeper (see `/app/backend/core/escrow.py`).
+- Paystack test keys in preview `/app/backend/.env`. Real Paystack sandbox calls happen.
+- Gemini image generation via Emergent LLM Key — real image bytes returned.
 
-## Non-Goals for Phase 5
-- Not testing an actual live Paystack transfer end-to-end (requires real seller bank details).
-- Not testing 48h auto-release path (time-based; not realistic to wait).
-- Not touching Apple Pay (deferred).
+## Do NOT
+- Do NOT create a real Paystack transfer recipient with a real bank account.
+- Do NOT change frontend `.env` (preview URL is correct for smoke testing).
+- Do NOT modify metro.config.js.
 
-## Notes
-- Frontend `.env` intentionally points at the deployed/live backend (`https://oromona.emergent.host`) — do NOT reset to preview during testing.
-- Preview backend uses Paystack TEST keys; deployed backend uses LIVE keys.
-- The 15% fee change on backend applies immediately to all newly-paid orders and to historical orders' recomputed rows (since backend recomputes fee if not stored).
+## Note on frontend environment
+Frontend `.env` currently points at preview (`https://fit-finder-app-5.preview.emergentagent.com`) with TEST Paystack keys. This is intentional for regression testing. Deployment (via Emergent Publish) will bake production URL into the deployed bundle separately.

@@ -23,11 +23,10 @@ JWT_SECRET: str = os.environ["JWT_SECRET"]
 JWT_ALGORITHM: str = os.environ.get("JWT_ALGORITHM", "HS256")
 JWT_EXPIRY_HOURS: int = int(os.environ.get("JWT_EXPIRY_HOURS", "168"))
 EMERGENT_LLM_KEY: str = os.environ.get("EMERGENT_LLM_KEY", "")
-STRIPE_API_KEY: str = os.environ.get("STRIPE_API_KEY", "")
 
-# Paystack — used for Premium tier subscriptions in KES. Stripe isn't
-# available in Kenya so we lean on Paystack's native M-Pesa + card rails.
-# Same secret key signs webhooks (Paystack's convention — no separate
+# Paystack — used for Premium subscriptions AND for buyer→seller item
+# purchases. Kenya-first payment rail with native M-Pesa + card support.
+# Same secret key signs webhooks (Paystack convention — no separate
 # webhook secret).
 PAYSTACK_PUBLIC_KEY: str = os.environ.get("PAYSTACK_PUBLIC_KEY", "")
 PAYSTACK_SECRET_KEY: str = os.environ.get("PAYSTACK_SECRET_KEY", "")
@@ -51,8 +50,3 @@ DEFAULT_CURRENCY: str = "KES"  # Kenyan Shilling — product originates in Kenya
 FREE_TRYONS_PER_WEEK: int = 7
 FREE_MAX_PROFILES: int = 2
 PREMIUM_MAX_PROFILES: int = 10
-
-CONNECT_MOCKED_NOTE: str = (
-    "Add your Kenyan bank or M-Pesa payout account so escrow-released funds "
-    "can be transferred via Paystack after buyer delivery confirmation."
-)

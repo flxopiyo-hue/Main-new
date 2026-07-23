@@ -1,5 +1,5 @@
 // Modal sheet that lets the buyer pick (or add inline) a shipping address
-// before opening Stripe Checkout.
+// before opening Paystack checkout.
 
 import { Feather } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useState } from "react";

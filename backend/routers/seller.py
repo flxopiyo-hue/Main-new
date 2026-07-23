@@ -1,22 +1,15 @@
-"""Seller analytics + payout management + Stripe Connect onboarding.
+"""Seller analytics + payout management.
 
-STRIPE CONNECT: The `STRIPE_API_KEY` in the pod is `sk_test_emergent` — an
-Emergent proxy key that cannot create real Stripe Connect Express accounts.
-This file degrades gracefully:
-
-- If `STRIPE_API_KEY` looks like a real Stripe secret key (starts with
-  `sk_test_` and is longer than the proxy sentinel) AND the official `stripe`
-  Python SDK is importable, we run real `Account.create` + `AccountLink.create`
-  using Stripe's API.
-- Otherwise we keep the demo onboarding flow (synthetic `acct_demo_…`
-  account ids + immediate `connect_status=active`) so the rest of the app
-  (analytics, payouts UI, dashboard) keeps working end-to-end.
+All payout logic runs on Paystack (Kenya-first: bank + M-Pesa). Sellers
+configure a payout destination via /seller/payout-account, which creates a
+Paystack Transfer Recipient (and optionally a Subaccount). Buyer funds are
+held in escrow by Oromona until delivery is confirmed or the 48h auto-
+release timer expires. See `core/escrow.py`.
 """
 
 from __future__ import annotations
 
 import logging
-import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -24,14 +17,11 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel
 
 from core.config import (
-    CONNECT_MOCKED_NOTE,
     PLATFORM_FEE_BPS,
-    STRIPE_API_KEY,
 )
 from core.db import db
 from core.security import get_current_user, require_role
 from models import (
-    ConnectStatusOut,
     FulfillmentIn,
     ItemAnalytics,
     OrderOut,
@@ -44,38 +34,6 @@ from models import (
 
 logger = logging.getLogger("drape.seller")
 router = APIRouter()
-
-
-# ---------------------------------------------------------------------------
-# Stripe Connect helpers
-# ---------------------------------------------------------------------------
-def _is_real_stripe_key(key: str) -> bool:
-    """Heuristically decide whether `key` is a real Stripe secret key.
-
-    The Emergent proxy uses `sk_test_emergent` (15 chars). Real Stripe test
-    secret keys look like `sk_test_51N...` and are typically 80+ chars long.
-    """
-    return bool(
-        key
-        and key.startswith(("sk_test_", "sk_live_"))
-        and key != "sk_test_emergent"
-        and len(key) > 30
-    )
-
-
-def _try_import_stripe():
-    """Lazy import so the module is optional."""
-    try:
-        import stripe  # type: ignore
-
-        stripe.api_key = STRIPE_API_KEY
-        return stripe
-    except ImportError:
-        return None
-
-
-class _OnboardLinkIn(BaseModel):
-    return_url: Optional[str] = None  # where Stripe sends the seller after KYC
 
 
 # ---------------------------------------------------------------------------
@@ -132,6 +90,10 @@ async def seller_analytics(
         total_fee += fee
         total_net += net
     out_items.sort(key=lambda x: (-x.revenue_cents, -x.views))
+    # Legacy `connect_status` field: derive from payout account presence.
+    # A seller counts as "active" once they have a Paystack transfer
+    # recipient configured; otherwise "unstarted".
+    _has_recipient = bool(user.get("paystack_recipient_code"))
     return SellerAnalyticsOut(
         total_views=total_views,
         total_try_ons=total_try_ons,
@@ -140,7 +102,7 @@ async def seller_analytics(
         total_revenue_cents=total_revenue,
         total_platform_fee_cents=total_fee,
         total_net_cents=total_net,
-        connect_status=user.get("connect_status", "unstarted"),
+        connect_status="active" if _has_recipient else "unstarted",
         platform_fee_bps=PLATFORM_FEE_BPS,
         items=out_items,
     )
@@ -389,9 +351,11 @@ async def seller_payouts(
     # Load current payout account snapshot so the UI can render a one-shot
     # dashboard without a second round-trip.
     fresh = await db.users.find_one({"id": user["id"]}, {"_id": 0}) or {}
+    _has_recipient = bool(fresh.get("paystack_recipient_code"))
     return {
         "platform_fee_bps": PLATFORM_FEE_BPS,
-        "connect_status": user.get("connect_status", "unstarted"),
+        # Legacy field: derived from payout account state (no Stripe Connect).
+        "connect_status": "active" if _has_recipient else "unstarted",
         "payouts": rows,
         "totals": {
             "count": len(rows),
@@ -402,7 +366,7 @@ async def seller_payouts(
             "released_cents": released_total,
         },
         "payout_account": fresh.get("payout_account"),
-        "has_recipient": bool(fresh.get("paystack_recipient_code")),
+        "has_recipient": _has_recipient,
     }
 
 
@@ -457,133 +421,6 @@ async def update_seller_profile(
         {"id": user["id"]}, {"_id": 0, "hashed_password": 0}
     )
     return user_to_out(fresh)
-
-
-# ---------------------------------------------------------------------------
-# Stripe Connect (real if a real platform key is present, mocked otherwise)
-# ---------------------------------------------------------------------------
-@router.post("/seller/connect/setup", response_model=ConnectStatusOut)
-async def connect_setup(
-    body: Optional[_OnboardLinkIn] = None,
-    user: Dict[str, Any] = Depends(get_current_user),
-) -> ConnectStatusOut:
-    await require_role("seller", user)
-    existing_acct = user.get("stripe_account_id")
-    if existing_acct and user.get("connect_status") == "active":
-        return ConnectStatusOut(
-            stripe_account_id=existing_acct,
-            connect_status="active",
-            note=None,
-        )
-
-    # ----- Real Stripe path -----
-    if _is_real_stripe_key(STRIPE_API_KEY):
-        stripe = _try_import_stripe()
-        if stripe is None:
-            raise HTTPException(
-                status_code=500,
-                detail=(
-                    "Stripe Python SDK not installed. Run `pip install \"stripe>=10\"` "
-                    "in the backend container."
-                ),
-            )
-        try:
-            if not existing_acct:
-                country = "KE"
-                if user.get("location"):
-                    # Best-effort: ISO-3166 alpha-2 for Kenya, fallback "US".
-                    country_name = (user["location"].get("country") or "").lower()
-                    country = "KE" if "kenya" in country_name else "US"
-                acct = stripe.Account.create(
-                    type="express",
-                    country=country,
-                    email=user["email"],
-                    capabilities={
-                        "card_payments": {"requested": True},
-                        "transfers": {"requested": True},
-                    },
-                    business_profile={
-                        "name": user.get("company_name") or user.get("full_name"),
-                        "product_description": "Apparel atelier on Oromona",
-                    },
-                )
-                existing_acct = acct.id
-                await db.users.update_one(
-                    {"id": user["id"]},
-                    {
-                        "$set": {
-                            "stripe_account_id": acct.id,
-                            "connect_status": "pending",
-                        }
-                    },
-                )
-            return_url = (body.return_url if body else None) or "https://example.com/connect/return"
-            link = stripe.AccountLink.create(
-                account=existing_acct,
-                refresh_url=return_url,
-                return_url=return_url,
-                type="account_onboarding",
-            )
-            return ConnectStatusOut(
-                stripe_account_id=existing_acct,
-                connect_status="pending",
-                onboarding_url=link.url,
-                note="Live Stripe Connect onboarding — finish KYC to enable payouts.",
-            )
-        except Exception as exc:  # pragma: no cover — network errors etc.
-            logger.exception("Stripe Connect setup failed")
-            raise HTTPException(status_code=502, detail=f"Stripe error: {exc}")
-
-    # ----- Demo / proxy fallback -----
-    acct_id = existing_acct or f"acct_demo_{uuid.uuid4().hex[:14]}"
-    await db.users.update_one(
-        {"id": user["id"]},
-        {"$set": {"stripe_account_id": acct_id, "connect_status": "active"}},
-    )
-    return ConnectStatusOut(
-        stripe_account_id=acct_id,
-        connect_status="active",
-        onboarding_url=None,
-        note=CONNECT_MOCKED_NOTE,
-    )
-
-
-@router.get("/seller/connect/status", response_model=ConnectStatusOut)
-async def connect_status(
-    user: Dict[str, Any] = Depends(get_current_user),
-) -> ConnectStatusOut:
-    await require_role("seller", user)
-    acct_id = user.get("stripe_account_id")
-    status_ = user.get("connect_status", "unstarted")
-
-    # If a real Stripe key is present and we have an account id, refresh
-    # status from Stripe so the UI reflects KYC completion.
-    if _is_real_stripe_key(STRIPE_API_KEY) and acct_id and status_ != "active":
-        stripe = _try_import_stripe()
-        if stripe is not None:
-            try:
-                acct = stripe.Account.retrieve(acct_id)
-                if acct.charges_enabled and acct.payouts_enabled:
-                    status_ = "active"
-                elif (acct.requirements or {}).get("currently_due"):
-                    status_ = "pending"
-                await db.users.update_one(
-                    {"id": user["id"]}, {"$set": {"connect_status": status_}}
-                )
-            except Exception:  # pragma: no cover
-                logger.exception("Stripe Account.retrieve failed")
-
-    note: Optional[str] = None
-    if not _is_real_stripe_key(STRIPE_API_KEY) and status_ != "active":
-        note = CONNECT_MOCKED_NOTE
-    elif _is_real_stripe_key(STRIPE_API_KEY) and status_ != "active":
-        note = "Finish Stripe Connect onboarding to enable payouts."
-    return ConnectStatusOut(
-        stripe_account_id=acct_id,
-        connect_status=status_,
-        onboarding_url=None,
-        note=note,
-    )
 
 
 # ---------------------------------------------------------------------------

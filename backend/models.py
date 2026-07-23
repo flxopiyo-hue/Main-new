@@ -23,7 +23,7 @@ KidAgeGroup = Literal["0-2", "3-5", "6-9", "10-13", "14-17"]
 ProfileAudience = Literal["adult", "kid"]
 FitFeedback = Literal["small", "perfect", "large"]
 # Fulfillment state machine for orders. `paid` is the initial state right
-# after Stripe checkout completes; `in_fulfillment` is set when the seller
+# after Paystack checkout completes; `in_fulfillment` is set when the seller
 # acknowledges. `shipped` requires a tracking number/URL. `delivered` is
 # the terminal state.
 OrderStatus = Literal[
@@ -248,7 +248,6 @@ class UserOut(BaseModel):
     gender: Optional[Gender] = None
     age: Optional[int] = None
     dob: Optional[str] = None
-    stripe_account_id: Optional[str] = None
     connect_status: ConnectStatus = "unstarted"
     preferred_currency: Currency = DEFAULT_CURRENCY  # type: ignore[assignment]
     # Seller-only (always present in response shape, null for buyers/admins)
@@ -261,7 +260,7 @@ class UserOut(BaseModel):
     # manually. See `maybe_verify_seller()` in core/seller.py.
     verified_seller: bool = False
     verified_orders_count: int = 0
-    # Subscription state — updated by Stripe webhooks. Free is the
+    # Subscription state — updated by Paystack webhooks. Free is the
     # default for every user.
     subscription_tier: Literal["free", "premium"] = "free"
     subscription_status: Optional[str] = None  # trialing / active / past_due / canceled / etc
@@ -847,7 +846,8 @@ class SellerAnalyticsOut(BaseModel):
 
 
 class ConnectStatusOut(BaseModel):
-    stripe_account_id: Optional[str] = None
+    """Legacy shape kept for backwards-compatibility of already-shipped
+    frontend clients. Populated from Paystack payout account presence."""
     connect_status: ConnectStatus
     onboarding_url: Optional[str] = None
     platform_fee_bps: int = PLATFORM_FEE_BPS
@@ -903,7 +903,6 @@ def user_to_out(doc: Dict[str, Any]) -> UserOut:
         gender=doc.get("gender"),
         age=doc.get("age"),
         dob=doc.get("dob"),
-        stripe_account_id=doc.get("stripe_account_id"),
         connect_status=doc.get("connect_status", "unstarted"),
         preferred_currency=doc.get("preferred_currency", DEFAULT_CURRENCY),
         company_name=doc.get("company_name"),

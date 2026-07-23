@@ -16,7 +16,6 @@ from core.db import db
 from core.security import require_admin
 from models import (
     BankDetails,
-    ConnectStatus,
     ItemOut,
     Location,
     OrderOut,
@@ -33,7 +32,6 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 class AdminUserPatch(BaseModel):
     suspended: Optional[bool] = None
-    connect_status: Optional[ConnectStatus] = None
     bank_details: Optional[BankDetails] = None
     location: Optional[Location] = None
     company_name: Optional[str] = None
@@ -113,8 +111,6 @@ async def admin_update_user(
     update: Dict[str, Any] = {}
     if body.suspended is not None:
         update["suspended"] = body.suspended
-    if body.connect_status is not None:
-        update["connect_status"] = body.connect_status
     if body.bank_details is not None:
         update["bank_details"] = body.bank_details.model_dump(exclude_none=True)
     if body.location is not None:
@@ -211,7 +207,13 @@ async def admin_analytics(
     admins = await db.users.count_documents({"role": "admin"})
     suspended = await db.users.count_documents({"suspended": True})
     pending_connect = await db.users.count_documents(
-        {"role": "seller", "connect_status": {"$ne": "active"}}
+        {
+            "role": "seller",
+            "$or": [
+                {"paystack_recipient_code": {"$in": [None, ""]}},
+                {"paystack_recipient_code": {"$exists": False}},
+            ],
+        }
     )
 
     total_items = await db.items.count_documents({})

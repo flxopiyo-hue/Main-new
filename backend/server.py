@@ -14,7 +14,7 @@ ROUTE LAYOUT (all under ``/api`` prefix)
   • orders       — buyer orders + fit feedback
   • payments     — Paystack Checkout + return bridge + status polling (item purchases)
   • subs         — Paystack subscriptions (Premium tier)
-  • seller       — analytics + mocked Stripe Connect onboarding
+  • seller       — analytics + Paystack payout account onboarding
   • collections  — designer drops (collections)
 """
 

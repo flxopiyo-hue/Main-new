@@ -66,7 +66,6 @@ export interface User {
   gender?: Gender | null;
   age?: number | null;
   dob?: string | null;
-  stripe_account_id?: string | null;
   connect_status?: ConnectStatusCode;
   preferred_currency?: CurrencyCode;
   // Seller-specific (null for buyers/admins)
@@ -493,7 +492,6 @@ export interface SellerAnalytics {
 }
 
 export interface ConnectStatus {
-  stripe_account_id?: string | null;
   connect_status: ConnectStatusCode;
   onboarding_url?: string | null;
   platform_fee_bps: number;
@@ -843,9 +841,6 @@ export const api = {
     request<User>("/seller/payout-details", { method: "PATCH", body }),
   updateSellerProfile: (body: { company_name?: string; location?: Location }) =>
     request<User>("/seller/profile", { method: "PATCH", body }),
-  connectStatus: () => request<ConnectStatus>("/seller/connect/status"),
-  connectSetup: (body: { return_url?: string } = {}) =>
-    request<ConnectStatus>("/seller/connect/setup", { method: "POST", body }),
   patchItem: (
     id: string,
     body: {
@@ -967,7 +962,7 @@ export const api = {
   adminGetUser: (userId: string) => request<User>(`/admin/users/${userId}`),
   adminPatchUser: (
     userId: string,
-    body: { suspended?: boolean; connect_status?: ConnectStatusCode; company_name?: string },
+    body: { suspended?: boolean; company_name?: string },
   ) => request<User>(`/admin/users/${userId}`, { method: "PATCH", body }),
   adminListOrders: (params: { status?: string } = {}) => {
     const qs = new URLSearchParams();
