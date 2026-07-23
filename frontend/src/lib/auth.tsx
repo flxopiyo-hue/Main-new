@@ -102,6 +102,10 @@ interface AuthValue {
   ) => Promise<User>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
+  // Adopt a fresh auth envelope (used by password-reset and any other
+  // flow that mints a JWT server-side and needs to sign the user in
+  // immediately on the client).
+  adoptSession: (envelope: { token: string; user: User }) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthValue | undefined>(undefined);
@@ -223,6 +227,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }, []);
 
+  const adoptSession = useCallback(
+    async (envelope: { token: string; user: User }) => {
+      await setTokenStorage(envelope.token);
+      setUser(envelope.user);
+    },
+    [],
+  );
+
   const value = useMemo(
     () => ({
       user,
@@ -233,8 +245,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       toggleRole,
       logout,
       refresh,
+      adoptSession,
     }),
-    [user, loading, login, registerBuyer, registerSeller, toggleRole, logout, refresh],
+    [user, loading, login, registerBuyer, registerSeller, toggleRole, logout, refresh, adoptSession],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

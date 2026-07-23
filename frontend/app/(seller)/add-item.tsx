@@ -49,6 +49,7 @@ import {
 import { useAuth } from "@/src/lib/auth";
 import { CURRENCIES, formatPrice, parseAmountToCents, priceInputPlaceholder } from "@/src/lib/currency";
 import { dataUriFromBase64, pickImageFromCamera, pickImageFromLibrary } from "@/src/lib/images";
+import { ADULT_SHOE_SIZES, KID_SHOE_SIZES } from "@/src/lib/shoe-sizes";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
 /* -------------------------------------------------------------------------- */
@@ -982,6 +983,7 @@ interface StepSizingProps {
 
 function StepSizing({
   audience,
+  category,
   sizes,
   dimKeys,
   primaryDim,
@@ -993,7 +995,19 @@ function StepSizing({
   onUpdateSize,
   onToggleColor,
 }: StepSizingProps) {
-  const sizeLabels = audience === "kids" ? KID_SIZE_LABELS : ADULT_SIZE_LABELS;
+  // Shoes have a fundamentally different size system (EU numbers + cm)
+  // than tops/bottoms (S/M/L). We swap the label list based on category.
+  const isShoes = category === "shoes";
+  const sizeLabels = isShoes
+    ? (audience === "kids" ? KID_SHOE_SIZES : ADULT_SHOE_SIZES).map((s) => s.value)
+    : audience === "kids"
+      ? KID_SIZE_LABELS
+      : ADULT_SIZE_LABELS;
+  const sizeSubLabel = (label: string): string | null => {
+    if (!isShoes) return null;
+    const chart = audience === "kids" ? KID_SHOE_SIZES : ADULT_SHOE_SIZES;
+    return chart.find((s) => s.value === label)?.label.replace(/^EU \d+ · /, "") ?? null;
+  };
   const noDims = dimKeys.length === 0;
 
   return (
@@ -1033,16 +1047,22 @@ function StepSizing({
 
       <Text style={[tp.caption, styles.label]}>
         Sizes & dimensions ({unit}){audience === "kids" ? " · kid sizes" : ""}
+        {isShoes ? " · EU sizes" : ""}
       </Text>
       <View style={styles.sizeRow}>
         {sizeLabels.map((s) => {
           const on = !!sizes[s];
+          const sub = sizeSubLabel(s);
           return (
             <TouchableOpacity
               key={s}
               testID={`wizard-size-${s}`}
               onPress={() => onToggleSize(s)}
-              style={[styles.sizeChip, on ? styles.sizeChipActive : styles.sizeChipInactive]}
+              style={[
+                styles.sizeChip,
+                isShoes && styles.sizeChipWide,
+                on ? styles.sizeChipActive : styles.sizeChipInactive,
+              ]}
             >
               <Text
                 style={[
@@ -1052,6 +1072,16 @@ function StepSizing({
               >
                 {s}
               </Text>
+              {sub ? (
+                <Text
+                  style={[
+                    styles.sizeChipSub,
+                    on ? styles.sizeChipLabelActive : styles.sizeChipLabelInactive,
+                  ]}
+                >
+                  {sub}
+                </Text>
+              ) : null}
             </TouchableOpacity>
           );
         })}
@@ -1642,9 +1672,17 @@ const styles = StyleSheet.create({
   catLabelActive: { color: colors.primaryFg },
   sizeRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   sizeChip: { width: 50, height: 50, alignItems: "center", justifyContent: "center", borderWidth: 1 },
+  sizeChipWide: { width: 72, height: 56, paddingHorizontal: 4 },
   sizeChipInactive: { borderColor: colors.border, backgroundColor: colors.surface },
   sizeChipActive: { borderColor: colors.primary, backgroundColor: colors.primary },
   sizeChipLabel: { fontFamily: fonts.bodySemi, fontSize: 13 },
+  sizeChipSub: {
+    fontFamily: fonts.body,
+    fontSize: 9,
+    marginTop: 2,
+    letterSpacing: 0.5,
+    textAlign: "center",
+  },
   sizeChipLabelInactive: { color: colors.primary },
   sizeChipLabelActive: { color: colors.primaryFg },
   sizeDetail: {

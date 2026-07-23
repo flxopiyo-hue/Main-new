@@ -12,6 +12,7 @@ import { api, Measurements } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
 import { dataUriFromBase64, pickImageFromCamera, pickImageFromLibrary } from "@/src/lib/images";
 import { recommendationExplanation, recommendTopSize } from "@/src/lib/sizing";
+import { ADULT_SHOE_SIZES } from "@/src/lib/shoe-sizes";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 import {
   cmToDisplay,
@@ -40,6 +41,7 @@ export default function MeasurementsScreen() {
   const { user } = useAuth();
   const [m, setM] = useState<Measurements>({});
   const [preferredSize, setPreferredSize] = useState<string | null>(null);
+  const [preferredShoeSize, setPreferredShoeSize] = useState<string | null>(null);
   const [unit, setUnit] = useState<LengthUnit>("cm");
   const [front, setFront] = useState<PickState | null>(null);
   const [side, setSide] = useState<PickState | null>(null);
@@ -58,6 +60,7 @@ export default function MeasurementsScreen() {
         const p = await api.getProfile();
         if (p.measurements) setM(p.measurements);
         if (p.preferred_size) setPreferredSize(p.preferred_size);
+        if (p.preferred_shoe_size) setPreferredShoeSize(p.preferred_shoe_size);
       } catch {
         // first-time profile
       }
@@ -121,6 +124,7 @@ export default function MeasurementsScreen() {
       await api.updateProfile({
         measurements: m,
         preferred_size: preferredSize,
+        preferred_shoe_size: preferredShoeSize,
         front_photo_b64: front?.base64,
         side_photo_b64: side?.base64,
         three_quarter_photo_b64: threeQuarter?.base64,
@@ -375,6 +379,50 @@ export default function MeasurementsScreen() {
             </TouchableOpacity>
           ))}
         </View>
+
+        {/* Preferred shoe size — EU sizing with cm fallbacks */}
+        <Text style={[tp.caption, styles.label, { marginTop: spacing.lg }]}>
+          Preferred Shoe Size
+        </Text>
+        <Text style={[tp.bodyMuted, { fontSize: 12, marginTop: 4 }]}>
+          EU sizing · foot length in cm. Sellers list in the same system so
+          you can compare across brands.
+        </Text>
+        <View style={styles.shoeGrid}>
+          {ADULT_SHOE_SIZES.map((s) => {
+            const on = preferredShoeSize === s.value;
+            return (
+              <TouchableOpacity
+                key={s.value}
+                testID={`shoe-size-${s.value}`}
+                onPress={() =>
+                  setPreferredShoeSize(on ? null : s.value)
+                }
+                style={[
+                  styles.shoeChip,
+                  on ? styles.shoeChipActive : styles.shoeChipInactive,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.shoeChipTop,
+                    on ? styles.sizeChipLabelActive : styles.sizeChipLabelInactive,
+                  ]}
+                >
+                  EU {s.value}
+                </Text>
+                <Text
+                  style={[
+                    styles.shoeChipBottom,
+                    on ? styles.sizeChipLabelActive : styles.sizeChipLabelInactive,
+                  ]}
+                >
+                  {s.cm}cm
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
         <View style={{ height: 120 }} />
       </KeyboardAwareScrollView>
       <View style={styles.footer}>
@@ -564,6 +612,33 @@ const styles = StyleSheet.create({
   sizeChipLabel: { fontFamily: fonts.bodySemi, fontSize: 13, letterSpacing: 1 },
   sizeChipLabelInactive: { color: colors.primary },
   sizeChipLabelActive: { color: colors.primaryFg },
+  shoeGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: spacing.sm,
+  },
+  shoeChip: {
+    width: 74,
+    height: 54,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+  },
+  shoeChipInactive: { borderColor: colors.border, backgroundColor: colors.surface },
+  shoeChipActive: { borderColor: colors.primary, backgroundColor: colors.primary },
+  shoeChipTop: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 13,
+    letterSpacing: 0.5,
+  },
+  shoeChipBottom: {
+    fontFamily: fonts.body,
+    fontSize: 10,
+    marginTop: 2,
+    letterSpacing: 0.5,
+  },
   recCard: {
     flexDirection: "row",
     alignItems: "center",

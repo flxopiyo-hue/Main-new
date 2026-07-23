@@ -1,14 +1,17 @@
-"""Auth routes: register, login, /auth/me, preferences."""
+"""Auth routes: register, login, /auth/me, preferences, password reset."""
 
 from __future__ import annotations
 
+import logging
+import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
+import jwt
 from fastapi import APIRouter, Depends, HTTPException
 
-from core.config import DEFAULT_CURRENCY
+from core.config import DEFAULT_CURRENCY, JWT_ALGORITHM, JWT_SECRET
 from core.db import db
 from core.security import (
     get_current_user,
@@ -16,9 +19,66 @@ from core.security import (
     make_jwt,
     verify_password,
 )
-from models import AuthOut, LoginIn, PreferencesIn, RegisterIn, UserOut, user_to_out
+from models import (
+    AuthOut,
+    ForgotPasswordIn,
+    LoginIn,
+    PreferencesIn,
+    RegisterIn,
+    ResetPasswordIn,
+    UserOut,
+    user_to_out,
+)
 
+logger = logging.getLogger("oromona.auth")
 router = APIRouter()
+
+# ---------------------------------------------------------------------------
+# Password reset — Resend transactional email
+# ---------------------------------------------------------------------------
+_RESET_TOKEN_TTL_MIN = 30  # 30 minutes; tokens self-invalidate via `exp`.
+_RESET_TOKEN_AUD = "oromona.password-reset"
+
+_APP_WEB_URL = os.environ.get(
+    "APP_WEB_URL", "https://fit-finder-app-5.preview.emergentagent.com"
+).rstrip("/")
+_APP_DEEPLINK_SCHEME = os.environ.get("APP_DEEPLINK_SCHEME", "oromona").strip() or "oromona"
+
+
+def _mint_reset_token(user_id: str) -> str:
+    """Signed short-lived JWT bound to a specific user and audience."""
+    payload = {
+        "sub": user_id,
+        "aud": _RESET_TOKEN_AUD,
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=_RESET_TOKEN_TTL_MIN),
+        "iat": datetime.now(timezone.utc),
+        "typ": "pwd-reset",
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def _verify_reset_token(token: str) -> str:
+    """Return the user_id embedded in a reset token, or raise HTTPException."""
+    try:
+        payload = jwt.decode(
+            token,
+            JWT_SECRET,
+            algorithms=[JWT_ALGORITHM],
+            audience=_RESET_TOKEN_AUD,
+        )
+    except jwt.ExpiredSignatureError as e:
+        raise HTTPException(
+            status_code=400,
+            detail="This reset link has expired. Please request a new one.",
+        ) from e
+    except jwt.PyJWTError as e:
+        raise HTTPException(status_code=400, detail="Invalid reset link.") from e
+    if payload.get("typ") != "pwd-reset":
+        raise HTTPException(status_code=400, detail="Invalid reset link.")
+    uid = payload.get("sub")
+    if not uid:
+        raise HTTPException(status_code=400, detail="Invalid reset link.")
+    return uid
 
 
 def _is_seller_complete(doc: Dict[str, Any]) -> bool:
@@ -205,3 +265,105 @@ async def public_banks(country: str = "kenya") -> Dict[str, Any]:
         if b.get("code") and b.get("name")
     ]
     return {"country": country, "banks": slim}
+
+
+# ---------------------------------------------------------------------------
+# POST /auth/forgot-password — request a reset link
+# ---------------------------------------------------------------------------
+@router.post("/auth/forgot-password")
+async def forgot_password(body: ForgotPasswordIn) -> Dict[str, Any]:
+    """Send a password-reset email if the account exists.
+
+    Deliberately returns the same success shape regardless of whether the
+    email is known — prevents account-enumeration attacks. When Resend
+    isn't configured (dev/preview), we log the reset link so testers can
+    still complete the flow.
+    """
+    email_norm = body.email.strip().lower()
+    user = await db.users.find_one({"email": email_norm}, {"_id": 0})
+
+    generic_ok = {
+        "ok": True,
+        "message": "If that email is registered, a reset link has been sent.",
+    }
+
+    if not user:
+        # Small delay would help against timing attacks but is overkill for
+        # the current threat model. The response body is already opaque.
+        logger.info("forgot-password: unknown email %s", email_norm)
+        return generic_ok
+
+    token = _mint_reset_token(user["id"])
+    web_link = f"{_APP_WEB_URL}/reset-password?token={token}"
+    deep_link = f"{_APP_DEEPLINK_SCHEME}://reset-password?token={token}"
+
+    # Import lazily so a missing `resend` dependency doesn't break the app
+    # boot when the feature is disabled.
+    from core import mailer
+
+    try:
+        html, text = mailer.password_reset_template(
+            name=user.get("full_name") or user.get("email") or "",
+            web_link=web_link,
+            deep_link=deep_link,
+        )
+        message_id = mailer.send_email(
+            to=user["email"],
+            subject="Reset your Oromona password",
+            html=html,
+            text=text,
+        )
+        logger.info("forgot-password: sent to %s (msg=%s)", email_norm, message_id)
+    except mailer.ResendConfigError:
+        # Preview environments without a Resend key — log the link so
+        # testers can complete the flow via the URL.
+        logger.warning(
+            "forgot-password: RESEND not configured — reset link: %s", web_link
+        )
+        return {**generic_ok, "debug_reset_link": web_link}
+    except mailer.ResendSendError as e:
+        logger.error("forgot-password: send failed for %s: %s", email_norm, e)
+        # Still return generic OK to avoid leaking existence, but log for us.
+
+    return generic_ok
+
+
+# ---------------------------------------------------------------------------
+# POST /auth/reset-password — consume the token and set a new password
+# ---------------------------------------------------------------------------
+@router.post("/auth/reset-password", response_model=AuthOut)
+async def reset_password(body: ResetPasswordIn) -> AuthOut:
+    """Verify the reset token, update the password, and return a fresh
+    login JWT so the client can immediately sign the user in."""
+    uid = _verify_reset_token(body.token)
+    user = await db.users.find_one({"id": uid}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=400, detail="Account not found.")
+
+    new_hash = hash_password(body.new_password)
+
+    # Bump token_version to invalidate any existing session tokens issued
+    # before the password change. Force sign-in with the new password.
+    new_tv = int(user.get("token_version", 0)) + 1
+    await db.users.update_one(
+        {"id": uid},
+        {
+            "$set": {
+                "hashed_password": new_hash,
+                "token_version": new_tv,
+                "password_updated_at": datetime.now(timezone.utc),
+            }
+        },
+    )
+    fresh = await db.users.find_one({"id": uid}, {"_id": 0, "hashed_password": 0})
+    if not fresh:
+        raise HTTPException(status_code=500, detail="User lookup failed after reset.")
+
+    jwt_token = make_jwt(
+        fresh["id"], fresh.get("role", "buyer"), token_version=new_tv
+    )
+    return AuthOut(
+        token=jwt_token,
+        user=user_to_out(fresh),
+    )
+

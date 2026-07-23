@@ -144,6 +144,13 @@ export default function Login() {
           secureTextEntry
           placeholder="••••••••"
         />
+        <TouchableOpacity
+          testID="login-forgot-password-link"
+          onPress={() => router.push("/(auth)/forgot-password")}
+          style={styles.forgotBtn}
+        >
+          <Text style={styles.forgotLabel}>Forgot password?</Text>
+        </TouchableOpacity>
       </KeyboardAwareScrollView>
       <View style={styles.footer}>
         <AppButton testID="login-submit-btn" label="Sign In" onPress={submit} loading={loading} />
@@ -249,6 +256,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   linkBtn: { paddingVertical: spacing.md, alignItems: "center" },
+  forgotBtn: { alignSelf: "flex-end", marginTop: spacing.sm },
+  forgotLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 13,
+    color: colors.primary,
+    letterSpacing: 0.5,
+  },
   link: { fontFamily: fonts.body, fontSize: 14, color: colors.mutedFg },
   linkBold: { fontFamily: fonts.bodySemi, color: colors.primary },
 });

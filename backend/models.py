@@ -241,6 +241,19 @@ class LoginIn(BaseModel):
     as_role: Optional[Literal["buyer", "seller"]] = None
 
 
+class ForgotPasswordIn(BaseModel):
+    """Request-body for POST /auth/forgot-password."""
+    email: EmailStr
+
+
+class ResetPasswordIn(BaseModel):
+    """Request-body for POST /auth/reset-password."""
+    token: str = Field(min_length=8)
+    new_password: str = Field(min_length=6)
+
+
+
+
 class PreferencesIn(BaseModel):
     preferred_currency: Optional[Currency] = None
 
@@ -317,6 +330,7 @@ class Measurements(BaseModel):
 class ProfileIn(BaseModel):
     measurements: Measurements
     preferred_size: Optional[str] = None  # XS, S, M, L, XL, XXL
+    preferred_shoe_size: Optional[str] = None  # EU numeric, e.g. "40"
     front_photo_b64: Optional[str] = None  # base64 (no data: prefix)
     side_photo_b64: Optional[str] = None
     three_quarter_photo_b64: Optional[str] = None
@@ -326,6 +340,7 @@ class ProfileOut(BaseModel):
     user_id: str
     measurements: Measurements
     preferred_size: Optional[str] = None
+    preferred_shoe_size: Optional[str] = None
     has_front_photo: bool = False
     has_side_photo: bool = False
     has_three_quarter_photo: bool = False
@@ -351,6 +366,7 @@ class LovedOneIn(BaseModel):
     relation: Optional[str] = Field(default=None, max_length=40)  # "son", "partner", "friend"
     measurements: Optional[Measurements] = None
     preferred_size: Optional[str] = None
+    preferred_shoe_size: Optional[str] = None
     front_photo_b64: Optional[str] = None
     side_photo_b64: Optional[str] = None
 
@@ -363,6 +379,7 @@ class LovedOnePatch(BaseModel):
     relation: Optional[str] = Field(default=None, max_length=40)
     measurements: Optional[Measurements] = None
     preferred_size: Optional[str] = None
+    preferred_shoe_size: Optional[str] = None
     front_photo_b64: Optional[str] = None
     side_photo_b64: Optional[str] = None
 
@@ -377,6 +394,7 @@ class LovedOneOut(BaseModel):
     relation: Optional[str] = None
     measurements: Measurements
     preferred_size: Optional[str] = None
+    preferred_shoe_size: Optional[str] = None
     has_front_photo: bool = False
     has_side_photo: bool = False
     created_at: datetime
@@ -396,6 +414,7 @@ class ProfileSummary(BaseModel):
     has_front_photo: bool = False
     has_side_photo: bool = False
     preferred_size: Optional[str] = None
+    preferred_shoe_size: Optional[str] = None
 
 
 class ActiveProfileIn(BaseModel):

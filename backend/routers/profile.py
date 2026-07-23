@@ -30,6 +30,7 @@ async def get_profile(user: Dict[str, Any] = Depends(get_current_user)) -> Profi
             user_id=user["id"],
             measurements=Measurements(),
             preferred_size=None,
+            preferred_shoe_size=None,
             has_front_photo=False,
             has_side_photo=False,
             has_three_quarter_photo=False,
@@ -39,6 +40,7 @@ async def get_profile(user: Dict[str, Any] = Depends(get_current_user)) -> Profi
         user_id=doc["user_id"],
         measurements=Measurements(**doc.get("measurements", {})),
         preferred_size=doc.get("preferred_size"),
+        preferred_shoe_size=doc.get("preferred_shoe_size"),
         has_front_photo=bool(doc.get("front_photo_b64")),
         has_side_photo=bool(doc.get("side_photo_b64")),
         has_three_quarter_photo=bool(doc.get("three_quarter_photo_b64")),
@@ -55,6 +57,7 @@ async def upsert_profile(
         "user_id": user["id"],
         "measurements": body.measurements.model_dump(),
         "preferred_size": body.preferred_size,
+        "preferred_shoe_size": body.preferred_shoe_size,
         "updated_at": now,
     }
     if body.front_photo_b64:
@@ -71,6 +74,7 @@ async def upsert_profile(
         user_id=doc["user_id"],
         measurements=Measurements(**doc.get("measurements", {})),
         preferred_size=doc.get("preferred_size"),
+        preferred_shoe_size=doc.get("preferred_shoe_size"),
         has_front_photo=bool(doc.get("front_photo_b64")),
         has_side_photo=bool(doc.get("side_photo_b64")),
         has_three_quarter_photo=bool(doc.get("three_quarter_photo_b64")),

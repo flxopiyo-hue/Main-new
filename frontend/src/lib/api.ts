@@ -108,6 +108,7 @@ export interface Profile {
   user_id: string;
   measurements: Measurements;
   preferred_size?: string | null;
+  preferred_shoe_size?: string | null;
   has_front_photo: boolean;
   has_side_photo: boolean;
   has_three_quarter_photo?: boolean;
@@ -725,6 +726,7 @@ export const api = {
   updateProfile: (body: {
     measurements: Measurements;
     preferred_size?: string | null;
+    preferred_shoe_size?: string | null;
     front_photo_b64?: string;
     side_photo_b64?: string;
     three_quarter_photo_b64?: string;
@@ -916,6 +918,17 @@ export const api = {
         currency?: string;
       }[];
     }>(`/auth/banks?country=${encodeURIComponent(country)}`),
+  forgotPassword: (email: string) =>
+    request<{ ok: boolean; message: string; debug_reset_link?: string }>(
+      "/auth/forgot-password",
+      { method: "POST", body: { email } },
+    ),
+  resetPassword: (token: string, new_password: string) =>
+    request<AuthEnvelope>("/auth/reset-password", {
+      method: "POST",
+      body: { token, new_password },
+      auth: false,
+    }),
   sellerGetPayoutAccount: () =>
     request<{
       payout_account?: {
