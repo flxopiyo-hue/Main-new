@@ -4,7 +4,7 @@
     "slug": "oromona",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/brand/oromona-icon-1024.png",
     "scheme": "oromona",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
@@ -18,8 +18,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#FAFAFA"
+        "foregroundImage": "./assets/brand/oromona-adaptive-fg.png",
+        "backgroundColor": "#2A0F0A"
       },
       "edgeToEdgeEnabled": true,
       "permissions": [
@@ -32,17 +32,17 @@
     "web": {
       "bundler": "metro",
       "output": "single",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/brand/oromona-icon-1024.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
+          "image": "./assets/brand/oromona-splash.png",
+          "imageWidth": 220,
           "resizeMode": "contain",
-          "backgroundColor": "#FAFAFA"
+          "backgroundColor": "#2A0F0A"
         }
       ],
       "expo-font",

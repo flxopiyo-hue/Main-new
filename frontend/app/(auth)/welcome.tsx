@@ -18,7 +18,11 @@ export default function Welcome() {
       <View style={styles.scrim} />
       <SafeAreaView style={styles.content} edges={["top", "bottom"]}>
         <View style={styles.top}>
-          <Text style={styles.brand}>OROMONA</Text>
+          <Image
+            source={require("@/assets/brand/oromona-logo-transparent.png")}
+            style={styles.logoMark}
+            resizeMode="contain"
+          />
           <Text style={styles.brandSub}>Nairobi · Made for everywhere</Text>
         </View>
         <View style={styles.middle}>
@@ -67,7 +71,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     justifyContent: "space-between",
   },
-  top: { paddingTop: spacing.md },
+  top: { paddingTop: spacing.md, alignItems: "flex-start" },
+  logoMark: {
+    width: 148,
+    height: 148,
+    marginLeft: -14,
+    marginBottom: -20,
+  },
   brand: {
     fontFamily: fonts.heading,
     color: "#FFF7EE",

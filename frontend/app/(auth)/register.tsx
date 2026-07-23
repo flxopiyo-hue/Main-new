@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Image, Text, TouchableOpacity, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -161,7 +161,11 @@ export default function Register() {
         >
           <Feather name="arrow-left" size={22} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={[tp.caption]}>OROMONA</Text>
+        <Image
+          source={require("@/assets/brand/oromona-logo-transparent.png")}
+          style={styles.headerLogo}
+          resizeMode="contain"
+        />
         <View style={styles.iconBtn} />
       </View>
       <KeyboardAwareScrollView
@@ -494,6 +498,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   iconBtn: { width: 32, height: 32, alignItems: "flex-start", justifyContent: "center" },
+  headerLogo: { width: 76, height: 32 },
   scroll: { paddingHorizontal: spacing.lg, paddingTop: spacing.xl, paddingBottom: spacing.xxl },
   title: { marginTop: spacing.md },
   sub: { marginTop: spacing.md, maxWidth: 320 },
