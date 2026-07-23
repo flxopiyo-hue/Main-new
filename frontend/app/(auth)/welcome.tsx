@@ -1,3 +1,4 @@
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { Image, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -15,11 +16,35 @@ const HERO =
 // so it stays legible against the ochre backdrop.
 const IVORY = "#FFF7EE";
 
+// Deep maroon that matches the OROMONA logo's own background. Blending it
+// at the top of the hero gives the golden monogram/wordmark a natural
+// contrast so it reads cleanly even at small sizes.
+const MAROON_TOP = "#1F0A08";
+
 export default function Welcome() {
   return (
     <View style={styles.root} testID="welcome-screen">
       <Image source={{ uri: HERO }} style={styles.hero} resizeMode="cover" />
-      <View style={styles.scrim} />
+
+      {/* Top-of-frame dark maroon fade — lets the golden logo pop.
+          Solid dark at the very top → fully transparent by ~40% of the
+          screen height. */}
+      <LinearGradient
+        colors={[MAROON_TOP, "rgba(31,10,8,0.85)", "rgba(31,10,8,0)"]}
+        locations={[0, 0.45, 1]}
+        style={styles.topFade}
+        pointerEvents="none"
+      />
+
+      {/* Bottom-of-frame dark fade — keeps CTAs crisp over the model's
+          shoulder without darkening her face. */}
+      <LinearGradient
+        colors={["rgba(0,0,0,0)", "rgba(0,0,0,0.55)"]}
+        locations={[0, 1]}
+        style={styles.bottomFade}
+        pointerEvents="none"
+      />
+
       <SafeAreaView style={styles.content} edges={["top", "bottom"]}>
         {/* Big centred logo positioned above the model's head. */}
         <View style={styles.top}>
@@ -66,11 +91,21 @@ export default function Welcome() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#0E0B08" },
   hero: { ...StyleSheet.absoluteFillObject },
-  scrim: {
-    ...StyleSheet.absoluteFillObject,
-    // Bottom-weighted overlay for CTA legibility while keeping the
-    // model's face and the hero backdrop lit.
-    backgroundColor: "rgba(0,0,0,0.36)",
+  // Dark maroon fade covering the top ~40% of the screen so the golden
+  // logo sits on a brand-consistent canvas.
+  topFade: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: "42%",
+  },
+  bottomFade: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: "45%",
   },
   content: {
     flex: 1,
