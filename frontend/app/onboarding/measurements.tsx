@@ -9,7 +9,9 @@ import { AppButton } from "@/src/components/AppButton";
 import { AppInput } from "@/src/components/AppInput";
 import { useToast } from "@/src/components/Toast";
 import { api, Measurements } from "@/src/lib/api";
+import { useAuth } from "@/src/lib/auth";
 import { dataUriFromBase64, pickImageFromCamera, pickImageFromLibrary } from "@/src/lib/images";
+import { recommendationExplanation, recommendTopSize } from "@/src/lib/sizing";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 import {
   cmToDisplay,
@@ -35,6 +37,7 @@ const SLOTS: Slot[] = ["front", "side", "three_quarter"];
 
 export default function MeasurementsScreen() {
   const toast = useToast();
+  const { user } = useAuth();
   const [m, setM] = useState<Measurements>({});
   const [preferredSize, setPreferredSize] = useState<string | null>(null);
   const [unit, setUnit] = useState<LengthUnit>("cm");
@@ -133,19 +136,29 @@ export default function MeasurementsScreen() {
 
   const sizeOptions = ["XS", "S", "M", "L", "XL", "XXL"];
 
-  // Simple size recommendation based on chest/bust measurement — good
-  // enough for buyer onboarding; the per-item Fit Match Score refines
-  // this later using the actual garment dimensions.
-  const recommendedSize: string | null = useMemo(() => {
-    const chest = m.chest_cm ?? m.bust_cm ?? null;
-    if (!chest || chest <= 0) return null;
-    if (chest < 86) return "XS";
-    if (chest < 90) return "S";
-    if (chest < 94) return "M";
-    if (chest < 100) return "L";
-    if (chest < 106) return "XL";
-    return "XXL";
-  }, [m.chest_cm, m.bust_cm]);
+  // Kenya-standard tops sizing with gender-aware chart + height clamp.
+  // See `/app/frontend/src/lib/sizing.ts` for the full logic + rationale.
+  // (Previously chest-only heuristic that over-sized short buyers — a
+  // 151cm woman would land on XL if AI over-read her chest.)
+  const recommendedSize = useMemo(
+    () =>
+      recommendTopSize({
+        chestCm: m.chest_cm ?? m.bust_cm ?? null,
+        heightCm: m.height_cm ?? null,
+        gender: user?.gender ?? null,
+      }),
+    [m.chest_cm, m.bust_cm, m.height_cm, user?.gender],
+  );
+
+  const sizeExplanation = useMemo(
+    () =>
+      recommendationExplanation({
+        chestCm: m.chest_cm ?? m.bust_cm ?? null,
+        heightCm: m.height_cm ?? null,
+        gender: user?.gender ?? null,
+      }),
+    [m.chest_cm, m.bust_cm, m.height_cm, user?.gender],
+  );
 
   // First time we compute a recommendation and the user hasn't picked
   // one yet — auto-select it so the CTA below reflects a real choice.
@@ -325,8 +338,14 @@ export default function MeasurementsScreen() {
                 Based on your{" "}
                 {m.chest_cm ? "chest" : "bust"}{" "}
                 {Math.round(m.chest_cm ?? m.bust_cm ?? 0)}
-                cm — you can override below if you know your fit runs different.
+                cm{m.height_cm ? ` · height ${Math.round(m.height_cm)}cm` : ""}
+                {" "}— you can override below if you know your fit runs different.
               </Text>
+              {sizeExplanation ? (
+                <Text style={styles.recExplain} testID="onboarding-size-explanation">
+                  {sizeExplanation}
+                </Text>
+              ) : null}
             </View>
           </View>
         ) : null}
@@ -581,6 +600,16 @@ const styles = StyleSheet.create({
     color: colors.primaryFg,
     opacity: 0.85,
     marginTop: 4,
+    lineHeight: 15,
+  },
+  recExplain: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 11,
+    color: colors.primaryFg,
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.18)",
     lineHeight: 15,
   },
   footer: {
