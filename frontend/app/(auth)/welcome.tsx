@@ -6,47 +6,46 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { AppButton } from "@/src/components/AppButton";
 import { fonts, spacing } from "@/src/lib/theme";
 
-// Editorial portrait shot on an ochre studio backdrop — Vogue-Africa /
-// Lagos-fashion-week aesthetic. Sets the tone: international app, designed
-// with an East-African sensibility (warm earth tones, confident styling).
-const HERO =
-  "https://images.unsplash.com/photo-1527203561188-dae1bc1a417f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzZ8MHwxfHNlYXJjaHwxfHxhZnJpY2FuJTIwZmFzaGlvbiUyMGVkaXRvcmlhbHxlbnwwfHx8b3JhbmdlfDE3ODA5OTcxMTF8MA&ixlib=rb-4.1.0&q=85";
+// Palette matched to the OROMONA logo:
+//   • Deep maroon    #1F0A08  (the logo's own background)
+//   • Warm ochre     #C88A3D  (the golden hero mid-tone)
+//   • Rich amber     #7A3B18  (transitional band)
+// The composition below stacks 3 gradients so the eye reads
+//   maroon → ochre → maroon, matching the visual weight of a
+//   framed editorial photograph without needing an actual photograph.
+const MAROON_DEEP = "#1F0A08";
+const MAROON_MID = "#3B160F";
+const AMBER = "#7A3B18";
+const OCHRE = "#C88A3D";
+const OCHRE_WARM = "#B87326";
 
-// Elegant off-white — used for headline text and the secondary button label
-// so it stays legible against the ochre backdrop.
 const IVORY = "#FFF7EE";
-
-// Deep maroon that matches the OROMONA logo's own background. Blending it
-// at the top of the hero gives the golden monogram/wordmark a natural
-// contrast so it reads cleanly even at small sizes.
-const MAROON_TOP = "#1F0A08";
 
 export default function Welcome() {
   return (
     <View style={styles.root} testID="welcome-screen">
-      <Image source={{ uri: HERO }} style={styles.hero} resizeMode="cover" />
-
-      {/* Top-of-frame dark maroon fade — lets the golden logo pop.
-          Solid dark at the very top → fully transparent by ~40% of the
-          screen height. */}
+      {/* Layer 1 — base warm ochre glow, biased centre. */}
       <LinearGradient
-        colors={[MAROON_TOP, "rgba(31,10,8,0.85)", "rgba(31,10,8,0)"]}
-        locations={[0, 0.45, 1]}
+        colors={[MAROON_MID, AMBER, OCHRE, OCHRE_WARM, MAROON_MID]}
+        locations={[0, 0.22, 0.5, 0.75, 1]}
+        style={StyleSheet.absoluteFill}
+      />
+      {/* Layer 2 — dark maroon vignette top so the logo pops. */}
+      <LinearGradient
+        colors={[MAROON_DEEP, "rgba(31,10,8,0.75)", "rgba(31,10,8,0)"]}
+        locations={[0, 0.35, 1]}
         style={styles.topFade}
         pointerEvents="none"
       />
-
-      {/* Bottom-of-frame dark fade — keeps CTAs crisp over the model's
-          shoulder without darkening her face. */}
+      {/* Layer 3 — dark bottom fade so CTAs stay crisp. */}
       <LinearGradient
-        colors={["rgba(0,0,0,0)", "rgba(0,0,0,0.55)"]}
+        colors={["rgba(0,0,0,0)", "rgba(15,6,4,0.85)"]}
         locations={[0, 1]}
         style={styles.bottomFade}
         pointerEvents="none"
       />
 
       <SafeAreaView style={styles.content} edges={["top", "bottom"]}>
-        {/* Big centred logo positioned above the model's head. */}
         <View style={styles.top}>
           <Image
             source={require("@/assets/brand/oromona-logo-transparent.png")}
@@ -55,7 +54,6 @@ export default function Welcome() {
           />
         </View>
 
-        {/* Headline + short tagline. */}
         <View style={styles.middle}>
           <Text style={styles.title}>
             Fits on{"\n"}
@@ -66,7 +64,6 @@ export default function Welcome() {
           </Text>
         </View>
 
-        {/* CTAs. */}
         <View style={styles.bottom}>
           <AppButton
             testID="welcome-create-account-btn"
@@ -89,10 +86,7 @@ export default function Welcome() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#0E0B08" },
-  hero: { ...StyleSheet.absoluteFillObject },
-  // Dark maroon fade covering the top ~40% of the screen so the golden
-  // logo sits on a brand-consistent canvas.
+  root: { flex: 1, backgroundColor: MAROON_DEEP },
   topFade: {
     position: "absolute",
     top: 0,
@@ -105,31 +99,28 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: "45%",
+    height: "40%",
   },
   content: {
     flex: 1,
     paddingHorizontal: spacing.lg,
     justifyContent: "space-between",
   },
-  // Top area — centres the logo horizontally above the model's head.
   top: {
     alignItems: "center",
     paddingTop: spacing.md,
   },
   logoMark: {
-    width: 240,
-    height: 240,
-    // Slight negative marginBottom so the wordmark inside the PNG sits
-    // right against the "Fits on 1st Try" headline without extra gap.
-    marginBottom: -18,
+    width: 260,
+    height: 260,
+    marginBottom: -22,
   },
   middle: { paddingTop: 0 },
   title: {
     fontFamily: fonts.heading,
     color: IVORY,
-    fontSize: 60,
-    lineHeight: 62,
+    fontSize: 62,
+    lineHeight: 64,
     letterSpacing: -2,
   },
   titleItalic: { fontFamily: fonts.headingItalic },
