@@ -50,6 +50,7 @@ export interface Location {
 
 export interface BankDetails {
   bank_name?: string | null;
+  bank_code?: string | null;
   branch?: string | null;
   account_name?: string | null;
   account_number?: string | null;
@@ -902,6 +903,19 @@ export const api = {
         currency?: string;
       }[];
     }>(`/seller/banks?country=${encodeURIComponent(country)}`),
+  // Public banks endpoint — used by the registration form BEFORE the seller
+  // has a valid JWT. Same shape as sellerBanks; safe to call unauthenticated.
+  publicBanks: (country: string = "kenya") =>
+    request<{
+      country: string;
+      banks: {
+        code: string;
+        name: string;
+        slug?: string;
+        type?: string;
+        currency?: string;
+      }[];
+    }>(`/auth/banks?country=${encodeURIComponent(country)}`),
   sellerGetPayoutAccount: () =>
     request<{
       payout_account?: {

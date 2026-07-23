@@ -174,3 +174,34 @@ async def update_preferences(
         {"id": user["id"]}, {"_id": 0, "hashed_password": 0}
     )
     return user_to_out(fresh)
+
+
+
+# ---------------------------------------------------------------------------
+# Public: Paystack banks for the signup form's bank picker.
+# Same shape as `/api/seller/banks` but does NOT require an auth token so
+# the register screen can populate the dropdown before the seller account
+# exists. Paystack returns only public metadata (name/code/type), never any
+# seller-specific data.
+# ---------------------------------------------------------------------------
+@router.get("/auth/banks")
+async def public_banks(country: str = "kenya") -> Dict[str, Any]:
+    from core import paystack
+
+    country = (country or "kenya").strip().lower()
+    try:
+        banks = await paystack.list_banks(country)
+    except paystack.PaystackError as e:
+        raise HTTPException(status_code=502, detail=f"Paystack error: {e}") from e
+    slim = [
+        {
+            "code": b.get("code"),
+            "name": b.get("name"),
+            "slug": b.get("slug"),
+            "type": b.get("type"),
+            "currency": b.get("currency"),
+        }
+        for b in banks
+        if b.get("code") and b.get("name")
+    ]
+    return {"country": country, "banks": slim}

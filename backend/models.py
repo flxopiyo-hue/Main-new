@@ -197,6 +197,11 @@ class BankDetails(BaseModel):
     when the seller is onboarding for payouts — we don't enforce here at the
     model layer; the registration handler validates it."""
     bank_name: Optional[str] = Field(default=None, max_length=80)
+    # Paystack bank/mobile-money code captured from the picker. Enables the
+    # payout-account screen to resolve the actual account owner via
+    # `POST /api/seller/payout-account` without asking the seller to
+    # re-type the bank name.
+    bank_code: Optional[str] = Field(default=None, max_length=20)
     branch: Optional[str] = Field(default=None, max_length=80)
     account_name: Optional[str] = Field(default=None, max_length=120)
     account_number: Optional[str] = Field(default=None, max_length=40)

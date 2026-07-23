@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { StyleSheet, Image, Text, TouchableOpacity, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -8,9 +8,11 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { AppButton } from "@/src/components/AppButton";
 import { AppInput } from "@/src/components/AppInput";
 import { DobPicker } from "@/src/components/DobPicker";
+import { PickerField, PickerOption } from "@/src/components/PickerField";
 import { useToast } from "@/src/components/Toast";
-import { Gender, Role } from "@/src/lib/api";
+import { api, Gender, Role } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
+import { KENYAN_CITIES } from "@/src/lib/cities";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
 const GENDERS: { key: Gender; label: string }[] = [
@@ -57,6 +59,7 @@ export default function Register() {
   const [city, setCity] = useState("");
   const [country, setCountry] = useState("Kenya");
   const [bankName, setBankName] = useState("");
+  const [bankCode, setBankCode] = useState("");
   const [accountName, setAccountName] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
   const [mpesaPaybill, setMpesaPaybill] = useState("");
@@ -131,6 +134,7 @@ export default function Register() {
           mpesaTill.trim()
             ? {
                 bank_name: bankName.trim() || undefined,
+                bank_code: bankCode.trim() || undefined,
                 account_name: accountName.trim() || undefined,
                 account_number: accountNumber.trim() || undefined,
                 mpesa_paybill: mpesaPaybill.trim() || undefined,
@@ -243,6 +247,8 @@ export default function Register() {
             setCountry={setCountry}
             bankName={bankName}
             setBankName={setBankName}
+            bankCode={bankCode}
+            setBankCode={setBankCode}
             accountName={accountName}
             setAccountName={setAccountName}
             accountNumber={accountNumber}
@@ -354,6 +360,8 @@ interface SellerFieldsProps {
   setCountry: (s: string) => void;
   bankName: string;
   setBankName: (s: string) => void;
+  bankCode: string;
+  setBankCode: (s: string) => void;
   accountName: string;
   setAccountName: (s: string) => void;
   accountNumber: string;
@@ -364,7 +372,70 @@ interface SellerFieldsProps {
   setMpesaTill: (s: string) => void;
 }
 
+// Common East African countries we'll offer today; Kenya is default.
+const COUNTRY_OPTIONS: PickerOption[] = [
+  { value: "Kenya", label: "Kenya", icon: "map" },
+  { value: "Uganda", label: "Uganda", sub: "coming soon", icon: "map" },
+  { value: "Tanzania", label: "Tanzania", sub: "coming soon", icon: "map" },
+  { value: "Rwanda", label: "Rwanda", sub: "coming soon", icon: "map" },
+];
+
+const CITY_OPTIONS: PickerOption[] = KENYAN_CITIES.map((c) => ({
+  value: c.value,
+  label: c.label,
+  sub: c.county,
+  icon: "map-pin",
+}));
+
 function SellerFields(props: SellerFieldsProps) {
+  const [banks, setBanks] = useState<PickerOption[]>([]);
+  const [banksLoading, setBanksLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await api.publicBanks("kenya");
+        if (cancelled) return;
+        // Paystack often returns duplicate rows per bank for different
+        // currencies (KES, USD, etc.). Prefer KES when available and
+        // otherwise fall back to the first entry with a given code.
+        const seen = new Map<string, (typeof r.banks)[number]>();
+        for (const b of r.banks || []) {
+          if (!b.code || !b.name) continue;
+          const key = `${b.code}::${b.name}`;
+          const existing = seen.get(key);
+          if (!existing || (b.currency === "KES" && existing.currency !== "KES")) {
+            seen.set(key, b);
+          }
+        }
+        const opts: PickerOption[] = Array.from(seen.values()).map((b) => ({
+          value: b.code,
+          label: b.name,
+          sub: b.type === "mobile_money" ? "M-Pesa / mobile money" : "Bank",
+          icon: b.type === "mobile_money" ? "smartphone" : "briefcase",
+        }));
+        // Sort mobile money to the top (buyers use M-Pesa most in Kenya).
+        opts.sort((a, b) => {
+          const aM = a.icon === "smartphone" ? 0 : 1;
+          const bM = b.icon === "smartphone" ? 0 : 1;
+          if (aM !== bM) return aM - bM;
+          return a.label.localeCompare(b.label);
+        });
+        setBanks(opts);
+      } catch {
+        // Non-fatal — user can still leave bank blank at signup and set it
+        // via the payout-account screen later.
+        setBanks([]);
+      } finally {
+        if (!cancelled) setBanksLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <>
       <View style={styles.sectionDivider}>
@@ -380,23 +451,30 @@ function SellerFields(props: SellerFieldsProps) {
       />
       <View style={styles.rowSplit}>
         <View style={styles.flex1}>
-          <AppInput
-            testID="register-city-input"
+          <PickerField
+            testID="register-city-picker"
             label="City"
-            value={props.city}
-            onChangeText={props.setCity}
-            autoCapitalize="words"
-            placeholder="Nairobi"
+            placeholder="Choose city"
+            value={props.city || null}
+            options={CITY_OPTIONS}
+            allowCustom
+            customLabel="Add another town…"
+            searchPlaceholder="Search Nairobi, Mombasa…"
+            onChange={(v) => props.setCity(v)}
           />
         </View>
         <View style={styles.flex1}>
-          <AppInput
-            testID="register-country-input"
+          <PickerField
+            testID="register-country-picker"
             label="Country"
-            value={props.country}
-            onChangeText={props.setCountry}
-            autoCapitalize="words"
             placeholder="Kenya"
+            value={props.country || null}
+            options={COUNTRY_OPTIONS}
+            onChange={(v, opt) => {
+              // Block non-active countries — offered them just for future.
+              if (opt.sub === "coming soon") return;
+              props.setCountry(v);
+            }}
           />
         </View>
       </View>
@@ -404,22 +482,29 @@ function SellerFields(props: SellerFieldsProps) {
       <View style={styles.sectionDivider}>
         <Text style={[tp.caption, { color: colors.primary }]}>Payouts</Text>
         <Text style={[tp.bodyMuted, { marginTop: 4, fontSize: 12 }]}>
-          Optional now — you can add these later in Settings. Provide at least one method before your first payout.
+          All fields below are optional now — you can add them later in
+          Settings → Payout account. Choose your bank from the list so we
+          can verify your account number later.
         </Text>
       </View>
 
-      <Text style={[tp.caption, styles.label, { marginTop: spacing.sm }]}>Bank</Text>
-      <AppInput
-        testID="register-bank-name-input"
-        label="Bank name"
-        value={props.bankName}
-        onChangeText={props.setBankName}
-        autoCapitalize="words"
-        placeholder="Equity Bank"
+      <PickerField
+        testID="register-bank-picker"
+        label="Bank / M-Pesa"
+        placeholder="Choose bank or M-Pesa"
+        value={props.bankCode || null}
+        options={banks}
+        loading={banksLoading}
+        optional
+        searchPlaceholder="Search Equity, KCB, M-Pesa…"
+        onChange={(code, opt) => {
+          props.setBankCode(code);
+          props.setBankName(opt.label);
+        }}
       />
       <AppInput
         testID="register-account-name-input"
-        label="Account name"
+        label="Account name (optional)"
         value={props.accountName}
         onChangeText={props.setAccountName}
         autoCapitalize="words"
@@ -427,19 +512,21 @@ function SellerFields(props: SellerFieldsProps) {
       />
       <AppInput
         testID="register-account-number-input"
-        label="Account number"
+        label="Account number (optional)"
         value={props.accountNumber}
         onChangeText={props.setAccountNumber}
         keyboardType="number-pad"
         placeholder="0123456789"
       />
 
-      <Text style={[tp.caption, styles.label, { marginTop: spacing.sm }]}>M-Pesa</Text>
+      <Text style={[tp.caption, styles.label, { marginTop: spacing.md }]}>
+        M-Pesa (optional)
+      </Text>
       <View style={styles.rowSplit}>
         <View style={styles.flex1}>
           <AppInput
             testID="register-mpesa-paybill-input"
-            label="Paybill"
+            label="Paybill (optional)"
             value={props.mpesaPaybill}
             onChangeText={props.setMpesaPaybill}
             keyboardType="number-pad"
@@ -449,7 +536,7 @@ function SellerFields(props: SellerFieldsProps) {
         <View style={styles.flex1}>
           <AppInput
             testID="register-mpesa-till-input"
-            label="Till number"
+            label="Till (optional)"
             value={props.mpesaTill}
             onChangeText={props.setMpesaTill}
             keyboardType="number-pad"
