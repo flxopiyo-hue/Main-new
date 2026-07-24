@@ -50,3 +50,11 @@ Editorial Swiss / High-Contrast: Cormorant Garamond display + Manrope body text,
 
 ## Smart Business Hook (next iteration)
 **Designer royalty payouts:** Stripe Connect for sellers + monthly auto-payout — turns the platform into a marketplace SaaS.
+
+---
+
+## Update — June 2026 (shared categories + variant grid iteration)
+- **Payments are Paystack** (Stripe fully purged earlier). 15% platform fee, escrow with 48h auto-release, Kenya banks + M-Pesa payouts.
+- **Shared marketplace categories**: `GET/POST /api/categories` backed by a `categories` Mongo collection (unique compact slug). Sellers can add community categories ("Swimwear") in the add-item wizard via search-or-add; near-duplicates ("swim wear", "Swimwears", "swimware") canonicalise onto one row (slugify + plural + difflib fuzzy match). `POST/PATCH /api/items` canonicalise free-text categories. Buyer Discover chips load from the same endpoint so community categories are discoverable.
+- **Variant grid completed**: size × colour matrix with per-combo quantity, disable toggle, and optional per-variant **price override** input. Explicit variants get server-assigned UUIDs (create) and preserve ids by (size,colour) key (patch). `sizes[].available_qty` roll-up now recomputed from variants server-side; frontend uses shared `itemTotalQty()` (variants-authoritative).
+- **P0 crash fixed & verified**: `pickedColors is not defined` in add-item wizard — variant matrix JSX now lives in `StepSizing`; full seller flow (photo → taxonomy → sizing → publish) verified via browser automation.

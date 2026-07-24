@@ -106,6 +106,24 @@ def total_available_qty(variants: List[Dict[str, Any]]) -> int:
     return sum(int(v.get("quantity") or 0) for v in variants if not v.get("disabled"))
 
 
+def rollup_sizes_qty(
+    sizes: List[Dict[str, Any]], variants: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """Recompute each size's legacy ``available_qty`` roll-up from the
+    authoritative variants list (disabled combos excluded) so legacy
+    consumers of ``sizes`` stay coherent with per-variant stock."""
+    by_size: Dict[str, int] = {}
+    for v in variants:
+        if v.get("disabled"):
+            continue
+        label = v.get("size_label") or ""
+        by_size[label] = by_size.get(label, 0) + int(v.get("quantity") or 0)
+    for s in sizes:
+        if s.get("label") in by_size:
+            s["available_qty"] = by_size[s["label"]]
+    return sizes
+
+
 def variant_lookup(item_doc: Dict[str, Any], variant_id: str) -> Optional[Dict[str, Any]]:
     for v in item_doc.get("variants") or []:
         if v.get("id") == variant_id:

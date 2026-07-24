@@ -575,7 +575,12 @@ class ItemIn(BaseModel):
     name: str
     description: str = ""
     brand_name: Optional[str] = Field(default=None, max_length=80)
-    category: Literal["shirts", "dresses", "pants", "outerwear", "shoes", "accessories"]
+    # Free-form slug — validated against the shared `categories` collection.
+    # System categories (shirts/dresses/pants/outerwear/shoes/accessories)
+    # are seeded at startup; sellers can add community categories via
+    # POST /api/categories (or by typing new text here — the items router
+    # auto-canonicalises to a slug).
+    category: str = Field(min_length=2, max_length=40)
     subcategory: Optional[str] = Field(default=None, max_length=40)
     price_cents: int = Field(ge=0)
     # When omitted, server falls back to the seller's preferred_currency.
@@ -636,9 +641,7 @@ class ItemPatch(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     brand_name: Optional[str] = Field(default=None, max_length=80)
-    category: Optional[
-        Literal["shirts", "dresses", "pants", "outerwear", "shoes", "accessories"]
-    ] = None
+    category: Optional[str] = Field(default=None, min_length=2, max_length=40)
     subcategory: Optional[str] = Field(default=None, max_length=40)
     price_cents: Optional[int] = Field(default=None, ge=0)
     currency: Optional[Currency] = None

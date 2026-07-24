@@ -36,12 +36,24 @@ async def create_item(
     await require_role("seller", user)
     item_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
+    # Canonicalise the category. Sellers may type free-form ("swimwear",
+    # "Kikoy Wraps"); we resolve to a slug, auto-creating a community
+    # category row when unknown so every future seller sees it.
+    from routers.categories import bump_usage, resolve_or_create_slug
+
+    canonical_slug = await resolve_or_create_slug(
+        body.category, body.audience, user["id"]
+    )
+    # If somehow empty (e.g. seller sent whitespace) we bail; the Pydantic
+    # min_length=2 already blocks most of these cases.
+    if not canonical_slug:
+        raise HTTPException(status_code=400, detail="Category is required.")
     # If seller didn't pass an explicit currency, fall back to their preferred currency.
     listing_currency = (
         body.currency or user.get("preferred_currency") or DEFAULT_CURRENCY
     )
     garment_type = body.garment_type or infer_garment_type(
-        {"name": body.name, "category": body.category}
+        {"name": body.name, "category": canonical_slug}
     )
     # Compose the images gallery. The first slot is always the legacy
     # `image_b64` (primary thumb shown on cards/search). Any extras the
@@ -61,7 +73,7 @@ async def create_item(
         "name": body.name,
         "description": body.description,
         "brand_name": (body.brand_name or "").strip() or None,
-        "category": body.category,
+        "category": canonical_slug,
         "subcategory": (body.subcategory or "").strip() or None,
         "price_cents": body.price_cents,
         "currency": listing_currency,
@@ -81,12 +93,27 @@ async def create_item(
     # seller sent an explicit list. This keeps single-color legacy items
     # working while giving new items the per-variant inventory & pricing
     # layer described in :mod:`core.variants`.
-    from core.variants import generate_variants
+    from core.variants import generate_variants, rollup_sizes_qty
     if body.variants:
-        doc["variants"] = [v.model_dump() for v in body.variants]
+        # Clients send explicit variants without ids ("") — assign fresh
+        # UUIDs so orders/carts can reference each variant stably.
+        explicit: List[Dict[str, Any]] = []
+        for v in body.variants:
+            vd = v.model_dump()
+            if not vd.get("id"):
+                vd["id"] = str(uuid.uuid4())
+            explicit.append(vd)
+        doc["variants"] = explicit
+        # Keep the legacy per-size roll-up coherent with variant stock.
+        doc["sizes"] = rollup_sizes_qty(doc["sizes"], explicit)
     else:
         doc["variants"] = generate_variants(doc["sizes"], doc["colors"])
     await db.items.insert_one(doc)
+    # Best-effort usage bump — doesn't matter if it fails.
+    try:
+        await bump_usage(canonical_slug)
+    except Exception:
+        pass
     return item_to_out(doc)
 
 
@@ -305,7 +332,21 @@ async def patch_item(
     if body.brand_name is not None:
         update["brand_name"] = body.brand_name.strip() or None
     if body.category is not None:
-        update["category"] = body.category
+        # Canonicalise the same way create does so edits can't fragment
+        # the shared taxonomy (e.g. "Swim Wear" → existing "swimwear").
+        from routers.categories import bump_usage, resolve_or_create_slug
+
+        canonical = await resolve_or_create_slug(
+            body.category, body.audience or doc.get("audience"), user["id"]
+        )
+        if not canonical:
+            raise HTTPException(status_code=400, detail="Category is required.")
+        update["category"] = canonical
+        if canonical != doc.get("category"):
+            try:
+                await bump_usage(canonical)
+            except Exception:
+                pass
     if body.subcategory is not None:
         update["subcategory"] = body.subcategory.strip() or None
     if body.price_cents is not None:
@@ -342,7 +383,27 @@ async def patch_item(
     if body.colors is not None:
         update["colors"] = [c.model_dump() for c in body.colors]
     if body.variants is not None:
-        update["variants"] = [v.model_dump() for v in body.variants]
+        # Preserve existing variant ids by (size, color) key so in-flight
+        # carts/orders keep resolving; brand-new combos get fresh UUIDs.
+        from core.variants import _norm_name
+
+        prior_ids = {
+            f"{v.get('size_label')}::{_norm_name(v.get('color_name'))}": v.get("id")
+            for v in (doc.get("variants") or [])
+        }
+        merged_variants: List[Dict[str, Any]] = []
+        for v in body.variants:
+            vd = v.model_dump()
+            if not vd.get("id"):
+                key = f"{vd.get('size_label')}::{_norm_name(vd.get('color_name'))}"
+                vd["id"] = prior_ids.get(key) or str(uuid.uuid4())
+            merged_variants.append(vd)
+        update["variants"] = merged_variants
+        # Keep the legacy per-size roll-up coherent with variant stock.
+        from core.variants import rollup_sizes_qty
+
+        base_sizes = update.get("sizes") or [dict(s) for s in (doc.get("sizes") or [])]
+        update["sizes"] = rollup_sizes_qty(base_sizes, merged_variants)
 
     # If sizes or colors changed but variants weren't explicitly sent,
     # regenerate variants (preserving prior quantities/pricing where

@@ -392,6 +392,29 @@ export const CATEGORIES_BY_AUDIENCE: Record<string, string[]> = {
   kids: ["shirts", "dresses", "pants", "outerwear", "shoes", "accessories"],
 };
 
+// Shared marketplace category — system-seeded ("Tops", "Shoes", …) or
+// community-added by a seller ("Swimwear", "Kikoy", …). Once one seller
+// adds a category every other seller (and buyer filter) sees it.
+export interface CategoryRow {
+  id: string;
+  slug: string;
+  label: string;
+  audiences: string[];
+  source: "system" | "community";
+  usage_count: number;
+}
+
+// Total purchasable stock for an item. Variants (when present) are the
+// authoritative source — disabled combos don't count. Legacy items fall
+// back to the per-size roll-up. Mirrors `total_qty()` on the backend.
+export function itemTotalQty(item: Item): number {
+  const variants = item.variants ?? [];
+  if (variants.length > 0) {
+    return variants.reduce((s, v) => s + (v.disabled ? 0 : v.quantity || 0), 0);
+  }
+  return item.sizes.reduce((s, x) => s + (x.available_qty || 0), 0);
+}
+
 export interface TryOnImageOut {
   angle: TryOnAngle;
   image_b64: string;
@@ -756,6 +779,17 @@ export const api = {
     return request<Item[]>(`/items${suffix ? `?${suffix}` : ""}`);
   },
   myItems: () => request<Item[]>("/items/mine"),
+
+  // Shared marketplace categories (system + community)
+  listCategories: (params: { audience?: string; q?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.audience) qs.append("audience", params.audience);
+    if (params.q) qs.append("q", params.q);
+    const suffix = qs.toString();
+    return request<CategoryRow[]>(`/categories${suffix ? `?${suffix}` : ""}`);
+  },
+  createCategory: (body: { label: string; audiences?: string[] }) =>
+    request<CategoryRow>("/categories", { method: "POST", body }),
   getItem: (id: string) => request<Item>(`/items/${id}`),
   fitScore: (itemId: string, profileId?: string) =>
     request<FitScore>(

@@ -123,3 +123,27 @@ GET /api/seller/banks?country=kenya → 99 banks
 
 ## Note on frontend environment
 Frontend `.env` currently points at preview (`https://fit-finder-app-5.preview.emergentagent.com`) with TEST Paystack keys. This is intentional for regression testing. Deployment (via Emergent Publish) will bake production URL into the deployed bundle separately.
+
+---
+
+# Iteration 26 — Seller add-item crash fix + shared community categories + variant grid completion
+
+## What changed
+- Backend `routers/categories.py`: compact slugify (collapses spaces/punctuation), fuzzy duplicate resolution (plural + difflib ≥0.85) in `find_canonical()`, `GET /api/categories?q=` search.
+- Backend `routers/items.py`: `PATCH /api/items/{id}` now canonicalises `category`; explicit `variants` get UUIDs on create and preserve prior ids by (size,colour) on patch; `sizes[].available_qty` roll-up recomputed from variants.
+- Backend `core/variants.py`: new `rollup_sizes_qty()`.
+- Frontend `src/lib/api.ts`: `CategoryRow` type, `listCategories`/`createCategory` bindings, `itemTotalQty()` helper.
+- Frontend `(seller)/add-item.tsx`: category picker now loads shared catalog from API, search-as-you-type + "Add 'X' as a new category" affordance, per-variant price override input in the variant grid. Crash (`pickedColors is not defined`) resolved — matrix JSX lives in StepSizing.
+- Frontend `(tabs)/index.tsx`: buyer category chips load from `GET /api/categories` (community categories discoverable), stock badge uses variants-authoritative `itemTotalQty`.
+
+## Verified this session (main agent, backend curl + browser automation)
+- POST /api/categories: "Swimwear" → slug `swimwear`; "swim wear"/"Swimwears"/"swimware" all resolve to same row with audiences merged.
+- GET /api/categories?q=swim → returns swimwear. GET /api/items?category=swimwear returns the item.
+- POST /api/items with free-text category "Swim Wear" → stored `swimwear`, usage_count bumped; explicit variants got unique UUIDs; price_cents_override persisted.
+- PATCH /api/items category "swimwears" → stays `swimwear`; variant ids preserved; sizes roll-up = variant sums (disabled excluded).
+- Frontend: seller login → add-item wizard step 1→2→3 → category search "swim" shows Swimwear chip + Add affordance → variant grid open, qty/price-override/disable edited → Publish OK, item in inventory. NO `pickedColors` crash.
+
+## Still to test (testing agent)
+- Full regression per "What to Test" section above (iteration 25 list) + category/variant flows on fresh accounts.
+- Buyer item-detail variant selection: stock per combo, disabled combos unselectable, override price charged at checkout.
+- Shoes listing with EU size labels + variant grid.

@@ -25,7 +25,7 @@ import { OutfitPill } from "@/src/components/OutfitPill";
 import { RestockBell } from "@/src/components/RestockBell";
 import { useToast } from "@/src/components/Toast";
 import { VerifiedBadge } from "@/src/components/VerifiedBadge";
-import { api, CATEGORIES_BY_AUDIENCE, CATEGORY_LABELS, Collection, FitScore, Item, KidAgeGroup } from "@/src/lib/api";
+import { api, CATEGORIES_BY_AUDIENCE, CATEGORY_LABELS, CategoryRow, Collection, FitScore, Item, itemTotalQty, KidAgeGroup } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
 import { formatPriceIn } from "@/src/lib/currency";
 import { dataUriFromBase64 } from "@/src/lib/images";
@@ -115,14 +115,40 @@ export default function Discover() {
 
   const audienceLabel = effectiveAudience ?? (effShowAll ? "all" : null);
 
-  // Filter the category chips to those that match the effective audience.
-  // Men shoppers don't see Dresses, etc. (mirrors the seller wizard.)
-  const visibleCategoryKeys = effectiveAudience
-    ? (CATEGORIES_BY_AUDIENCE[effectiveAudience] ?? ALL_CATEGORIES.map((c) => c.key))
-    : ALL_CATEGORIES.map((c) => c.key);
-  const visibleCategories = ALL_CATEGORIES.filter((c) =>
-    visibleCategoryKeys.includes(c.key),
+  // Category chips: the catalog comes from GET /api/categories so
+  // community categories added by sellers ("Swimwear", …) show up for
+  // buyers too. Filtered to the effective audience (Men shoppers don't
+  // see Dresses, mirroring the seller wizard). Hardcoded list is only a
+  // fallback if the request fails.
+  const [catalog, setCatalog] = useState<CategoryRow[] | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        try {
+          const rows = await api.listCategories();
+          if (!cancelled && rows.length > 0) setCatalog(rows);
+        } catch {
+          // keep fallback
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, []),
   );
+  const visibleCategories = (() => {
+    if (catalog) {
+      const rows = effectiveAudience
+        ? catalog.filter((c) => (c.audiences ?? []).includes(effectiveAudience))
+        : catalog;
+      return rows.map((c) => ({ key: c.slug, label: c.label }));
+    }
+    const keys = effectiveAudience
+      ? (CATEGORIES_BY_AUDIENCE[effectiveAudience] ?? ALL_CATEGORIES.map((c) => c.key))
+      : ALL_CATEGORIES.map((c) => c.key);
+    return ALL_CATEGORIES.filter((c) => keys.includes(c.key));
+  })();
 
   const load = useCallback(async () => {
     try {
@@ -217,7 +243,7 @@ export default function Discover() {
   }, [items, user?.role]);
 
   const renderItem = ({ item, index }: { item: Item; index: number }) => {
-    const totalQty = item.sizes.reduce((s, x) => s + (x.available_qty || 0), 0);
+    const totalQty = itemTotalQty(item);
     const outOfStock = totalQty === 0;
     // Show the low-stock urgency pill when 1–5 units remain so buyers see
     // the hint without exposing the exact seller inventory count.
@@ -397,7 +423,9 @@ export default function Discover() {
             // If the current category isn't valid for the new gender,
             // clear it so the user isn't stuck on an unselectable chip.
             if (k && k !== "all") {
-              const allowed = CATEGORIES_BY_AUDIENCE[k] ?? [];
+              const allowed = catalog
+                ? catalog.filter((c) => (c.audiences ?? []).includes(k)).map((c) => c.slug)
+                : (CATEGORIES_BY_AUDIENCE[k] ?? []);
               if (category && !allowed.includes(category)) setCategory(null);
             }
           }}

@@ -31,7 +31,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { HeaderMenu } from "@/src/components/HeaderMenu";
 import { useToast } from "@/src/components/Toast";
-import { api, Item, SellerAnalytics, CATEGORY_LABELS } from "@/src/lib/api";
+import { api, Item, SellerAnalytics, CATEGORY_LABELS, itemTotalQty } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
 import { formatPrice, formatPriceIn } from "@/src/lib/currency";
 import { dataUriFromBase64 } from "@/src/lib/images";
@@ -155,7 +155,7 @@ export default function Inventory() {
         item,
         views: a?.views ?? 0,
         try_ons: a?.try_ons ?? 0,
-        total_qty: item.sizes.reduce((sum, s) => sum + s.available_qty, 0),
+        total_qty: itemTotalQty(item),
       };
     });
   }, [items, analytics]);

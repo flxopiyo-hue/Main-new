@@ -1,0 +1,44 @@
+{
+  "summary": "Iteration 26 verification: seller add-item wizard P0 fix (pickedColors crash), shared/community categories, canonicalisation (near-duplicate + plural), and variant matrix. Backend: 15/15 pytest passed (categories list/search/audience/POST auth + near-dup merge, items canonicalisation on POST+PATCH, explicit-variants get UUIDs, ids preserved by (size,colour) on PATCH, sizes roll-up excludes disabled combos, buyer discovery by community slug). Regression: buyer register (gender required), seller register (Location object required with city+country), /auth/me, seller analytics platform_fee_bps=1500, payments/checkout returns Paystack authorization_url. Frontend: buyer discover chip strip loads community categories from GET /api/categories (cat-swimwear present and tappable, list container still renders). Seller add-item wizard step 1 -> step 2 (Taxonomy: audience + community category search 'swim' surfaces wizard-cat-swimwear) -> step 3 (Sizing) navigation completes WITHOUT the 'pickedColors is not defined' ReferenceError. Sizing step renders unit toggle, size chips and colour palette correctly.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Login / Welcome",
+        "issues": [
+          "Login screen shows deprecation warnings in console: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' and 'props.pointerEvents is deprecated. Use style.pointerEvents' - React Native web deprecation warnings, non-blocking but should be migrated."
+        ]
+      }
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration26_categories_variants.py",
+    "/app/test_reports/pytest/iteration26_results.xml"
+  ],
+  "action_items": [
+    "Optional cleanup: purge the two TEST community categories created by the backend tests before republishing so the seller category picker isn't polluted: db.categories.deleteMany({slug: {$regex: '^testkikoy'}}) - both slugs currently visible in the seller taxonomy picker and buyer chip strip (testkikoy98c2e6wrap, testkikoyde882cwrap).",
+    "Minor: /app/backend/routers/categories.py line 52 defines SYSTEM_SLUGS but never uses it - dead code, safe to delete.",
+    "Cosmetic React Native web deprecation warnings on login screen ('shadow*' style props and props.pointerEvents) - migrate to boxShadow / style.pointerEvents to silence Metro warnings."
+  ],
+  "critical_code_review_comments": [
+    "categories.py find_canonical() correctly handles plural/singular (swimwears <-> swimwear) and 0.85-cutoff difflib for misspellings (swimware -> swimwear). Idempotent create verified end-to-end.",
+    "items.py POST + PATCH both go through resolve_or_create_slug() so free-text edits ('Swim Wear', 'swimwears') always land on canonical slug 'swimwear' - verified.",
+    "core/variants.py rollup_sizes_qty() correctly excludes disabled combos from per-size available_qty roll-up - verified L=3 (Coral disabled 2 excluded) in test_patch_item_category_and_variant_id_preservation.",
+    "PATCH variant id preservation by (size_label, _norm_name(color_name)) key works - verified all 4 (S,L)x(Coral,Navy) ids stable across PATCH."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration26_categories_variants.py (new pytest module)"
+  ],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "P0 crash fix verified + buyer community-category discovery verified"},
+  "seed_data_creation": "Test buyer & test seller accounts created via /auth/register with unique @example.com emails (prefixed TESTbuyer_ / TESTseller_). Two TEST community categories (testkikoy98c2e6wrap / testkikoyde882cwrap) created via POST /api/categories and NOT cleaned up - they'll persist in the shared catalog. One TEST swim item created + deleted (cleanup ran).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Community categories persist across runs (no cleanup endpoint exists). Frontend .env key is EXPO_PUBLIC_BACKEND_URL (not EXPO_BACKEND_URL). Login flow requires clicking 'I ALREADY HAVE AN ACCOUNT' -> role toggle testID login-intent-buyer|seller -> fill login-email-input + login-password-input -> click login-submit-btn. Add-item wizard is at /add-item; three steps (basics/taxonomy/sizing). Photo upload goes through page.expect_file_chooser() on wizard-photo-add-library. Buyer register requires gender (buyers), seller register requires location as {city, country} object. Checkout requires size (not size_label), origin_url, and address_id. Uncovered scenarios: publishing full item from wizard, buyer item detail variant selection with disabled combo + price override, shoes EU size chip rendering - main agent should self-verify these since they take significant browser-automation time.",
+  "rca_of_issue": "N/A - no regressions found. Main agent's fix for the pickedColors ReferenceError (moving the matrix JSX inside StepSizing where pickedColors is a valid closure variable) is verified end-to-end via browser automation reaching step 3 without React error boundary firing."
+}

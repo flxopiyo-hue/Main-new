@@ -35,6 +35,7 @@ import {
   Audience,
   CATEGORIES_BY_AUDIENCE,
   CATEGORY_LABELS,
+  CategoryRow,
   ColorOption,
   CurrencyCode,
   DIMENSION_HINTS,
@@ -57,8 +58,24 @@ import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 /* Taxonomy & constants                                                       */
 /* -------------------------------------------------------------------------- */
 
-const CATEGORIES = ["shirts", "dresses", "pants", "outerwear", "shoes", "accessories"] as const;
-type Category = (typeof CATEGORIES)[number];
+// System category slugs (always seeded server-side). The full picker list
+// comes from GET /api/categories, which also includes community categories
+// added by any seller ("swimwear", "kikoy", …) — shared marketplace-wide.
+const CATEGORIES: string[] = ["shirts", "dresses", "pants", "outerwear", "shoes", "accessories"];
+type Category = string;
+
+// Offline/failure fallback so the wizard stays usable if the categories
+// request fails — mirrors the backend seed set.
+const FALLBACK_CATALOG: CategoryRow[] = CATEGORIES.map((slug) => ({
+  id: slug,
+  slug,
+  label: CATEGORY_LABELS[slug] ?? slug,
+  audiences: Object.entries(CATEGORIES_BY_AUDIENCE)
+    .filter(([, list]) => list.includes(slug))
+    .map(([aud]) => aud),
+  source: "system" as const,
+  usage_count: 0,
+}));
 
 const AUDIENCES: { key: Audience; label: string }[] = [
   { key: "women", label: "Women" },
@@ -191,6 +208,27 @@ export default function AddItem() {
   const [audience, setAudience] = useState<Audience>("unisex");
   const [category, setCategory] = useState<Category>("shirts");
   const [subcategory, setSubcategory] = useState<string | null>(null);
+  // Shared marketplace categories (system + community). Loaded once —
+  // community categories added by other sellers appear here too.
+  const [catalog, setCatalog] = useState<CategoryRow[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await api.listCategories();
+        if (!cancelled && rows.length > 0) setCatalog(rows);
+      } catch {
+        // fall back to FALLBACK_CATALOG below
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const audienceCategories = useMemo(() => {
+    const base = catalog.length > 0 ? catalog : FALLBACK_CATALOG;
+    return base.filter((c) => (c.audiences ?? []).includes(audience));
+  }, [catalog, audience]);
 
   // Step 3
   const [sizes, setSizes] = useState<Record<string, SizeOption>>({});
@@ -400,6 +438,27 @@ export default function AddItem() {
     );
   };
 
+  // Community category add — canonicalised server-side (near-duplicates
+  // like "swim wear" resolve to the existing "swimwear" row) and shared
+  // with every other seller immediately.
+  const addCategory = async (label: string) => {
+    try {
+      const row = await api.createCategory({ label, audiences: [audience] });
+      setCatalog((prev) => {
+        const base = prev.length > 0 ? prev : FALLBACK_CATALOG;
+        return base.some((c) => c.slug === row.slug)
+          ? base.map((c) => (c.slug === row.slug ? row : c))
+          : [...base, row];
+      });
+      setCategory(row.slug);
+      setSubcategory(null);
+      setSizes({});
+      toast.show(`"${row.label}" added — now available to every seller`, "success");
+    } catch (e: any) {
+      toast.show(e?.message ?? "Couldn't add category", "error");
+    }
+  };
+
   const next = () => {
     if (step === 1 && !step1Valid) {
       toast.show(Object.values(step1Errors)[0], "error");
@@ -592,6 +651,8 @@ export default function AddItem() {
             audience={audience}
             category={category}
             subcategory={subcategory}
+            categories={audienceCategories}
+            onAddCategory={addCategory}
             onChangeAudience={(a) => {
               setAudience(a);
               // If the currently-selected category isn't valid for the new
@@ -599,10 +660,12 @@ export default function AddItem() {
               // switched to "men"), snap to the first available category
               // and clear subcategory + sizes. This guarantees the seller
               // never lands on an option they can't actually save.
-              const allowed = CATEGORIES_BY_AUDIENCE[a] ?? CATEGORIES;
+              const base = catalog.length > 0 ? catalog : FALLBACK_CATALOG;
+              const allowed = base
+                .filter((c) => (c.audiences ?? []).includes(a))
+                .map((c) => c.slug);
               if (!allowed.includes(category)) {
-                const next = (allowed[0] ?? "shirts") as Category;
-                setCategory(next);
+                setCategory(allowed[0] ?? "shirts");
                 setSubcategory(null);
                 setSizes({});
               }
@@ -955,25 +1018,45 @@ interface StepTaxonomyProps {
   audience: Audience;
   category: Category;
   subcategory: string | null;
+  categories: CategoryRow[];
   onChangeAudience: (a: Audience) => void;
   onChangeCategory: (c: Category) => void;
   onChangeSubcategory: (s: string | null) => void;
+  onAddCategory: (label: string) => void;
 }
 
 function StepTaxonomy({
   audience,
   category,
   subcategory,
+  categories,
   onChangeAudience,
   onChangeCategory,
   onChangeSubcategory,
+  onAddCategory,
 }: StepTaxonomyProps) {
   const subs = SUBCATEGORIES_BY_CATEGORY[category] ?? [];
-  // Restrict the visible categories to those that make sense for the
-  // chosen audience. Sellers who pick "Men" don't see Dresses (and vice
-  // versa). The parent component resets `category` when this list
-  // changes, so we never end up showing an option that isn't selectable.
-  const visibleCategories = (CATEGORIES_BY_AUDIENCE[audience] ?? CATEGORIES) as readonly Category[];
+  // Search-as-you-type over the shared category list (system + community).
+  // If nothing matches, the seller can add their own — it becomes
+  // available to every other seller (canonicalised server-side).
+  const [catQuery, setCatQuery] = useState("");
+  const nq = catQuery.trim().toLowerCase();
+  const compactQuery = nq.replace(/[^a-z0-9]/g, "");
+  const visibleCategories = nq
+    ? categories.filter(
+        (c) =>
+          c.label.toLowerCase().includes(nq) ||
+          (compactQuery.length > 0 && c.slug.includes(compactQuery)),
+      )
+    : categories;
+  const exactExists = categories.some(
+    (c) => c.slug === compactQuery || c.label.toLowerCase() === nq,
+  );
+  const canAdd = compactQuery.length >= 2 && !exactExists;
+  const selectedLabel =
+    categories.find((c) => c.slug === category)?.label ??
+    CATEGORY_LABELS[category] ??
+    category;
 
   return (
     <View>
@@ -1006,33 +1089,71 @@ function StepTaxonomy({
       <Text style={[tp.caption, styles.label]}>
         Category{" "}
         <Text style={{ color: colors.mutedFg, textTransform: "none" }}>
-          ({visibleCategories.length} options for {audience})
+          ({categories.length} for {audience} · shared by all sellers)
         </Text>
       </Text>
+      <View style={styles.catSearchRow}>
+        <Feather name="search" size={14} color={colors.mutedFg} />
+        <TextInput
+          testID="wizard-cat-search"
+          value={catQuery}
+          onChangeText={setCatQuery}
+          placeholder="Search or add a category (e.g. swimwear)"
+          placeholderTextColor={colors.mutedFg}
+          style={styles.catSearchInput}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        {catQuery.length > 0 ? (
+          <TouchableOpacity
+            testID="wizard-cat-search-clear"
+            onPress={() => setCatQuery("")}
+            hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+          >
+            <Feather name="x" size={14} color={colors.mutedFg} />
+          </TouchableOpacity>
+        ) : null}
+      </View>
       <View style={styles.catRow}>
         {visibleCategories.map((c) => (
           <TouchableOpacity
-            key={c}
-            testID={`wizard-cat-${c}`}
-            onPress={() => onChangeCategory(c)}
-            style={[styles.cat, category === c ? styles.catActive : styles.catInactive]}
+            key={c.slug}
+            testID={`wizard-cat-${c.slug}`}
+            onPress={() => onChangeCategory(c.slug)}
+            style={[styles.cat, category === c.slug ? styles.catActive : styles.catInactive]}
           >
             <Text
               style={[
                 styles.catLabel,
-                category === c ? styles.catLabelActive : styles.catLabelInactive,
+                category === c.slug ? styles.catLabelActive : styles.catLabelInactive,
               ]}
             >
-              {CATEGORY_LABELS[c] ?? c}
+              {c.label}
             </Text>
           </TouchableOpacity>
         ))}
       </View>
+      {visibleCategories.length === 0 && !canAdd ? (
+        <Text style={[tp.bodyMuted, { marginTop: 4 }]}>No matching category yet.</Text>
+      ) : null}
+      {canAdd ? (
+        <TouchableOpacity
+          testID="wizard-cat-add"
+          onPress={() => {
+            onAddCategory(catQuery.trim());
+            setCatQuery("");
+          }}
+          style={styles.customAddBtn}
+        >
+          <Feather name="plus" size={14} color={colors.primary} />
+          <Text style={styles.customAddLabel}>Add “{catQuery.trim()}” as a new category</Text>
+        </TouchableOpacity>
+      ) : null}
 
       <Text style={[tp.caption, styles.label]}>
         Subcategory{" "}
         <Text style={{ color: colors.mutedFg, textTransform: "none" }}>
-          (helps shoppers find this {(CATEGORY_LABELS[category] ?? category).toLowerCase()})
+          (helps shoppers find this {selectedLabel.toLowerCase()})
         </Text>
       </Text>
       {subs.length === 0 ? (
@@ -1265,8 +1386,209 @@ function StepSizing({
         onAdd={onToggleColor}
         onRemove={onToggleColor}
       />
+      {/* --------------------------------------------------------------- */}
+      {/* Opt-in per-variant grid (size × color)                          */}
+      {/* --------------------------------------------------------------- */}
+      {pickedColors.length >= 2 && Object.keys(sizes).length >= 1 ? (
+        <View style={styles.variantSection} testID="wizard-variant-section">
+          <TouchableOpacity
+            testID="wizard-variant-toggle"
+            onPress={() => onToggleManagePerVariant(!managePerVariant)}
+            style={styles.variantToggle}
+            activeOpacity={0.85}
+          >
+            <View style={styles.variantToggleLeft}>
+              <Text style={styles.variantToggleLabel}>Manage stock per color</Text>
+              <Text style={styles.variantToggleHint}>
+                {managePerVariant
+                  ? "Set exact quantity for each size × color combo below."
+                  : "Off: your size quantities split evenly across colors."}
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.variantSwitch,
+                managePerVariant ? styles.variantSwitchOn : styles.variantSwitchOff,
+              ]}
+            >
+              <View
+                style={[
+                  styles.variantSwitchThumb,
+                  managePerVariant && styles.variantSwitchThumbOn,
+                ]}
+              />
+            </View>
+          </TouchableOpacity>
+
+          {managePerVariant ? (
+            <View style={styles.variantGrid} testID="wizard-variant-grid">
+              {/* Header row: color names */}
+              <View style={styles.variantGridRow}>
+                <View style={[styles.variantGridCell, styles.variantGridHead]}>
+                  <Text style={styles.variantGridHeadText}>SIZE ↓ / COLOR →</Text>
+                </View>
+                {pickedColors.map((c) => (
+                  <View
+                    key={c.name}
+                    style={[styles.variantGridCell, styles.variantGridHead]}
+                  >
+                    <View style={styles.variantColorSwatchWrap}>
+                      <View
+                        style={[
+                          styles.variantColorSwatch,
+                          { backgroundColor: c.hex },
+                        ]}
+                      />
+                      <Text
+                        style={styles.variantGridHeadText}
+                        numberOfLines={1}
+                      >
+                        {c.name.toUpperCase()}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+              {/* Data rows: one per size */}
+              {Object.keys(sizes).map((sizeLabel) => (
+                <View
+                  key={sizeLabel}
+                  style={styles.variantGridRow}
+                  testID={`wizard-variant-row-${sizeLabel}`}
+                >
+                  <View style={[styles.variantGridCell, styles.variantGridRowHead]}>
+                    <Text style={styles.variantGridRowLabel}>{sizeLabel}</Text>
+                  </View>
+                  {pickedColors.map((c) => {
+                    const key = `${sizeLabel}::${c.name}`;
+                    const cell = variantCells[key] ?? {
+                      quantity: 0,
+                      disabled: false,
+                    };
+                    return (
+                      <View
+                        key={c.name}
+                        style={[
+                          styles.variantGridCell,
+                          cell.disabled && styles.variantGridCellDisabled,
+                        ]}
+                      >
+                        <TextInput
+                          testID={`wizard-variant-qty-${sizeLabel}-${c.name}`}
+                          value={cell.quantity ? String(cell.quantity) : ""}
+                          onChangeText={(t) => {
+                            const n = parseInt(t.replace(/\D/g, ""), 10);
+                            onUpdateVariantCell(key, {
+                              quantity: Number.isFinite(n) ? n : 0,
+                            });
+                          }}
+                          keyboardType="number-pad"
+                          placeholder="0"
+                          placeholderTextColor={colors.mutedFg}
+                          editable={!cell.disabled}
+                          style={styles.variantQtyInput}
+                        />
+                        <VariantPriceInput
+                          testID={`wizard-variant-price-${sizeLabel}-${c.name}`}
+                          currency={currency}
+                          valueCents={cell.price_cents_override ?? null}
+                          disabled={!!cell.disabled}
+                          onChangeCents={(v) =>
+                            onUpdateVariantCell(key, { price_cents_override: v })
+                          }
+                        />
+                        <TouchableOpacity
+                          onPress={() =>
+                            onUpdateVariantCell(key, {
+                              disabled: !cell.disabled,
+                            })
+                          }
+                          testID={`wizard-variant-toggle-${sizeLabel}-${c.name}`}
+                          style={styles.variantDisableBtn}
+                        >
+                          <Feather
+                            name={cell.disabled ? "eye-off" : "eye"}
+                            size={11}
+                            color={
+                              cell.disabled ? colors.mutedFg : colors.primary
+                            }
+                          />
+                          <Text
+                            style={[
+                              styles.variantDisableLabel,
+                              cell.disabled && { color: colors.mutedFg },
+                            ]}
+                          >
+                            {cell.disabled ? "Off" : "On"}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  })}
+                </View>
+              ))}
+              <Text style={styles.variantGridHint}>
+                Top box = quantity, bottom box = optional price for that combo
+                (blank uses the base price). Tap the eye icon to disable a
+                combo (e.g. no Small in Red). The item goes out-of-stock
+                automatically when all combos hit zero.
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
       <View style={{ height: spacing.xxl }} />
     </View>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Per-variant price override input (variant grid cell)                       */
+/* -------------------------------------------------------------------------- */
+
+interface VariantPriceInputProps {
+  currency: string;
+  valueCents: number | null;
+  disabled: boolean;
+  onChangeCents: (v: number | null) => void;
+  testID: string;
+}
+
+function VariantPriceInput({
+  currency,
+  valueCents,
+  disabled,
+  onChangeCents,
+  testID,
+}: VariantPriceInputProps) {
+  // Local raw string so typing isn't mangled by cents round-trips.
+  // Initialised from the cell state (edit-mode hydration) once.
+  const meta = CURRENCIES.find((c) => c.code === currency);
+  const decimals = meta?.decimals ?? 2;
+  const [raw, setRaw] = useState(() => {
+    if (valueCents == null) return "";
+    const major = valueCents / 100;
+    return decimals === 0 ? String(Math.round(major)) : String(major);
+  });
+  return (
+    <TextInput
+      testID={testID}
+      value={raw}
+      editable={!disabled}
+      keyboardType="decimal-pad"
+      placeholder={`${meta?.symbol ?? ""} base`}
+      placeholderTextColor={colors.mutedFg}
+      style={styles.variantPriceInput}
+      onChangeText={(t) => {
+        setRaw(t);
+        if (!t.trim()) {
+          onChangeCents(null);
+          return;
+        }
+        const cents = parseAmountToCents(t, currency as CurrencyCode);
+        onChangeCents(cents != null && cents > 0 ? cents : null);
+      }}
+    />
   );
 }
 
@@ -1462,147 +1784,6 @@ function ColorEditor({ picked, presets, palette, onAdd, onRemove }: ColorEditorP
         </View>
       )}
 
-      {/* --------------------------------------------------------------- */}
-      {/* Opt-in per-variant grid (size × color)                          */}
-      {/* --------------------------------------------------------------- */}
-      {pickedColors.length >= 2 && Object.keys(sizes).length >= 1 ? (
-        <View style={styles.variantSection} testID="wizard-variant-section">
-          <TouchableOpacity
-            testID="wizard-variant-toggle"
-            onPress={() => onToggleManagePerVariant(!managePerVariant)}
-            style={styles.variantToggle}
-            activeOpacity={0.85}
-          >
-            <View style={styles.variantToggleLeft}>
-              <Text style={styles.variantToggleLabel}>Manage stock per color</Text>
-              <Text style={styles.variantToggleHint}>
-                {managePerVariant
-                  ? "Set exact quantity for each size × color combo below."
-                  : "Off: your size quantities split evenly across colors."}
-              </Text>
-            </View>
-            <View
-              style={[
-                styles.variantSwitch,
-                managePerVariant ? styles.variantSwitchOn : styles.variantSwitchOff,
-              ]}
-            >
-              <View
-                style={[
-                  styles.variantSwitchThumb,
-                  managePerVariant && styles.variantSwitchThumbOn,
-                ]}
-              />
-            </View>
-          </TouchableOpacity>
-
-          {managePerVariant ? (
-            <View style={styles.variantGrid} testID="wizard-variant-grid">
-              {/* Header row: color names */}
-              <View style={styles.variantGridRow}>
-                <View style={[styles.variantGridCell, styles.variantGridHead]}>
-                  <Text style={styles.variantGridHeadText}>SIZE ↓ / COLOR →</Text>
-                </View>
-                {pickedColors.map((c) => (
-                  <View
-                    key={c.name}
-                    style={[styles.variantGridCell, styles.variantGridHead]}
-                  >
-                    <View style={styles.variantColorSwatchWrap}>
-                      <View
-                        style={[
-                          styles.variantColorSwatch,
-                          { backgroundColor: c.hex },
-                        ]}
-                      />
-                      <Text
-                        style={styles.variantGridHeadText}
-                        numberOfLines={1}
-                      >
-                        {c.name.toUpperCase()}
-                      </Text>
-                    </View>
-                  </View>
-                ))}
-              </View>
-              {/* Data rows: one per size */}
-              {Object.keys(sizes).map((sizeLabel) => (
-                <View
-                  key={sizeLabel}
-                  style={styles.variantGridRow}
-                  testID={`wizard-variant-row-${sizeLabel}`}
-                >
-                  <View style={[styles.variantGridCell, styles.variantGridRowHead]}>
-                    <Text style={styles.variantGridRowLabel}>{sizeLabel}</Text>
-                  </View>
-                  {pickedColors.map((c) => {
-                    const key = `${sizeLabel}::${c.name}`;
-                    const cell = variantCells[key] ?? {
-                      quantity: 0,
-                      disabled: false,
-                    };
-                    return (
-                      <View
-                        key={c.name}
-                        style={[
-                          styles.variantGridCell,
-                          cell.disabled && styles.variantGridCellDisabled,
-                        ]}
-                      >
-                        <TextInput
-                          testID={`wizard-variant-qty-${sizeLabel}-${c.name}`}
-                          value={cell.quantity ? String(cell.quantity) : ""}
-                          onChangeText={(t) => {
-                            const n = parseInt(t.replace(/\D/g, ""), 10);
-                            onUpdateVariantCell(key, {
-                              quantity: Number.isFinite(n) ? n : 0,
-                            });
-                          }}
-                          keyboardType="number-pad"
-                          placeholder="0"
-                          placeholderTextColor={colors.mutedFg}
-                          editable={!cell.disabled}
-                          style={styles.variantQtyInput}
-                        />
-                        <TouchableOpacity
-                          onPress={() =>
-                            onUpdateVariantCell(key, {
-                              disabled: !cell.disabled,
-                            })
-                          }
-                          testID={`wizard-variant-toggle-${sizeLabel}-${c.name}`}
-                          style={styles.variantDisableBtn}
-                        >
-                          <Feather
-                            name={cell.disabled ? "eye-off" : "eye"}
-                            size={11}
-                            color={
-                              cell.disabled ? colors.mutedFg : colors.primary
-                            }
-                          />
-                          <Text
-                            style={[
-                              styles.variantDisableLabel,
-                              cell.disabled && { color: colors.mutedFg },
-                            ]}
-                          >
-                            {cell.disabled ? "Off" : "On"}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    );
-                  })}
-                </View>
-              ))}
-              <Text style={styles.variantGridHint}>
-                Tap the eye icon to disable a combo (e.g. no Small in Red).
-                Quantities count towards your total stock; the item goes
-                out-of-stock automatically when all combos hit zero.
-              </Text>
-            </View>
-          ) : null}
-        </View>
-      ) : null}
 
       <View style={{ height: spacing.xxl }} />
     </View>
@@ -1919,6 +2100,23 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   catRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  catSearchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  catSearchInput: {
+    flex: 1,
+    fontFamily: fonts.body,
+    fontSize: 14,
+    color: colors.primary,
+    paddingVertical: 10,
+  },
   cat: {
     paddingHorizontal: 14,
     height: 36,
@@ -2352,6 +2550,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     fontFamily: fonts.bodySemi,
     fontSize: 14,
+    color: colors.primary,
+    textAlign: "center",
+    borderRadius: 4,
+    marginBottom: 4,
+  },
+  variantPriceInput: {
+    width: "100%",
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 3,
+    paddingHorizontal: 6,
+    fontFamily: fonts.body,
+    fontSize: 11,
     color: colors.primary,
     textAlign: "center",
     borderRadius: 4,

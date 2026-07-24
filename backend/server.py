@@ -30,6 +30,7 @@ from routers import (
     addresses,
     admin,
     auth,
+    categories,
     collections,
     items,
     loved_ones,
@@ -64,6 +65,7 @@ async def root() -> dict:
 api_router.include_router(auth.router)
 api_router.include_router(users.router)
 api_router.include_router(profile.router)
+api_router.include_router(categories.router)
 api_router.include_router(loved_ones.router)
 api_router.include_router(addresses.router)
 api_router.include_router(items.router)
@@ -195,6 +197,22 @@ async def backfill_verified_sellers() -> None:
         await backfill_all_seller_verifications()
     except Exception as e:  # pragma: no cover
         logger.warning("verified_seller backfill skipped: %s", e)
+
+
+@app.on_event("startup")
+async def bootstrap_categories() -> None:
+    """Seed system categories and ensure a unique index on `slug` so two
+    sellers racing on 'Add category' don't create duplicates."""
+    try:
+        from routers.categories import ensure_default_categories
+        from core.db import db
+
+        await db.categories.create_index("slug", unique=True)
+        await db.categories.create_index("audiences")
+        await ensure_default_categories()
+        logger.info("categories: seeded system rows + indexes ready")
+    except Exception as e:  # pragma: no cover
+        logger.warning("categories bootstrap skipped: %s", e)
 
 
 @app.on_event("startup")
