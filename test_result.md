@@ -205,3 +205,13 @@ Frontend `.env` currently points at preview (`https://fit-finder-app-5.preview.e
 - Testing agent found + fixed: q-search regex escape/$or had been lost during the items.py corruption repair (truncation reverted the edit) — re-applied by test agent, verified in code (line ~154 re.escape + $or over name/brand_name/description/subcategory).
 - Testing agent found frontend bug: Discover header greeting wrapped char-by-char at 390px. Main agent fix: removed duplicate logo image (OROMONA caption remains), headerTitle 17px + numberOfLines=1, iconBtn padding 6. Verified via screenshot — one-line header with search/bookmark/KES/bell/avatar all fitting.
 - Remaining cosmetic (deferred): RN-web deprecation warnings shadow*→boxShadow, props.pointerEvents→style.pointerEvents.
+
+## Iteration 30 — M-Pesa Premium pass + Amazon-style colour photo groups
+### Changes
+1. Subs: POST /api/subs/checkout body {method:'card'|'mpesa'}; mpesa = one-time mobile_money charge (channels=["mobile_money"], purpose=premium_once) granting 30-day Premium pass that EXTENDS on repeat purchase; card = plan subscription w/ 7-day trial. one_time in /subs/me; /subs/cancel 400 for pass holders; webhook charge.success grants pass when purpose=premium_once; is_premium() expires stale passes; subscription/index.tsx has sub-upgrade-btn + sub-mpesa-btn + sub-channel-note + sub-extend-btn/sub-pass-status for pass holders; success.tsx shows pass expiry.
+2. Colour photo groups: ColorOption.images (max 5, hero-first) + image_b64 mirror via items.py _normalize_color; wizard step 3 ColorPhotoGroup cards (wizard-color-group-{name}, add/camera/reuse/remove testIDs, COVER badge); item/[id].tsx gallery = selected colour group first → general photos → other colours' heroes; hero = colour group[0].
+3. Repaired two leftover file-tail corruptions from previous session (subs.py pay_web_submit dangling fragment; add-item.tsx duplicated style tail).
+### Verified
+- Testing agent iteration 30: backend 13/13 PASS (tests/test_iteration30_subs_mpesa_color_photos.py, report /app/test_reports/iteration_29.json); /subscription UI both buttons verified; item colour swatch swap OK.
+- Main agent browser check: wizard step 3 shows per-colour groups, reuse-tap moved general photo into Black group w/ COVER badge + remove btn; White group shows honest fallback hint.
+### ⚠️ LIVE PAYSTACK — initialization-only payment tests, never complete a charge, no transfers/recipients.

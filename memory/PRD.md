@@ -63,3 +63,11 @@ Editorial Swiss / High-Contrast: Cormorant Garamond display + Manrope body text,
 - **Category size charts**: waist-inch (men bottoms), UK 6–18 (women), bra band+cup, underwear, socks EU, kids ages, one-size — seller-selectable "Size system" in wizard (src/lib/size-charts.ts).
 - **Min-1 measurement rule**: any single measurement per size suffices (no mandatory chest).
 - **Confirm received**: buyer can confirm from shipped OR delivered; promotes to delivered + releases escrow.
+
+## Update — June 2026 (M-Pesa Premium + colour photo groups)
+- **Premium payments — two paths** (`POST /api/subs/checkout` body `{method}`):
+  - `card` (default): Paystack plan subscription, 7-day trial, auto-renews (cards-only per Paystack recurring-billing rules).
+  - `mpesa`: one-time `mobile_money` charge (metadata `purpose=premium_once`) → **30-day Premium pass**, no auto-renew; paying again EXTENDS the pass (days stack). Grant applied in /subs/verify, /subs/paystack-return AND webhook charge.success (purpose-aware). User doc flag `premium_one_time`; `is_premium()` expires passes past `current_period_end`. `/subs/me.subscription.one_time`; `/subs/cancel` → 400 friendly msg for pass holders.
+  - UI `/subscription`: two buttons (sub-upgrade-btn card / sub-mpesa-btn) + channel note; pass holders see status + "Extend 30 days with M-Pesa" (sub-extend-btn).
+- **Colour photo groups (Amazon-style)**: `ColorOption.images: List[str]` (max 5, first = hero; `image_b64` kept as back-compat mirror of images[0], maintained by `_normalize_color` in items POST/PATCH). Seller wizard step 3: per-colour group card (`wizard-color-group-{name}`) with thumbs (COVER badge, remove), ADD/CAMERA tiles, and one-tap "Reuse a product photo" row (no re-uploading). Buyer item page: selected colour's photo group leads the gallery + hero; colour without photos falls back to general photos honestly.
+- Tested: iteration 30 — backend 13/13 pytest + frontend UI verified (report /app/test_reports/iteration_29.json). LIVE Paystack: initialization-only testing forever.
