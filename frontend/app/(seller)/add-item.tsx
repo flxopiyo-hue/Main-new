@@ -44,7 +44,6 @@ import {
   DimensionKey,
   Item,
   ItemVariant,
-  PRIMARY_DIMENSION_BY_TYPE,
   SizeOption,
   SUBCATEGORIES_BY_CATEGORY,
 } from "@/src/lib/api";
@@ -52,6 +51,7 @@ import { useAuth } from "@/src/lib/auth";
 import { CURRENCIES, formatPrice, parseAmountToCents, priceInputPlaceholder } from "@/src/lib/currency";
 import { dataUriFromBase64, pickImageFromCamera, pickImageFromLibrary } from "@/src/lib/images";
 import { ADULT_SHOE_SIZES, KID_SHOE_SIZES } from "@/src/lib/shoe-sizes";
+import { ALL_CHARTS, chartsFor, detectChartKey, SizeChart } from "@/src/lib/size-charts";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
 /* -------------------------------------------------------------------------- */
@@ -82,13 +82,6 @@ const AUDIENCES: { key: Audience; label: string }[] = [
   { key: "men", label: "Men" },
   { key: "unisex", label: "Unisex" },
   { key: "kids", label: "Kids" },
-];
-
-const ADULT_SIZE_LABELS = ["XS", "S", "M", "L", "XL", "XXL"];
-const KID_SIZE_LABELS = [
-  "NB", "3M", "6M", "12M", "18M", "24M",
-  "2T", "3T", "4T",
-  "5", "6", "7", "8", "10", "12", "14", "16",
 ];
 
 // Map our seller-facing category to the backend garment_type so we can render
@@ -274,6 +267,12 @@ export default function AddItem() {
         const sizesMap: Record<string, SizeOption> = {};
         for (const s of item.sizes) sizesMap[s.label] = s;
         setSizes(sizesMap);
+        // Detect which size chart the existing labels belong to so the
+        // right chips light up in edit mode (waist "34" → Waist chart).
+        if (item.category !== "shoes") {
+          const detected = detectChartKey(item.sizes.map((s) => s.label));
+          if (detected) setSizeChartKey(detected);
+        }
         setPickedColors(item.colors || []);
         // Hydrate variant grid from existing item variants when the seller
         // is editing something they'd previously customised. If any single
@@ -348,7 +347,46 @@ export default function AddItem() {
 
   const gtype = CATEGORY_TO_GARMENT_TYPE[category] ?? "other";
   const dimKeys: DimensionKey[] = (DIMENSION_KEYS_BY_TYPE[gtype] ?? []) as DimensionKey[];
-  const primaryDim: DimensionKey | null = PRIMARY_DIMENSION_BY_TYPE[gtype] ?? null;
+
+  // Category-aware size chart selection. `sizeChartKey` is the seller's
+  // explicit override; null = use the default for the current taxonomy.
+  const [sizeChartKey, setSizeChartKey] = useState<string | null>(null);
+  const chartInfo = useMemo(
+    () => chartsFor(category, subcategory, audience),
+    [category, subcategory, audience],
+  );
+  const activeChart: SizeChart = useMemo(() => {
+    if (sizeChartKey) {
+      const hit =
+        chartInfo.charts.find((c) => c.key === sizeChartKey) ??
+        ALL_CHARTS.find((c) => c.key === sizeChartKey);
+      if (hit) return hit;
+    }
+    return (
+      chartInfo.charts.find((c) => c.key === chartInfo.defaultKey) ?? chartInfo.charts[0]
+    );
+  }, [chartInfo, sizeChartKey]);
+
+  // Drop selected sizes whose labels don't exist in the given chart —
+  // called whenever the seller switches size system / taxonomy so stale
+  // labels ("34" after moving to XS–XXL) don't linger in state.
+  const pruneSizesTo = (labels: string[]) => {
+    const valid = new Set(labels);
+    setSizes((curr) => {
+      const bad = Object.keys(curr).filter((k) => !valid.has(k));
+      if (bad.length === 0) return curr;
+      const next = { ...curr };
+      bad.forEach((k) => delete next[k]);
+      return next;
+    });
+  };
+
+  const changeSizeChart = (key: string) => {
+    setSizeChartKey(key);
+    const chart =
+      chartInfo.charts.find((c) => c.key === key) ?? ALL_CHARTS.find((c) => c.key === key);
+    if (chart) pruneSizesTo(chart.entries.map((e) => e.value));
+  };
 
   // Track invalid (non-positive / non-numeric) entries in the matrix so the
   // UI can highlight them and the Publish button can stay disabled.
@@ -364,24 +402,28 @@ export default function AddItem() {
       if (!s.available_qty || s.available_qty <= 0) {
         errs[`${s.label}-available_qty`] = "Qty must be ≥ 1";
       }
-      // Only the PRIMARY dimension is required — the rest are optional
-      // (sellers move faster; buyers still get a partial fit score).
-      // Any non-primary dimension that IS filled must be a positive
-      // number so bad data doesn't sneak into the fit engine.
-      for (const k of dimKeys) {
-        const raw = (s as Record<string, unknown>)[k];
-        const isPrimary = k === primaryDim;
-        if (raw === undefined || raw === null || raw === "") {
-          if (isPrimary) errs[`${s.label}-${k}`] = "Required";
-          continue;
+      // Measurements: at least ONE dimension (any of them) must be filled
+      // per size — sellers aren't forced to measure everything, but buyers
+      // need at least one number for fit-matching. Every value that IS
+      // entered must be a positive number.
+      if (dimKeys.length > 0) {
+        let filled = 0;
+        for (const k of dimKeys) {
+          const raw = (s as Record<string, unknown>)[k];
+          if (raw === undefined || raw === null || raw === "") continue;
+          if (typeof raw !== "number" || raw <= 0 || isNaN(raw)) {
+            errs[`${s.label}-${k}`] = "Must be > 0";
+          } else {
+            filled += 1;
+          }
         }
-        if (typeof raw !== "number" || raw <= 0 || isNaN(raw)) {
-          errs[`${s.label}-${k}`] = "Must be > 0";
+        if (filled === 0) {
+          errs[`${s.label}-_dims`] = "Fill at least one measurement";
         }
       }
     }
     return errs;
-  }, [sizes, dimKeys, primaryDim]);
+  }, [sizes, dimKeys]);
 
   const step1Valid = Object.keys(step1Errors).length === 0;
   const step2Valid = Object.keys(step2Errors).length === 0;
@@ -682,18 +724,38 @@ export default function AddItem() {
               if (!allowed.includes(category)) {
                 setCategory(allowed[0] ?? "shirts");
                 setSubcategory(null);
+                setSizeChartKey(null);
                 setSizes({});
+              } else if (category !== "shoes" && !sizeChartKey) {
+                // Same category, new audience — the default chart may have
+                // changed (pants men → women flips waist → UK sizes).
+                const info = chartsFor(category, subcategory, a);
+                const chart =
+                  info.charts.find((c) => c.key === info.defaultKey) ?? info.charts[0];
+                pruneSizesTo(chart.entries.map((e) => e.value));
               }
             }}
             onChangeCategory={(c) => {
               setCategory(c);
               setSubcategory(null);
+              setSizeChartKey(null);
               // Reset measurement entries when the taxonomy changes — a value
               // entered for "chest" on a shirt doesn't carry over when the
               // seller switches to trousers (different dimension keys).
               setSizes({});
             }}
-            onChangeSubcategory={setSubcategory}
+            onChangeSubcategory={(s) => {
+              setSubcategory(s);
+              // Subcategory can change the default size system (e.g. picking
+              // "Bra & Lingerie" swaps to band+cup sizes). Prune stale labels
+              // when the seller hasn't explicitly locked a chart.
+              if (!sizeChartKey && category !== "shoes") {
+                const info = chartsFor(category, s, audience);
+                const chart =
+                  info.charts.find((c) => c.key === info.defaultKey) ?? info.charts[0];
+                pruneSizesTo(chart.entries.map((e) => e.value));
+              }
+            }}
           />
         )}
 
@@ -703,7 +765,9 @@ export default function AddItem() {
             category={category}
             sizes={sizes}
             dimKeys={dimKeys}
-            primaryDim={primaryDim}
+            chart={activeChart}
+            chartOptions={chartInfo.charts}
+            onChangeChart={changeSizeChart}
             errors={matrixErrors}
             colors={pickedColors}
             unit={unit}
@@ -1213,7 +1277,9 @@ interface StepSizingProps {
   category: Category;
   sizes: Record<string, SizeOption>;
   dimKeys: DimensionKey[];
-  primaryDim: DimensionKey | null;
+  chart: SizeChart;
+  chartOptions: SizeChart[];
+  onChangeChart: (key: string) => void;
   errors: Record<string, string>;
   colors: ColorOption[];
   unit: "cm" | "in";
@@ -1242,7 +1308,9 @@ function StepSizing({
   category,
   sizes,
   dimKeys,
-  primaryDim,
+  chart,
+  chartOptions,
+  onChangeChart,
   errors,
   colors: pickedColors,
   unit,
@@ -1257,18 +1325,20 @@ function StepSizing({
   onUpdateVariantCell,
   currency,
 }: StepSizingProps) {
-  // Shoes have a fundamentally different size system (EU numbers + cm)
-  // than tops/bottoms (S/M/L). We swap the label list based on category.
+  // Shoes have a fundamentally different size system (EU numbers + cm) and
+  // keep their dedicated chart from shoe-sizes.ts. Everything else uses the
+  // category-aware chart selected by the parent (waist inches for men's
+  // bottoms, UK sizes for women's, bra band+cup, socks EU ranges, …).
   const isShoes = category === "shoes";
   const sizeLabels = isShoes
     ? (audience === "kids" ? KID_SHOE_SIZES : ADULT_SHOE_SIZES).map((s) => s.value)
-    : audience === "kids"
-      ? KID_SIZE_LABELS
-      : ADULT_SIZE_LABELS;
+    : chart.entries.map((e) => e.value);
   const sizeSubLabel = (label: string): string | null => {
-    if (!isShoes) return null;
-    const chart = audience === "kids" ? KID_SHOE_SIZES : ADULT_SHOE_SIZES;
-    return chart.find((s) => s.value === label)?.label.replace(/^EU \d+ · /, "") ?? null;
+    if (isShoes) {
+      const shoeChart = audience === "kids" ? KID_SHOE_SIZES : ADULT_SHOE_SIZES;
+      return shoeChart.find((s) => s.value === label)?.label.replace(/^EU \d+ · /, "") ?? null;
+    }
+    return chart.entries.find((e) => e.value === label)?.hint ?? null;
   };
   const noDims = dimKeys.length === 0;
 
@@ -1307,9 +1377,43 @@ function StepSizing({
         })}
       </View>
 
+      {!isShoes && chartOptions.length > 1 ? (
+        <>
+          <Text style={[tp.caption, styles.label]}>
+            Size system{" "}
+            <Text style={{ color: colors.mutedFg, textTransform: "none" }}>
+              (pick the one this piece uses)
+            </Text>
+          </Text>
+          <View style={styles.catRow}>
+            {chartOptions.map((c) => {
+              const active = c.key === chart.key;
+              return (
+                <TouchableOpacity
+                  key={c.key}
+                  testID={`wizard-chart-${c.key}`}
+                  onPress={() => onChangeChart(c.key)}
+                  style={[styles.cat, active ? styles.catActive : styles.catInactive]}
+                >
+                  <Text
+                    style={[
+                      styles.catLabel,
+                      active ? styles.catLabelActive : styles.catLabelInactive,
+                    ]}
+                  >
+                    {c.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <View style={{ height: spacing.sm }} />
+        </>
+      ) : null}
+
       <Text style={[tp.caption, styles.label]}>
-        Sizes & dimensions ({unit}){audience === "kids" ? " · kid sizes" : ""}
-        {isShoes ? " · EU sizes" : ""}
+        Sizes & dimensions ({unit})
+        {isShoes ? " · EU sizes" : ` · ${chart.label}`}
       </Text>
       <View style={styles.sizeRow}>
         {sizeLabels.map((s) => {
@@ -1360,7 +1464,11 @@ function StepSizing({
               <Text style={styles.sizeDetailHint}>
                 No body-fit measurements for this category
               </Text>
-            ) : null}
+            ) : (
+              <Text style={styles.sizeDetailHint}>
+                Fill at least one measurement — any of them
+              </Text>
+            )}
           </View>
           <View style={styles.sizeDetailGrid}>
             {dimKeys.map((k) => (
@@ -1369,7 +1477,7 @@ function StepSizing({
                 testID={`wizard-size-${s.label}-${k}`}
                 label={DIMENSION_LABELS[k]}
                 hint={DIMENSION_HINTS[k]}
-                optional={k !== primaryDim}
+                optional={false}
                 value={(s as Record<string, unknown>)[k] as number | undefined}
                 unit={unit}
                 onChange={(v) =>
@@ -1389,6 +1497,9 @@ function StepSizing({
               errorText={errors[`${s.label}-available_qty`]}
             />
           </View>
+          {errors[`${s.label}-_dims`] ? (
+            <Text style={styles.fieldError}>{errors[`${s.label}-_dims`]}</Text>
+          ) : null}
         </View>
       ))}
 

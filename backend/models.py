@@ -673,6 +673,10 @@ class TryOnIn(BaseModel):
     # Optional: switch to a loved-one profile's photos instead of the user's own.
     # "self" or null → use the buyer's main profile. UUID → use that loved one.
     profile_id: Optional[str] = None
+    # Optional: which colour variant the buyer selected. When that colour has
+    # its own photo we use it as the garment reference so the try-on renders
+    # the exact shade the buyer picked.
+    color_name: Optional[str] = None
     # Angles to render. Default keeps existing single-angle behavior.
     angles: List[TryOnAngle] = Field(default_factory=lambda: ["front"])
 

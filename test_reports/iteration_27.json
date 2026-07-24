@@ -1,0 +1,44 @@
+{
+  "summary": "Iteration 27 — colour-aware try-on schema, category-aware size charts, min-1-measurement rule, and confirm-from-shipped escrow release. Backend pytest: 6/6 passed. Frontend browser automation: all 4 new wizard flows verified. (A) POST /api/tryon accepts color_name field without schema rejection — validation confirmed by receiving 402 paywall (schema OK) rather than 422. Did NOT run a real image generation to conserve LLM credits + avoid rate-limit paywall. (B) POST /api/orders/{id}/confirm-delivery from status='shipped' → 200, order.status→delivered, buyer_confirmed_at set, payout status=released, failure_reason='seller_no_recipient', no Paystack transfer_code (correctly skipped live transfer). Wrong-buyer returns 403; status='paid' returns 400. (C) POST /api/items accepts sizes with waist labels ('34', 'UK 12') and only ONE measurement per size (waist_cm only, chest_cm=null) — persists cleanly and reads back via GET. NOTE: backend does NOT reject empty sizes=[] at API level (only enforced client-side in seller wizard) — documented in test_create_item_without_any_sizes_note. (D) Seller wizard Sizing step verified: Men+Pants → wizard-chart-waist active with chips 28/34/44 and cm hints (71/86/112 cm); Size system chips (waist, letters, uk_women, one_size) all render. Selecting size 34 shows hint 'Fill at least one measurement — any of them' + 'Pick at least one size' error. Switching to wizard-chart-letters swaps chips to XS–XXL AND clears the previously-selected waist-34 detail card. Women+Pants defaults chart to wizard-chart-uk_women (chip visible). Tops + wizard-sub-'Bra & Lingerie' → wizard-chart-bra active with band+cup chips 32A/34B/40D and underbust cm hints (68–72, 73–77, 88–92). Kids audience → wizard-chart-kids with NB/3M/5/10 chips. Shoes → EU size chips 40/42/44 with cm hints (25.5cm/26.5cm/28cm) visible.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/items", "issue": "Backend accepts sizes=[] (empty list) with 200; the 'at least one size' rule is enforced only on the seller wizard. Not blocking but consider adding a Pydantic min_length=1 or router-level check for API robustness."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Login / Welcome", "issues": ["Persistent React Native web deprecation warnings: 'shadow*' style props → boxShadow; props.pointerEvents → style.pointerEvents. Non-blocking, carried over from iteration 26."]}
+    ],
+    "react_native_issues": [
+      {"component": "expo-image-picker", "issue": "Console warning: 'ImagePicker.MediaTypeOptions has been deprecated. Use ImagePicker.MediaType or an array of ImagePicker.MediaType instead.' Reference: any consumer of expo-image-picker MediaTypeOptions.Images — search the frontend for MediaTypeOptions and migrate to MediaType."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration27_colour_size_confirm.py",
+    "/app/test_reports/pytest/iteration27_results.xml"
+  ],
+  "action_items": [
+    "Optional API hardening: reject sizes=[] server-side in POST /api/items with 400 (currently only client-enforced). If intentional (allow drafts), leave as-is and ignore.",
+    "Migrate expo-image-picker calls from MediaTypeOptions to MediaType to silence the deprecation warning surfaced on the seller wizard photo step.",
+    "Migrate remaining 'shadow*' → boxShadow and props.pointerEvents → style.pointerEvents to silence RN web warnings (also flagged in iter 26)."
+  ],
+  "critical_code_review_comments": [
+    "backend/core/escrow.py confirm_delivery_by_buyer correctly promotes shipped→delivered, stamps buyer_confirmed_at + delivered_at, and calls release_payout — verified end-to-end (payout row status=released, failure_reason=seller_no_recipient because demo seller has no paystack_recipient_code — no live transfer initiated).",
+    "backend/routers/orders.py confirm-delivery gate correctly allows status in ('shipped','delivered') and 400s on 'paid'. 403 fires for non-buyer. Serializer requires session_id (already documented by main agent).",
+    "backend/routers/tryon.py color_name path correctly swaps garment_b64 to the colour photo when available and adds a shade-lock prompt fragment. Falls back to base garment image if colour has no image_b64. IDENTITY_LOCK reinforced in prompts (verified via source read).",
+    "frontend/src/lib/size-charts.ts chartsFor() correctly branches on subcategory→category→audience. detectChartKey() returns first chart whose entries cover all supplied labels — used for edit-mode hydration.",
+    "frontend add-item.tsx: chart switch (onChangeChart) drops stale size selections not present in the new chart — verified by browser automation (detail-34 disappears when switching from waist→letters)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration27_colour_size_confirm.py (new)"
+  ],
+  "success_rate": {"backend": "100% (6/6 pytest)", "frontend": "100% (6/6 wizard chart flows verified: waist, letters swap, uk_women, bra, kids, EU shoes)"},
+  "seed_data_creation": "Synthetic 'shipped' orders created directly in Mongo (aurafit.orders) for the demo buyer→demo seller pair, each with a unique session_id and TEST_ id prefix. All 3 test orders + associated payouts cleaned up by the module autouse fixture. One TEST_waist_uk item created via POST /api/items and DELETEd inline. One accidental TEST_nosizes item created during the earlier debugging run — manually purged via mongosh (delete count = 1).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Frontend .env key is EXPO_PUBLIC_BACKEND_URL. Seller login flow: welcome screen 'I ALREADY HAVE AN ACCOUNT' → click testID login-intent-seller (SELLING toggle) FIRST before filling email/password/submit, otherwise the app defaults to buyer view. Seller wizard testIDs: wizard-name-input, wizard-price-input, wizard-photo-add-library (file chooser), wizard-next-btn, wizard-prev-btn, wizard-audience-{men|women|kids|unisex}, wizard-cat-{slug}, wizard-sub-{exact-subcat-label including spaces}, wizard-chart-{key}, wizard-size-{label with space e.g. 'UK 12' works), wizard-size-detail-{label}. Wizard photo requires a valid PNG (use Pillow with 300x400 solid fill — a 1x1 PNG did NOT satisfy the photo requirement in the wizard step-1 validation). To create synthetic orders for confirm-delivery testing, MUST include a session_id (any string, e.g. 'cs_test_<uuid>') otherwise the OrderDetailOut serializer 500s on the missing required field. Paystack keys are LIVE — never proceed past checkout initialisation.",
+  "rca_of_issue": "N/A — no regressions. Verified colour-aware try-on schema, category-aware size charts, min-1 measurement rule (client-only), and shipped→delivered escrow release path all work as designed."
+}

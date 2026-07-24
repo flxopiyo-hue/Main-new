@@ -359,6 +359,7 @@ export const SUBCATEGORIES_BY_CATEGORY: Record<string, string[]> = {
     "Tank top",
     "Hoodie",
     "Sweatshirt",
+    "Bra & Lingerie",
   ],
   dresses: ["Mini", "Midi", "Maxi", "Gown", "Skirt"],
   pants: [
@@ -381,7 +382,7 @@ export const SUBCATEGORIES_BY_CATEGORY: Record<string, string[]> = {
     "Puffer",
   ],
   shoes: ["Sneakers", "Heels", "Boots", "Flats", "Sandals", "Loafers"],
-  accessories: ["Belt", "Hat", "Bag", "Scarf", "Jewelry", "Tie", "Watch", "Sunglasses"],
+  accessories: ["Belt", "Hat", "Bag", "Scarf", "Jewelry", "Tie", "Watch", "Sunglasses", "Socks", "Underwear"],
 };
 
 // Audience → categories the seller can pick from. Mirrors what shoppers
@@ -821,6 +822,7 @@ export const api = {
     use_profile_photo?: boolean;
     body_photo_b64?: string;
     profile_id?: string;
+    color_name?: string;
     angles?: TryOnAngle[];
   }) => request<TryOnResult>("/tryon", { method: "POST", body }),
   tryOnOutfit: (body: {

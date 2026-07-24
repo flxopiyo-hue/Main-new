@@ -165,16 +165,17 @@ async def _generate_single_angle(
     user: Dict[str, Any],
     angle: str,
     persona: str,
+    extra_note: str = "",
 ) -> Optional[str]:
     """Generate a single angle for the try-on. Returns base64 image or None on failure."""
     angle_hint = ANGLE_INSTRUCTIONS.get(angle, ANGLE_INSTRUCTIONS["front"])
     system_msg = (
         "You are a fashion virtual try-on generator. You will receive two images: "
         "(1) a person's full-body photo, and (2) a clothing item. Generate a realistic "
-        "photo of the same person wearing the clothing item, preserving the person's "
-        "identity (face, skin tone, hair) and body shape. Replace only the relevant "
+        "photo of the same person wearing the clothing item. Replace only the relevant "
         "clothing region. The output must be a single photorealistic image with a clean, "
-        "neutral studio backdrop."
+        "neutral studio backdrop. "
+        + IDENTITY_LOCK
     )
     chat = (
         LlmChat(
@@ -192,8 +193,9 @@ async def _generate_single_angle(
             f"{persona}"
             f"The person is wearing the garment '{item['name']}' "
             f"(category: {item['category']}, audience: {item.get('audience', 'unisex')}). "
+            f"{extra_note}"
             f"{angle_hint} "
-            f"Maintain the same identity, skin tone, hair, and overall body proportions. "
+            f"{IDENTITY_LOCK} "
             f"Photorealistic, full body, studio quality, fashion editorial."
         ),
         file_contents=[ImageContent(body_b64), ImageContent(garment_b64)],
@@ -280,9 +282,9 @@ async def _generate_outfit_angle(
         "You are a fashion virtual try-on generator that composes multiple garments "
         "onto one person. You will receive a person photo followed by N garment photos "
         "in INNERMOST-FIRST layer order. Compose them onto the person as a single "
-        "coherent outfit, respecting the styling rules provided. Preserve the person's "
-        "identity (face, skin tone, hair) and body proportions. Produce ONE photorealistic "
-        "image on a clean, neutral studio backdrop."
+        "coherent outfit, respecting the styling rules provided. Produce ONE "
+        "photorealistic image on a clean, neutral studio backdrop. "
+        + IDENTITY_LOCK
     )
     chat = (
         LlmChat(
@@ -304,6 +306,8 @@ async def _generate_outfit_angle(
             + rules_text
             + "\n\n"
             + angle_hint
+            + " "
+            + IDENTITY_LOCK
             + " Photorealistic, full body, studio quality, fashion editorial. "
             "Return a single image."
         ),
@@ -376,6 +380,22 @@ async def generate_tryon(
         )
 
     garment_b64 = item["image_b64"]
+    # Colour-aware garment reference: when the buyer picked a colour that has
+    # its own photo we swap it in, so the try-on shows the exact shade. Even
+    # without a photo we still tell the model which colour to render.
+    color_note = ""
+    if body.color_name:
+        target = body.color_name.strip().lower()
+        for c in item.get("colors", []):
+            if (c.get("name") or "").strip().lower() == target:
+                if c.get("image_b64"):
+                    garment_b64 = c["image_b64"]
+                color_note = (
+                    f"The buyer selected the colour '{c.get('name')}' (hex {c.get('hex')}). "
+                    "Render the garment in EXACTLY this colour — match the garment photo's "
+                    "shade faithfully, do not shift the hue. "
+                )
+                break
 
     # Personalize the prompt with user demographics for better try-on.
     gender = photo_user.get("gender")
@@ -411,6 +431,7 @@ async def generate_tryon(
             user=user,
             angle=a,
             persona=persona,
+            extra_note=color_note,
         )
         for a in angles
     ]

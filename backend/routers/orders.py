@@ -254,17 +254,19 @@ async def confirm_delivery(
 ) -> OrderDetailOut:
     """Buyer confirms they received the item — releases escrow to the
     seller immediately (no need to wait out the 48h auto-release timer).
-    Only valid when status is ``delivered``.
+    Valid once the order is ``shipped`` or ``delivered`` — the buyer holding
+    the parcel IS the proof of delivery, so we don't force them to wait for
+    the seller/courier to flip the status first.
     """
     order = await db.orders.find_one({"id": order_id}, {"_id": 0})
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     if order["buyer_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Not your order")
-    if order.get("status") != "delivered":
+    if order.get("status") not in ("shipped", "delivered"):
         raise HTTPException(
             status_code=400,
-            detail="Confirm delivery is only available after the order is marked delivered by the courier / seller",
+            detail="Confirm receipt becomes available once the seller marks the order shipped",
         )
     if order.get("dispute_raised_at"):
         raise HTTPException(status_code=409, detail="Order has an open dispute")

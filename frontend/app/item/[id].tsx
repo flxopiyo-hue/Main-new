@@ -211,6 +211,9 @@ export default function ItemDetail() {
           item_id: item.id,
           use_profile_photo: true,
           profile_id: targetProfileId,
+          // Colour-aware try-on: render the exact shade (and use the
+          // colour's own photo when the seller attached one).
+          color_name: selectedColor?.name,
           angles,
         });
         const imgs =
@@ -232,7 +235,7 @@ export default function ItemDetail() {
         setGeneratingMulti(false);
       }
     },
-    [item, toast, activeProfile?.profile_id, activeProfile?.profile.has_front_photo],
+    [item, toast, activeProfile?.profile_id, activeProfile?.profile.has_front_photo, selectedColor?.name],
   );
 
   useEffect(() => {

@@ -311,14 +311,16 @@ export default function OrderDetailScreen() {
               {/* Buyer actions during tracking */}
               {isBuyer ? (
                 <View style={styles.trackingActions}>
-                  {/* Delivered → confirm receipt (releases escrow immediately) */}
-                  {order.status === "delivered" && !order.buyer_confirmed_at && !order.dispute_raised_at ? (
+                  {/* Shipped/delivered → confirm receipt (releases escrow immediately) */}
+                  {(order.status === "shipped" || order.status === "delivered") &&
+                    !order.buyer_confirmed_at &&
+                    !order.dispute_raised_at ? (
                     <TouchableOpacity
                       testID="order-confirm-delivery-btn"
                       style={styles.primaryBtn}
                       onPress={async () => {
                         Alert.alert(
-                          "Confirm delivery?",
+                          "Received your item?",
                           "Confirming releases payment to the seller immediately. Only do this if you've received the item and are happy with it.",
                           [
                             { text: "Cancel", style: "cancel" },
@@ -340,7 +342,7 @@ export default function OrderDetailScreen() {
                       }}
                     >
                       <Feather name="check" size={16} color={colors.primaryFg} />
-                      <Text style={styles.primaryBtnLabel}>Confirm delivery</Text>
+                      <Text style={styles.primaryBtnLabel}>I received my item</Text>
                     </TouchableOpacity>
                   ) : null}
                   {/* Shipped/delivered but not yet confirmed → report problem */}

@@ -103,9 +103,16 @@ async def confirm_delivery_by_buyer(order_id: str, buyer_id: str) -> Dict[str, A
     if order.get("buyer_confirmed_at"):
         return {"ok": True, "already": True}
     now = datetime.now(timezone.utc)
+    set_fields: Dict[str, Any] = {"buyer_confirmed_at": now, "escrow_release_at": now}
+    # Buyer confirming receipt from a "shipped" state implies delivery
+    # happened — promote the status so downstream payout logic sees a
+    # delivered order.
+    if order.get("status") != "delivered":
+        set_fields["status"] = "delivered"
+        set_fields["delivered_at"] = now
     await db.orders.update_one(
         {"id": order_id},
-        {"$set": {"buyer_confirmed_at": now, "escrow_release_at": now}},
+        {"$set": set_fields},
     )
     result = await release_payout(order_id)
     return {"ok": True, "release": result}

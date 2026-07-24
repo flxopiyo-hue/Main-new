@@ -167,3 +167,19 @@ Frontend `.env` currently points at preview (`https://fit-finder-app-5.preview.e
 - Verified with live keys: startup plan bootstrap OK, GET /seller/banks (Kenya list incl. M-PESA) OK, POST /payments/checkout returns real checkout.paystack.com URL (initialization only — NEVER complete payments in tests from now on).
 - Resend: rotated key installed, sender no-reply@oromona.com, domain oromona.com status=verified (checked via Resend API), test send 200, forgot-password email delivered id=7d0ffc9e (no more sandbox recipient restriction).
 - ⚠️ TESTING RULE GOING FORWARD: payments are LIVE — initialization-only assertions, no test cards, no transfers.
+
+## Iteration 28 — Colour-aware try-on, size charts, min-1 measurements, confirm-received
+### Changes
+1. Try-on colour fidelity + face accuracy:
+   - `TryOnIn.color_name` (models.py); /api/tryon uses the selected colour's photo as garment reference when present + colour instruction in prompt.
+   - `IDENTITY_LOCK` prompt block added to single/outfit/BYO generators (face must be pixel-faithful, no AI face swaps).
+   - item/[id].tsx passes `color_name: selectedColor?.name` to api.tryOn.
+2. Category-aware size charts (`/app/frontend/src/lib/size-charts.ts`):
+   - Charts: letters XS–XXL, kids ages, Waist-inches 28–44 (cm hints), UK 6–18 women, Bra 32A–40D (underbust hints), Underwear S–XXL (waist hints), Socks EU ranges, One Size.
+   - `chartsFor(category, subcategory, audience)` picks defaults (men/unisex pants → waist; women pants → UK; sub "Bra & Lingerie" → bra; "Socks"/"Underwear" subs added to taxonomy). Seller can override via "Size system" chips (testID wizard-chart-{key}). Edit-mode detects chart from existing labels (detectChartKey). Stale size labels pruned on chart/taxonomy switches.
+3. Measurements min-1 rule: matrixErrors now requires ≥1 filled dimension per size (any of them), error key `{label}-_dims`, hint "Fill at least one measurement — any of them". No more "chest Required".
+4. Confirm received: POST /api/orders/{id}/confirm-delivery now accepts status shipped OR delivered; escrow confirm sets status→delivered + delivered_at when confirming from shipped. Frontend button shows for shipped|delivered, labelled "I received my item".
+### Verified by main agent
+- Backend: synthetic shipped order → confirm → 200, status delivered, buyer_confirmed_at set, payout released with 15% fee, NO live transfer (seller_no_recipient logged). Idempotent 2nd call 200. Test rows cleaned.
+- Frontend: men's bottoms show waist chart 28–44 w/ cm hints; size 34 detail shows min-1 hint + red error until one measurement filled.
+### ⚠️ LIVE PAYSTACK — do NOT complete checkouts or create transfers during testing. Initialization-only.
