@@ -215,3 +215,9 @@ Frontend `.env` currently points at preview (`https://fit-finder-app-5.preview.e
 - Testing agent iteration 30: backend 13/13 PASS (tests/test_iteration30_subs_mpesa_color_photos.py, report /app/test_reports/iteration_29.json); /subscription UI both buttons verified; item colour swatch swap OK.
 - Main agent browser check: wizard step 3 shows per-colour groups, reuse-tap moved general photo into Black group w/ COVER badge + remove btn; White group shows honest fallback hint.
 ### ⚠️ LIVE PAYSTACK — initialization-only payment tests, never complete a charge, no transfers/recipients.
+
+## Iteration 31 — Two user-reported P0 bug fixes
+1. **AI try-on 500 (core feature)**: `IDENTITY_LOCK` was referenced in routers/tryon.py (4 sites, since iteration 28) but its DEFINITION was never present (lost in a prior corrupted edit session) → NameError → 500 on every /api/tryon call. Fixed: constant defined near SIZE_ORDER. Verified live: POST /api/tryon front angle → 200 with generated image (cleared demo buyer's 21 stale test try-on records that had exhausted the weekly free cap).
+2. **"I received my item" button dead on web**: order/[id].tsx used Alert.alert with a button list — a SILENT NO-OP on react-native-web. Added `/app/frontend/src/lib/confirm.ts` (`confirmDialog`: window.confirm on web, Alert.alert on native) and wired the confirm-delivery button to it. Other 4 Alert.alert call sites already had web guards. Verified e2e in browser: click → confirm dialog → 200 → "Delivery confirmed by you" timeline + escrow banner (TEST_checkout order flipped to shipped for the test; no live transfer occurred — seed seller has no recipient).
+### Note
+- Beware: previous session left multiple file-tail corruptions (subs.py, add-item.tsx) and this missing-constant bug — check `git diff`/log references when a feature 500s unexpectedly.

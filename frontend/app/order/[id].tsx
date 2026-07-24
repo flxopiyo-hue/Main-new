@@ -5,7 +5,6 @@ import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Linking,
   Modal,
@@ -27,6 +26,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useToast } from "@/src/components/Toast";
 import { api, FitFeedback, OrderDetail } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
+import { confirmDialog } from "@/src/lib/confirm";
 import { formatPriceIn } from "@/src/lib/currency";
 import { dataUriFromBase64 } from "@/src/lib/images";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
@@ -318,27 +318,22 @@ export default function OrderDetailScreen() {
                     <TouchableOpacity
                       testID="order-confirm-delivery-btn"
                       style={styles.primaryBtn}
-                      onPress={async () => {
-                        Alert.alert(
-                          "Received your item?",
-                          "Confirming releases payment to the seller immediately. Only do this if you've received the item and are happy with it.",
-                          [
-                            { text: "Cancel", style: "cancel" },
-                            {
-                              text: "Confirm",
-                              style: "default",
-                              onPress: async () => {
-                                try {
-                                  const updated = await api.confirmDelivery(order.id);
-                                  setOrder(updated);
-                                  toast.show("Payment released to seller — thanks!", "success");
-                                } catch (e: any) {
-                                  toast.show(e?.message ?? "Couldn't confirm", "error");
-                                }
-                              },
-                            },
-                          ],
-                        );
+                      onPress={() => {
+                        confirmDialog({
+                          title: "Received your item?",
+                          message:
+                            "Confirming releases payment to the seller immediately. Only do this if you've received the item and are happy with it.",
+                          confirmLabel: "Confirm",
+                          onConfirm: async () => {
+                            try {
+                              const updated = await api.confirmDelivery(order.id);
+                              setOrder(updated);
+                              toast.show("Payment released to seller — thanks!", "success");
+                            } catch (e: any) {
+                              toast.show(e?.message ?? "Couldn't confirm", "error");
+                            }
+                          },
+                        });
                       }}
                     >
                       <Feather name="check" size={16} color={colors.primaryFg} />

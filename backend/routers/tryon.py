@@ -57,6 +57,17 @@ ANGLE_INSTRUCTIONS: Dict[str, str] = {
 
 SIZE_ORDER = ["XS", "S", "M", "L", "XL", "XXL"]
 
+# Appended to every try-on prompt so the model never invents or alters
+# the buyer's face/identity (iteration 28 face-fidelity requirement).
+IDENTITY_LOCK = (
+    "CRITICAL IDENTITY RULE: preserve the person's face, skin tone, hair and "
+    "body identity EXACTLY as in the source photo — treat the face as "
+    "pixel-faithful and untouchable. Never beautify, swap, age, slim, or "
+    "otherwise alter facial features, expression, or head shape. Whenever "
+    "the face is visible it must be recognisably the same person from the "
+    "input photo."
+)
+
 
 # ---------------------------------------------------------------------------
 # Smart-sizing helpers
