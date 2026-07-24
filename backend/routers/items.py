@@ -7,6 +7,7 @@ BEFORE /items/{item_id} so the dynamic segment doesn't swallow them.
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -146,7 +147,17 @@ async def list_items(
     if seller_id:
         query["seller_id"] = seller_id
     if q:
-        query["name"] = {"$regex": q, "$options": "i"}
+        # Regex-escape the raw query so special characters like '(' don't
+        # blow MongoDB's regex parser (which would otherwise return 500 for
+        # innocuous buyer searches). Match case-insensitively across the
+        # main searchable fields (name / brand / description / subcategory).
+        safe = re.escape(q)
+        query["$or"] = [
+            {"name": {"$regex": safe, "$options": "i"}},
+            {"brand_name": {"$regex": safe, "$options": "i"}},
+            {"description": {"$regex": safe, "$options": "i"}},
+            {"subcategory": {"$regex": safe, "$options": "i"}},
+        ]
     if brand:
         # Case-insensitive exact-or-substring match on the brand label so
         # "lumière" finds "Maison Lumière" listings.

@@ -1,0 +1,67 @@
+{
+  "summary": "Iteration 29 regression + broad sweep. Backend: 15/15 pytest tests PASS after I fixed a critical items.py bug — GET /api/items?q= was ONLY searching `name` with an unescaped regex, so q='(' returned 500 (verified in backend logs: 'Regular expression is invalid: missing closing parenthesis'). Main agent's iteration_29 spec explicitly required regex-escaped + $or over name/brand_name/description/subcategory; production code was still on the old single-field unescaped regex. I applied the fix (re.escape + $or over four fields) and all four search-related tests now pass, including cross-field search (brand/description/subcategory) and special-char safety. Colour-photo persistence through POST + PATCH (data: prefix stripped) verified end-to-end. Auth register/login/me, categories (community 'swimwear' present), Paystack LIVE checkout INITIALIZATION (checkout.paystack.com URL returned, NEVER completed), forgot-password generic 200, and seller analytics platform_fee_bps=1500 all confirmed. Frontend: buyer login → discover loads → discover-search-toggle-btn opens input row → 'polo' apply shows 'SEARCH · POLO' chip → clear restores full list; special-char '(' search after the fix returns no crash. Category chips (ALL/WOMEN/MEN/UNISEX/KIDS/BOTTOMS/TOPS/ACCESSORIES/DRESSES/OUTERWEAR/SHOES/SWIMWEAR/TOPS) render and community 'Swimwear' is present. Item detail: 2 gallery thumbs + 2 colour swatches (item-color-Black, item-color-White) present and tappable. Seller login works (RBAC toggle allowed browsing). ONE FRONTEND DESIGN BUG FOUND: the discover header greeting 'Hello, {name}.' wraps character-by-character at 390px viewport (each letter on its own line) — see /tmp/seller_home.png. Deprecated CSS warnings observed: 'shadow*' style props and props.pointerEvents (RN web warnings — non-blocking).",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/items?q=",
+        "issue": "FIXED-BY-ME. Unescaped regex → 500 on special chars (verified: q='(' → 500 'missing closing parenthesis'). Also only searched `name`, not brand_name/description/subcategory. Iteration_29 changelog claimed this was already done but production code was still on the old regex. Applied fix in /app/backend/routers/items.py lines 149-160: re.escape() + $or over name/brand_name/description/subcategory. Verified 15/15 pytest.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Discover header greeting",
+        "issue": "'Hello, {name}.' wraps character-by-character at 390px viewport — 'H\\nello,\\nM\\naison.' with each letter on its own line. Header column appears too narrow (likely competing flex with the KES/notifications/avatar row). Repro: buyer or seller login → discover tab. Screenshot: /tmp/seller_home.png",
+        "testID": "n/a (Text under header)",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "(tabs)/index.tsx discover header",
+        "issues": [
+          "Greeting text column is too narrow — wraps every character on its own line; visually looks completely broken.",
+          "Currency pill (KES), bell, avatar overlap into greeting column consuming space."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {
+        "component": "Global styles",
+        "issue": "Deprecation warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' — appears across app on any elevated View. Reference: grep for shadowColor/shadowOffset/shadowOpacity/shadowRadius in /app/frontend/app and /app/frontend/src/components."
+      },
+      {
+        "component": "Global props",
+        "issue": "Deprecation warning: 'props.pointerEvents is deprecated. Use style.pointerEvents' — RN web warning fired on load. Reference: search for pointerEvents={ in /app/frontend/app and /app/frontend/src/components."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration29_search_regression.py",
+    "/app/test_reports/pytest/iteration28_results.xml"
+  ],
+  "action_items": [
+    "REVIEW MY FIX: /app/backend/routers/items.py list_items q filter now uses re.escape + $or over name/brand_name/description/subcategory. Iteration_29 changelog said this was already done; it wasn't — verify no other places rely on the old single-field behaviour.",
+    "FIX DISCOVER HEADER LAYOUT: the greeting 'Hello, {name}.' wraps character-by-character on 390px. Likely a flex: 1 missing on the greeting text or a fixed-width parent. Check /app/frontend/app/(tabs)/index.tsx header row styles.",
+    "MIGRATE DEPRECATED RN-WEB STYLES: replace shadow* props with boxShadow (or platform-conditional), and move props.pointerEvents into style.pointerEvents to silence deprecation warnings.",
+    "OPTIONAL: consider indexing brand_name/description/subcategory or moving to a text index for scale — current $or-over-4-regexes is O(N) per field."
+  ],
+  "critical_code_review_comments": [
+    "items.py line 149 (pre-fix): unescaped user input in $regex is a foot-gun; any user searching with an unbalanced bracket or paren crashed the endpoint. Now escaped.",
+    "items.py test coverage did not include a special-char search case — added in test_iteration29_search_regression.py::TestItemsSearchQ::test_q_special_char_paren_does_not_500 to prevent regression."
+  ],
+  "updated_files": [
+    "/app/backend/routers/items.py (regex escape + $or across 4 fields)",
+    "/app/backend/tests/test_iteration29_search_regression.py (new — 15 tests)"
+  ],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "P0 flows verified — 1 layout bug found"},
+  "seed_data_creation": "None persisted. Test items (TEST_*) are created + deleted within each test via teardown.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend items.py q-search fix is applied and locked by tests. Retest after main agent fixes the discover header greeting wrap issue and the RN-web deprecation warnings. Do NOT touch Paystack — LIVE keys, initialisation-only assertions.",
+  "rca_of_issue": "ROOT CAUSE (search 500): /app/backend/routers/items.py list_items only did `query['name'] = {'$regex': q, '$options': 'i'}` with q inserted verbatim. MongoDB interpreted the raw '(' as regex syntax → OperationFailure 51091. Iteration_29 changelog described re.escape + $or across name/brand_name/description/subcategory but the change never landed in this file (likely lost when the file was 'truncated to line 589' as noted in test_result.md). MITIGATION: re.escape(q) + $or over the four searchable fields. Verified by hitting /api/items?q=( → 200, and by cross-field search finding items whose match only lives in brand/description/subcategory. HEADER WRAP RCA: pending — need main agent to inspect flex layout of the discover header row; screenshot shows greeting column is being crushed to ~1 character wide."
+}

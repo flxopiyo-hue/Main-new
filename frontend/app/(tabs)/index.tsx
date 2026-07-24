@@ -76,6 +76,10 @@ export default function Discover() {
   const [brandFilter, setBrandFilter] = useState<string>("");
   const [brandInput, setBrandInput] = useState<string>("");
   const [showBrandInput, setShowBrandInput] = useState(false);
+  // Free-text search across item name / brand / description / subcategory.
+  const [searchFilter, setSearchFilter] = useState<string>("");
+  const [searchInput, setSearchInput] = useState<string>("");
+  const [showSearchInput, setShowSearchInput] = useState(false);
   const [wishedIds, setWishedIds] = useState<Set<string>>(new Set());
   // Map of itemId → FitScore so each card knows whether to show a badge.
   // Loaded in the background after the items list arrives (non-blocking).
@@ -159,6 +163,7 @@ export default function Discover() {
           audience: effShowAll ? "all" : effectiveAudience,
           kid_age_group: isKidActive ? kidAgeGroup ?? undefined : undefined,
           brand: brandFilter || undefined,
+          q: searchFilter || undefined,
         }),
         user?.role === "buyer" ? api.wishlistIds() : Promise.resolve({ item_ids: [] }),
       ]);
@@ -178,6 +183,7 @@ export default function Discover() {
     isKidActive,
     kidAgeGroup,
     brandFilter,
+    searchFilter,
     toast,
     user?.role,
   ]);
@@ -344,10 +350,23 @@ export default function Discover() {
           </View>
         </View>
         <TouchableOpacity
+          testID="discover-search-toggle-btn"
+          style={styles.iconBtn}
+          onPress={() => {
+            setShowSearchInput((v) => !v);
+            setShowBrandInput(false);
+            setSearchInput(searchFilter);
+          }}
+          accessibilityLabel="Search items"
+        >
+          <Feather name="search" size={20} color={searchFilter ? colors.primary : colors.mutedFg} />
+        </TouchableOpacity>
+        <TouchableOpacity
           testID="discover-brand-toggle-btn"
           style={styles.iconBtn}
           onPress={() => {
             setShowBrandInput((v) => !v);
+            setShowSearchInput(false);
             setBrandInput(brandFilter);
           }}
           accessibilityLabel="Filter by brand"
@@ -358,6 +377,53 @@ export default function Discover() {
         {user?.role === "buyer" ? <RestockBell testID="discover-restock-bell" /> : null}
         <HeaderMenu testID="discover-header-menu" />
       </View>
+
+      {showSearchInput ? (
+        <View style={styles.brandRow} testID="discover-search-input-row">
+          <Feather name="search" size={14} color={colors.mutedFg} />
+          <TextInput
+            testID="discover-search-input"
+            value={searchInput}
+            onChangeText={setSearchInput}
+            placeholder="Search items, brands, descriptions…"
+            placeholderTextColor={colors.mutedFg}
+            style={styles.brandInput}
+            returnKeyType="search"
+            autoFocus
+            onSubmitEditing={() => {
+              setSearchFilter(searchInput.trim());
+              setShowSearchInput(false);
+            }}
+          />
+          <TouchableOpacity
+            testID="discover-search-apply"
+            onPress={() => {
+              setSearchFilter(searchInput.trim());
+              setShowSearchInput(false);
+            }}
+            style={styles.brandApply}
+          >
+            <Text style={styles.brandApplyLabel}>SEARCH</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {searchFilter ? (
+        <View style={styles.brandChipRow} testID="discover-search-filter-chip">
+          <Feather name="search" size={12} color={colors.primaryFg} />
+          <Text style={styles.brandChipLabel}>Search · {searchFilter}</Text>
+          <TouchableOpacity
+            testID="discover-search-clear"
+            onPress={() => {
+              setSearchFilter("");
+              setSearchInput("");
+            }}
+            hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+          >
+            <Feather name="x" size={12} color={colors.primaryFg} />
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       {showBrandInput ? (
         <View style={styles.brandRow} testID="discover-brand-input-row">

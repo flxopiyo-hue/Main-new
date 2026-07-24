@@ -62,6 +62,9 @@ export default function ItemDetail() {
   const [loading, setLoading] = useState(true);
   const [selectedSize, setSelectedSize] = useState<SizeOption | null>(null);
   const [selectedColor, setSelectedColor] = useState<ColorOption | null>(null);
+  // Explicit gallery photo selection — overrides the colour photo until the
+  // buyer taps a colour swatch again.
+  const [galleryOverride, setGalleryOverride] = useState<string | null>(null);
   const [tryOnId, setTryOnId] = useState<string | null>(null);
   const [tryOnAngles, setTryOnAngles] = useState<TryOnImageOut[]>([]);
   const [activeAngle, setActiveAngle] = useState<TryOnAngle>("front");
@@ -346,12 +349,24 @@ export default function ItemDetail() {
   }
 
   const activeAngleImage = tryOnAngles.find((a) => a.angle === activeAngle);
-  // Hero priority: try-on result > selected colour's photo > primary image.
+  // Hero priority: try-on result > tapped gallery photo > selected colour's
+  // photo > primary image.
   const colorImage = selectedColor?.image_b64 || null;
   const displayImage = activeAngleImage
     ? dataUriFromBase64(activeAngleImage.image_b64)
-    : dataUriFromBase64(colorImage ?? item.image_b64);
+    : dataUriFromBase64(galleryOverride ?? colorImage ?? item.image_b64);
   const hasTryOn = tryOnAngles.length > 0;
+  // Gallery = the item's photos + every colour photo (tagged with its
+  // swatch). Tapping a thumb shows it in the hero; tapping a colour-tagged
+  // thumb also selects that colour.
+  const galleryEntries: { b64: string; colorName?: string; hex?: string }[] = [
+    ...(item.images && item.images.length > 0 ? item.images : [item.image_b64]).map((b64) => ({
+      b64,
+    })),
+    ...item.colors
+      .filter((c) => !!c.image_b64)
+      .map((c) => ({ b64: c.image_b64 as string, colorName: c.name, hex: c.hex })),
+  ];
 
   return (
     <View style={styles.root}>
@@ -481,8 +496,8 @@ export default function ItemDetail() {
             </View>
           ) : null}
 
-          {/* Photo gallery (extras beyond the hero shot) */}
-          {(item.images?.length ?? 0) > 1 ? (
+          {/* Photo gallery — item photos + colour photos. Tap to view. */}
+          {galleryEntries.length > 1 ? (
             <ScrollView
               testID="item-gallery"
               horizontal
@@ -490,14 +505,28 @@ export default function ItemDetail() {
               style={{ marginTop: spacing.md }}
               contentContainerStyle={{ gap: 8 }}
             >
-              {(item.images ?? []).map((b64, idx) => (
-                <Image
+              {galleryEntries.map((entry, idx) => (
+                <TouchableOpacity
                   key={`gal-${idx}`}
-                  source={{ uri: dataUriFromBase64(b64) }}
-                  style={styles.galleryThumb}
-                  resizeMode="cover"
                   testID={`item-gallery-thumb-${idx}`}
-                />
+                  onPress={() => {
+                    setGalleryOverride(entry.b64);
+                    if (entry.colorName) {
+                      const c = item.colors.find((x) => x.name === entry.colorName);
+                      if (c) setSelectedColor(c);
+                    }
+                  }}
+                  style={styles.galleryThumbWrap}
+                >
+                  <Image
+                    source={{ uri: dataUriFromBase64(entry.b64) }}
+                    style={styles.galleryThumb}
+                    resizeMode="cover"
+                  />
+                  {entry.hex ? (
+                    <View style={[styles.galleryThumbSwatch, { backgroundColor: entry.hex }]} />
+                  ) : null}
+                </TouchableOpacity>
               ))}
             </ScrollView>
           ) : null}
@@ -733,7 +762,12 @@ export default function ItemDetail() {
                     <TouchableOpacity
                       key={c.name}
                       testID={`item-color-${c.name}`}
-                      onPress={() => setSelectedColor(c)}
+                      onPress={() => {
+                        setSelectedColor(c);
+                        // Colour tap wins over any tapped gallery photo so
+                        // the hero switches to this colour's picture.
+                        setGalleryOverride(null);
+                      }}
                       style={[
                         styles.colorSwatch,
                         { backgroundColor: c.hex },
@@ -1090,12 +1124,25 @@ const styles = StyleSheet.create({
     color: colors.primary,
     textTransform: "capitalize",
   },
+  galleryThumbWrap: {
+    position: "relative",
+  },
   galleryThumb: {
     width: 92,
     aspectRatio: 3 / 4,
     backgroundColor: colors.muted,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  galleryThumbSwatch: {
+    position: "absolute",
+    bottom: 6,
+    right: 6,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 1.5,
+    borderColor: "#FFFFFF",
   },
   sizeRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   sizeChip: {

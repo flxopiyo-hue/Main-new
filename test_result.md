@@ -187,3 +187,15 @@ Frontend `.env` currently points at preview (`https://fit-finder-app-5.preview.e
 ## Iteration 28 — testing agent PASSED (6/6 backend pytest + all wizard flows)
 - Report: /app/test_reports/iteration_27.json (agent labelled it 27), pytest iteration27_results.xml
 - Post-test fixes by main agent: ItemCreate.sizes now Field(min_length=1) (empty sizes → 422, verified); expo-image-picker MediaTypeOptions deprecation fixed (mediaTypes: ["images"]).
+
+## Iteration 29 — Search, colour toggle fix, tappable gallery, prominent colour-photo cards
+### Root cause of user's "black shows white" complaint
+- User's item (Polo Tshirt) had Black/White colours but NO per-colour photos attached — the tiny chip camera icon was too easy to miss. Wizard→publish persistence itself was verified working (TEST_BW_Tee e2e persisted Black photo).
+### Changes
+1. Discover search: header search icon (discover-search-toggle-btn) → input row (discover-search-input / -apply) → q filter chip (discover-search-filter-chip / -clear). Backend q now $or over name/brand_name/description/subcategory (regex-escaped).
+2. Wizard colour photos: replaced tiny chip camera icon with a prominent "COLOUR PHOTOS" card strip (wizard-color-photo-strip; per-colour card testID wizard-color-photo-{name}, shows ADD PHOTO placeholder or photo thumbnail).
+3. Buyer item page: gallery now = item photos + colour photos (swatch badge); thumbs are TAPPABLE (sets hero override; colour-tagged thumb also selects that colour); tapping a colour swatch clears the override so its photo shows. Hero priority: try-on > gallery tap > colour photo > primary.
+4. Fixed items.py corruption (duplicated trailing lines from an edit glitch — file truncated to line 589).
+### Verified by main agent
+- Backend q search (polo/denim). Wizard e2e publish persists colour image_b64. Buyer flow: search chip, item open, Black swatch → black hero, gallery thumbs visible w/ swatch badge, thumb tap → white hero. Colour card strip renders in wizard.
+### ⚠️ LIVE PAYSTACK — initialization-only payment tests, never complete a charge.

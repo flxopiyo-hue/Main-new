@@ -1791,25 +1791,6 @@ function ColorEditor({ picked, presets, palette, onAdd, onRemove, onAttachPhoto 
                 {c.name}
               </Text>
               <TouchableOpacity
-                testID={`wizard-color-photo-${c.name}`}
-                onPress={() => onAttachPhoto(c.name)}
-                style={styles.colorChipPhotoBtn}
-                hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
-                accessibilityLabel={
-                  c.image_b64 ? `Replace ${c.name} photo` : `Add ${c.name} photo`
-                }
-              >
-                {c.image_b64 ? (
-                  <Image
-                    source={{ uri: dataUriFromBase64(c.image_b64) }}
-                    style={styles.colorChipPhotoThumb}
-                    resizeMode="cover"
-                  />
-                ) : (
-                  <Feather name="camera" size={12} color={colors.primaryFg} />
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity
                 testID={`wizard-color-remove-${c.name}`}
                 onPress={() => onRemove(c)}
                 style={styles.colorChipRemove}
@@ -1820,6 +1801,50 @@ function ColorEditor({ picked, presets, palette, onAdd, onRemove, onAttachPhoto 
             </View>
           ))}
         </View>
+      ) : null}
+
+      {/* Per-colour photo cards — impossible-to-miss affordance so buyers
+          can toggle between colour photos on the item page. */}
+      {picked.length > 0 ? (
+        <>
+          <Text style={styles.colorSectionCaption}>COLOUR PHOTOS</Text>
+          <View style={styles.colorPhotoStrip} testID="wizard-color-photo-strip">
+            {picked.map((c) => (
+              <TouchableOpacity
+                key={`photo-${c.name}`}
+                testID={`wizard-color-photo-${c.name}`}
+                onPress={() => onAttachPhoto(c.name)}
+                style={styles.colorPhotoCard}
+                accessibilityLabel={
+                  c.image_b64 ? `Replace ${c.name} photo` : `Add ${c.name} photo`
+                }
+              >
+                {c.image_b64 ? (
+                  <Image
+                    source={{ uri: dataUriFromBase64(c.image_b64) }}
+                    style={styles.colorPhotoImg}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={styles.colorPhotoPlaceholder}>
+                    <Feather name="camera" size={16} color={colors.mutedFg} />
+                    <Text style={styles.colorPhotoAddLabel}>ADD PHOTO</Text>
+                  </View>
+                )}
+                <View style={styles.colorPhotoMeta}>
+                  <View style={[styles.colorPhotoSwatch, { backgroundColor: c.hex }]} />
+                  <Text style={styles.colorPhotoName} numberOfLines={1}>
+                    {c.name}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <Text style={styles.colorPhotoHint}>
+            Add a photo of the item in each colour — buyers tap a colour to
+            see that exact photo.
+          </Text>
+        </>
       ) : null}
 
       {/* Quick-pick presets — 1-tap add when not already picked */}
@@ -2391,19 +2416,66 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "rgba(255,255,255,0.18)",
   },
-  colorChipPhotoBtn: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.18)",
+  colorPhotoStrip: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginBottom: 6,
+  },
+  colorPhotoCard: {
+    width: 96,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     overflow: "hidden",
   },
-  colorChipPhotoThumb: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+  colorPhotoImg: {
+    width: "100%",
+    aspectRatio: 3 / 4,
+    backgroundColor: colors.muted,
+  },
+  colorPhotoPlaceholder: {
+    width: "100%",
+    aspectRatio: 3 / 4,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: colors.muted,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  colorPhotoAddLabel: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 9,
+    letterSpacing: 1.5,
+    color: colors.mutedFg,
+  },
+  colorPhotoMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  colorPhotoSwatch: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  colorPhotoName: {
+    flex: 1,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 11,
+    color: colors.primary,
+  },
+  colorPhotoHint: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: colors.mutedFg,
+    lineHeight: 15,
+    marginBottom: 10,
   },
   customAddBtn: {
     flexDirection: "row",
