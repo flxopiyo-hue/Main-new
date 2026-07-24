@@ -117,20 +117,24 @@ export default function ItemDetail() {
   // Resolve the active (size × color) variant. Falls back to the raw
   // SizeOption's available_qty when variants haven't been generated
   // (super-legacy items). The variant's ``price_cents_override`` wins
-  // over the item base price for the buy button + total.
+  // over the item base price for the buy button + total. When the buyer
+  // explicitly picks a colour whose combo is disabled/missing for the
+  // selected size, we return null (treated as unavailable) instead of
+  // silently substituting another colour.
   const selectedVariant: ItemVariant | null = useMemo(() => {
     if (!item?.variants || item.variants.length === 0 || !selectedSize) return null;
     const target = (selectedColor?.name || "").trim().toLowerCase();
     const same = item.variants.filter((v) => v.size_label === selectedSize.label && !v.disabled);
-    if (!same.length) return null;
-    if (!target) return same[0];
-    const hit = same.find((v) => (v.color_name || "").trim().toLowerCase() === target);
-    return hit ?? same[0];
+    if (!target) return same[0] ?? null;
+    return same.find((v) => (v.color_name || "").trim().toLowerCase() === target) ?? null;
   }, [item?.variants, selectedSize, selectedColor]);
 
+  const hasVariants = (item?.variants?.length ?? 0) > 0;
   const availableQtyForSelection: number = selectedVariant
     ? Math.max(0, selectedVariant.quantity | 0)
-    : (selectedSize?.available_qty ?? 0);
+    : hasVariants && selectedSize
+      ? 0 // variant-tracked item, but this exact combo is disabled/missing
+      : (selectedSize?.available_qty ?? 0);
 
   const chargedPriceCents: number = selectedVariant?.price_cents_override
     ?? item?.price_cents
@@ -707,6 +711,19 @@ export default function ItemDetail() {
               <View style={styles.colorRow}>
                 {item.colors.map((c) => {
                   const selected = selectedColor?.name === c.name;
+                  // Grey out colours that don't exist (disabled or zero
+                  // stock) for the currently-selected size so buyers see
+                  // "no Rose in L" at a glance. Without a size selected
+                  // every colour stays active.
+                  const comboUnavailable = (() => {
+                    if (!item.variants || item.variants.length === 0 || !selectedSize) return false;
+                    const v = item.variants.find(
+                      (x) =>
+                        x.size_label === selectedSize.label &&
+                        (x.color_name || "").trim().toLowerCase() === c.name.trim().toLowerCase(),
+                    );
+                    return !v || !!v.disabled || (v.quantity | 0) <= 0;
+                  })();
                   return (
                     <TouchableOpacity
                       key={c.name}
@@ -716,6 +733,7 @@ export default function ItemDetail() {
                         styles.colorSwatch,
                         { backgroundColor: c.hex },
                         selected && styles.colorSwatchActive,
+                        comboUnavailable && { opacity: 0.25 },
                       ]}
                     />
                   );
@@ -723,6 +741,9 @@ export default function ItemDetail() {
                 {selectedColor ? (
                   <Text style={[tp.bodyMuted, { marginLeft: spacing.sm }]}>
                     {selectedColor.name}
+                    {hasVariants && selectedSize && !selectedVariant
+                      ? " — unavailable in this size"
+                      : ""}
                   </Text>
                 ) : null}
               </View>

@@ -49,8 +49,6 @@ SEED_CATEGORIES: List[Dict[str, Any]] = [
     {"slug": "accessories", "label": "Accessories", "audiences": ["women", "men", "unisex", "kids"]},
 ]
 
-SYSTEM_SLUGS = {c["slug"] for c in SEED_CATEGORIES}
-
 
 # ---------------------------------------------------------------------------
 # Slug helpers

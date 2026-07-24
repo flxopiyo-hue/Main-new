@@ -147,3 +147,11 @@ Frontend `.env` currently points at preview (`https://fit-finder-app-5.preview.e
 - Full regression per "What to Test" section above (iteration 25 list) + category/variant flows on fresh accounts.
 - Buyer item-detail variant selection: stock per combo, disabled combos unselectable, override price charged at checkout.
 - Shoes listing with EU size labels + variant grid.
+
+## Iteration 26 — testing agent result (PASSED 15/15 backend + frontend P0 verified)
+- Report: /app/test_reports/iteration_26.json, pytest: /app/test_reports/pytest/iteration26_results.xml
+- Post-test fixes by main agent (self-verified via browser automation):
+  - Deleted leaked testkikoy* categories and TEST_Kitenge items from DB.
+  - Removed dead SYSTEM_SLUGS in routers/categories.py.
+  - item/[id].tsx: disabled (size×colour) combos no longer silently substitute another colour — buyer sees greyed swatch + "unavailable in this size" + Out of stock + disabled Buy; price override (KSh 2,500 vs base 2,000) verified on Buy button.
+  - Shoes wizard sizing verified: EU chips with cm sub-labels.
