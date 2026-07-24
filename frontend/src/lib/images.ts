@@ -28,7 +28,7 @@ export async function pickImageFromLibrary(): Promise<PickedImage | null> {
   const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!perm.granted) return null;
   const res = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    mediaTypes: ["images"],
     allowsEditing: false,
     quality: 1,
   });
@@ -42,7 +42,7 @@ export async function pickImageFromCamera(): Promise<PickedImage | null> {
   const perm = await ImagePicker.requestCameraPermissionsAsync();
   if (!perm.granted) return null;
   const res = await ImagePicker.launchCameraAsync({
-    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    mediaTypes: ["images"],
     allowsEditing: false,
     quality: 1,
   });

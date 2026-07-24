@@ -59,3 +59,7 @@ Editorial Swiss / High-Contrast: Cormorant Garamond display + Manrope body text,
 - **Variant grid completed**: size × colour matrix with per-combo quantity, disable toggle, and optional per-variant **price override** input. Explicit variants get server-assigned UUIDs (create) and preserve ids by (size,colour) key (patch). `sizes[].available_qty` roll-up now recomputed from variants server-side; frontend uses shared `itemTotalQty()` (variants-authoritative).
 - **P0 crash fixed & verified**: `pickedColors is not defined` in add-item wizard — variant matrix JSX now lives in `StepSizing`; full seller flow (photo → taxonomy → sizing → publish) verified via browser automation.
 - **Per-colour photos**: `ColorOption.image_b64` — seller attaches a photo per colour in the wizard; buyer item detail swaps the hero image when a colour swatch is tapped.
+- **Colour-aware try-on + identity lock**: /api/tryon takes color_name (uses colour photo as garment ref); hardened face-preservation prompts.
+- **Category size charts**: waist-inch (men bottoms), UK 6–18 (women), bra band+cup, underwear, socks EU, kids ages, one-size — seller-selectable "Size system" in wizard (src/lib/size-charts.ts).
+- **Min-1 measurement rule**: any single measurement per size suffices (no mandatory chest).
+- **Confirm received**: buyer can confirm from shipped OR delivered; promotes to delivered + releases escrow.

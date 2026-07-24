@@ -595,7 +595,7 @@ class ItemIn(BaseModel):
     # Up to 4 additional photos (total 5 including image_b64). Iter 14:
     # sellers can showcase front/back/detail shots in a buyer gallery.
     extra_images: List[str] = Field(default_factory=list, max_length=4)
-    sizes: List[SizeOption]
+    sizes: List[SizeOption] = Field(min_length=1)
     colors: List[ColorOption] = []
     # Optional per-(size × color) inventory + pricing overrides. When
     # empty, the server auto-generates a variant per (size, color) using

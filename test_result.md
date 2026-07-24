@@ -183,3 +183,7 @@ Frontend `.env` currently points at preview (`https://fit-finder-app-5.preview.e
 - Backend: synthetic shipped order → confirm → 200, status delivered, buyer_confirmed_at set, payout released with 15% fee, NO live transfer (seller_no_recipient logged). Idempotent 2nd call 200. Test rows cleaned.
 - Frontend: men's bottoms show waist chart 28–44 w/ cm hints; size 34 detail shows min-1 hint + red error until one measurement filled.
 ### ⚠️ LIVE PAYSTACK — do NOT complete checkouts or create transfers during testing. Initialization-only.
+
+## Iteration 28 — testing agent PASSED (6/6 backend pytest + all wizard flows)
+- Report: /app/test_reports/iteration_27.json (agent labelled it 27), pytest iteration27_results.xml
+- Post-test fixes by main agent: ItemCreate.sizes now Field(min_length=1) (empty sizes → 422, verified); expo-image-picker MediaTypeOptions deprecation fixed (mediaTypes: ["images"]).
