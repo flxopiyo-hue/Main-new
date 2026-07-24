@@ -155,3 +155,9 @@ Frontend `.env` currently points at preview (`https://fit-finder-app-5.preview.e
   - Removed dead SYSTEM_SLUGS in routers/categories.py.
   - item/[id].tsx: disabled (size×colour) combos no longer silently substitute another colour — buyer sees greyed swatch + "unavailable in this size" + Out of stock + disabled Buy; price override (KSh 2,500 vs base 2,000) verified on Buy button.
   - Shoes wizard sizing verified: EU chips with cm sub-labels.
+
+## Iteration 27 — Per-colour item photos
+- `models.py` ColorOption + api.ts ColorOption: optional `image_b64` per colour (data-prefix stripped on save in items POST/PATCH).
+- Seller wizard: each picked colour chip has a camera button (testID `wizard-color-photo-{name}`) → library picker → thumbnail replaces icon; photo submitted with colors[].
+- Buyer item detail: hero image priority = try-on result > selected colour's photo > primary image.
+- Verified via browser automation: attach flow + hero swap (Black/Rose). Temp items cleaned up.

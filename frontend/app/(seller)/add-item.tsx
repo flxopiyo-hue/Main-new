@@ -438,6 +438,21 @@ export default function AddItem() {
     );
   };
 
+  // Attach / replace the optional per-colour photo. Buyers see it as the
+  // hero image on item detail when they tap that colour's swatch.
+  const attachColorPhoto = async (name: string) => {
+    const res = await pickImageFromLibrary();
+    if (!res) {
+      toast.show("Permission denied or no image picked", "error");
+      return;
+    }
+    setPickedColors((arr) =>
+      arr.map((c) => (c.name === name ? { ...c, image_b64: res.base64 } : c)),
+    );
+    toast.show(`Photo attached to ${name}`, "success");
+  };
+
+
   // Community category add — canonicalised server-side (near-duplicates
   // like "swim wear" resolve to the existing "swimwear" row) and shared
   // with every other seller immediately.
@@ -696,6 +711,7 @@ export default function AddItem() {
             onToggleSize={toggleSize}
             onUpdateSize={updateSize}
             onToggleColor={toggleColor}
+            onAttachColorPhoto={attachColorPhoto}
             managePerVariant={managePerVariant}
             onToggleManagePerVariant={setManagePerVariant}
             variantCells={variantCells}
@@ -1205,6 +1221,7 @@ interface StepSizingProps {
   onToggleSize: (label: string) => void;
   onUpdateSize: (label: string, patch: Partial<SizeOption>) => void;
   onToggleColor: (c: ColorOption) => void;
+  onAttachColorPhoto: (name: string) => void;
   // Opt-in variant grid state — provided by the parent so it survives step
   // navigation and gets included in the final payload.
   managePerVariant: boolean;
@@ -1233,6 +1250,7 @@ function StepSizing({
   onToggleSize,
   onUpdateSize,
   onToggleColor,
+  onAttachColorPhoto,
   managePerVariant,
   onToggleManagePerVariant,
   variantCells,
@@ -1377,7 +1395,9 @@ function StepSizing({
       <View style={{ height: spacing.lg }} />
       <Text style={[tp.caption, styles.label]}>Colors</Text>
       <Text style={styles.colorHint}>
-        Tap a preset or add your own name & shade. Add as many as you carry.
+        Tap a preset or add your own name & shade. Use the camera button on a
+        picked colour to attach a photo of the item in that colour — buyers
+        see it when they tap the swatch.
       </Text>
       <ColorEditor
         picked={pickedColors}
@@ -1385,6 +1405,7 @@ function StepSizing({
         palette={EXTENDED_PALETTE}
         onAdd={onToggleColor}
         onRemove={onToggleColor}
+        onAttachPhoto={onAttachColorPhoto}
       />
       {/* --------------------------------------------------------------- */}
       {/* Opt-in per-variant grid (size × color)                          */}
@@ -1602,9 +1623,10 @@ interface ColorEditorProps {
   palette: string[];
   onAdd: (c: ColorOption) => void;
   onRemove: (c: ColorOption) => void;
+  onAttachPhoto: (name: string) => void;
 }
 
-function ColorEditor({ picked, presets, palette, onAdd, onRemove }: ColorEditorProps) {
+function ColorEditor({ picked, presets, palette, onAdd, onRemove, onAttachPhoto }: ColorEditorProps) {
   const [drafting, setDrafting] = useState(false);
   const [draftName, setDraftName] = useState("");
   const [draftHex, setDraftHex] = useState(palette[0]);
@@ -1657,6 +1679,25 @@ function ColorEditor({ picked, presets, palette, onAdd, onRemove }: ColorEditorP
               <Text style={styles.colorChipLabel} numberOfLines={1}>
                 {c.name}
               </Text>
+              <TouchableOpacity
+                testID={`wizard-color-photo-${c.name}`}
+                onPress={() => onAttachPhoto(c.name)}
+                style={styles.colorChipPhotoBtn}
+                hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+                accessibilityLabel={
+                  c.image_b64 ? `Replace ${c.name} photo` : `Add ${c.name} photo`
+                }
+              >
+                {c.image_b64 ? (
+                  <Image
+                    source={{ uri: dataUriFromBase64(c.image_b64) }}
+                    style={styles.colorChipPhotoThumb}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <Feather name="camera" size={12} color={colors.primaryFg} />
+                )}
+              </TouchableOpacity>
               <TouchableOpacity
                 testID={`wizard-color-remove-${c.name}`}
                 onPress={() => onRemove(c)}
@@ -2238,6 +2279,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(255,255,255,0.18)",
+  },
+  colorChipPhotoBtn: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.18)",
+    overflow: "hidden",
+  },
+  colorChipPhotoThumb: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
   },
   customAddBtn: {
     flexDirection: "row",

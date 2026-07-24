@@ -219,6 +219,9 @@ export const DIMENSION_HINTS: Record<DimensionKey, string> = {
 export interface ColorOption {
   name: string;
   hex: string;
+  // Optional photo of the item in this colour — shown as the hero image
+  // on item detail when the buyer taps the colour swatch.
+  image_b64?: string | null;
 }
 
 export interface ItemVariant {

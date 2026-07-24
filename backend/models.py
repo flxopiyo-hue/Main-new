@@ -543,6 +543,9 @@ def dimension_keys_for(garment_type: Optional[str]) -> List[str]:
 class ColorOption(BaseModel):
     name: str
     hex: str  # "#000000"
+    # Optional photo of the item in this specific colour. Buyers see it
+    # as the hero image when they tap the colour swatch on item detail.
+    image_b64: Optional[str] = None
 
 
 class ItemVariant(BaseModel):

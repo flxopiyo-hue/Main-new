@@ -81,7 +81,10 @@ async def create_item(
         "image_b64": primary_b64,
         "images": gallery,
         "sizes": [s.model_dump() for s in body.sizes],
-        "colors": [c.model_dump() for c in body.colors],
+        "colors": [
+            {**c.model_dump(), "image_b64": strip_data_prefix(c.image_b64) if c.image_b64 else None}
+            for c in body.colors
+        ],
         "audience": body.audience,
         "is_paused": False,
         # New items skip the back-fill migration — they already store
@@ -381,7 +384,10 @@ async def patch_item(
     if body.sizes is not None:
         update["sizes"] = [s.model_dump() for s in body.sizes]
     if body.colors is not None:
-        update["colors"] = [c.model_dump() for c in body.colors]
+        update["colors"] = [
+            {**c.model_dump(), "image_b64": strip_data_prefix(c.image_b64) if c.image_b64 else None}
+            for c in body.colors
+        ]
     if body.variants is not None:
         # Preserve existing variant ids by (size, color) key so in-flight
         # carts/orders keep resolving; brand-new combos get fresh UUIDs.

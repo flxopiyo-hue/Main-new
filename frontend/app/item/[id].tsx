@@ -343,9 +343,11 @@ export default function ItemDetail() {
   }
 
   const activeAngleImage = tryOnAngles.find((a) => a.angle === activeAngle);
+  // Hero priority: try-on result > selected colour's photo > primary image.
+  const colorImage = selectedColor?.image_b64 || null;
   const displayImage = activeAngleImage
     ? dataUriFromBase64(activeAngleImage.image_b64)
-    : dataUriFromBase64(item.image_b64);
+    : dataUriFromBase64(colorImage ?? item.image_b64);
   const hasTryOn = tryOnAngles.length > 0;
 
   return (
