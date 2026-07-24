@@ -16,7 +16,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 
@@ -93,19 +93,27 @@ async def create_plan(
 
 
 async def initialize_transaction(
-    *, email: str, amount_kobo: int, plan_code: str, callback_url: str, reference: Optional[str] = None,
-    metadata: Optional[Dict[str, Any]] = None,
+    *, email: str, amount_kobo: int, plan_code: Optional[str] = None, callback_url: str,
+    reference: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None,
+    channels: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Kicks off the hosted-checkout flow. Returns
     ``{authorization_url, access_code, reference}``.
+
+    ``plan_code`` makes it a subscription transaction (card-only per
+    Paystack rules). ``channels`` restricts the payment methods shown
+    (e.g. ["mobile_money"] for an M-Pesa-only one-time charge).
     """
     payload: Dict[str, Any] = {
         "email": email,
         "amount": amount_kobo,
-        "plan": plan_code,
         "callback_url": callback_url,
         "currency": "KES",
     }
+    if plan_code:
+        payload["plan"] = plan_code
+    if channels:
+        payload["channels"] = channels
     if reference:
         payload["reference"] = reference
     if metadata is not None:

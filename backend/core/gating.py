@@ -31,11 +31,28 @@ def is_premium(user_doc: Dict[str, Any]) -> bool:
     OR trialing. Past-due / canceled users fall back to Free even before
     the webhook flips the tier — this keeps the paywall consistent with
     the buyer's real access.
+
+    One-time (M-Pesa) premium passes have no auto-renewal — they lapse
+    the moment ``current_period_end`` is in the past.
     """
     if user_doc.get("subscription_tier") != "premium":
         return False
     status = user_doc.get("subscription_status")
-    return status in {"active", "trialing", None}  # None handled optimistically post-verify
+    if status not in {"active", "trialing", None}:  # None handled optimistically post-verify
+        return False
+    if user_doc.get("premium_one_time"):
+        end = user_doc.get("current_period_end")
+        if isinstance(end, str):
+            try:
+                end = datetime.fromisoformat(end.replace("Z", "+00:00"))
+            except ValueError:
+                end = None
+        if isinstance(end, datetime):
+            if end.tzinfo is None:
+                end = end.replace(tzinfo=timezone.utc)
+            return end > datetime.now(timezone.utc)
+        return False
+    return True
 
 
 async def _tryons_this_week(user_id: str) -> int:

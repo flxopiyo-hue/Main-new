@@ -30,6 +30,20 @@ from models import ItemIn, ItemOut, ItemPatch, infer_garment_type, item_to_out
 router = APIRouter()
 
 
+def _normalize_color(c: Any) -> Dict[str, Any]:
+    """Colour photo group hygiene: strip data-URI prefixes, cap at 5
+    photos, and mirror the first photo into the legacy ``image_b64``
+    field (older clients + the try-on engine read it)."""
+    d = c.model_dump()
+    imgs = [strip_data_prefix(b) for b in (d.get("images") or []) if b][:5]
+    solo = strip_data_prefix(d["image_b64"]) if d.get("image_b64") else None
+    if not imgs and solo:
+        imgs = [solo]  # legacy single-photo payloads
+    d["images"] = imgs
+    d["image_b64"] = imgs[0] if imgs else None
+    return d
+
+
 @router.post("/items", response_model=ItemOut)
 async def create_item(
     body: ItemIn, user: Dict[str, Any] = Depends(get_current_user)
@@ -82,10 +96,7 @@ async def create_item(
         "image_b64": primary_b64,
         "images": gallery,
         "sizes": [s.model_dump() for s in body.sizes],
-        "colors": [
-            {**c.model_dump(), "image_b64": strip_data_prefix(c.image_b64) if c.image_b64 else None}
-            for c in body.colors
-        ],
+        "colors": [_normalize_color(c) for c in body.colors],
         "audience": body.audience,
         "is_paused": False,
         # New items skip the back-fill migration — they already store
@@ -395,10 +406,7 @@ async def patch_item(
     if body.sizes is not None:
         update["sizes"] = [s.model_dump() for s in body.sizes]
     if body.colors is not None:
-        update["colors"] = [
-            {**c.model_dump(), "image_b64": strip_data_prefix(c.image_b64) if c.image_b64 else None}
-            for c in body.colors
-        ]
+        update["colors"] = [_normalize_color(c) for c in body.colors]
     if body.variants is not None:
         # Preserve existing variant ids by (size, color) key so in-flight
         # carts/orders keep resolving; brand-new combos get fresh UUIDs.

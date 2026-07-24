@@ -219,8 +219,10 @@ export const DIMENSION_HINTS: Record<DimensionKey, string> = {
 export interface ColorOption {
   name: string;
   hex: string;
-  // Optional photo of the item in this colour — shown as the hero image
-  // on item detail when the buyer taps the colour swatch.
+  // Colour photo group — up to 5 photos of the item in this exact
+  // colour. First entry is the hero shown when the buyer taps the swatch.
+  images?: string[];
+  // Back-compat mirror of images[0] (older items only carry this).
   image_b64?: string | null;
 }
 
@@ -1099,6 +1101,8 @@ export const api = {
         cancel_at_period_end: boolean;
         plan_amount_kes: number;
         trial_days: number;
+        // True when Premium came from a one-time M-Pesa pass (no auto-renew).
+        one_time: boolean;
       };
       gate: {
         premium: boolean;
@@ -1110,15 +1114,20 @@ export const api = {
         multi_angle_allowed: boolean;
       };
     }>("/subs/me"),
-  subsCheckout: () =>
+  // method "card" starts the auto-renewing plan (7-day trial);
+  // "mpesa" buys a one-time 30-day Premium pass via mobile money.
+  subsCheckout: (method: "card" | "mpesa" = "card") =>
     request<{ authorization_url: string; reference: string }>("/subs/checkout", {
       method: "POST",
+      body: { method },
     }),
   subsVerify: (reference: string) =>
     request<{
       tier: "free" | "premium";
       status: string;
+      one_time?: boolean;
       trial_end?: string | null;
+      current_period_end?: string | null;
       user: { id: string; subscription_tier: string; subscription_status: string };
     }>(`/subs/verify?reference=${encodeURIComponent(reference)}`),
   subsCancel: () =>

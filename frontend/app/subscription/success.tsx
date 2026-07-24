@@ -42,10 +42,16 @@ export default function SubscriptionSuccess() {
     }
     (async () => {
       try {
-        await api.subsVerify(reference);
+        const res = await api.subsVerify(reference);
         await refresh?.();
         setStatus("success");
-        setMessage("Payment confirmed — Premium is yours.");
+        setMessage(
+          res.one_time && res.current_period_end
+            ? `Payment confirmed — your Premium pass runs until ${new Date(
+                res.current_period_end,
+              ).toLocaleDateString()}. Pay with M-Pesa again anytime to extend it.`
+            : "Payment confirmed — Premium is yours.",
+        );
       } catch (e: any) {
         setStatus("failed");
         setMessage(e?.message ?? "Verification failed — please contact support.");

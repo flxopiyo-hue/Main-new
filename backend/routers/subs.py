@@ -104,6 +104,17 @@ class CheckoutOut(BaseModel):
     reference: str
 
 
+class CheckoutIn(BaseModel):
+    # "card"  → Paystack subscription plan (auto-renews monthly; Paystack
+    #           only supports CARDS for recurring billing — platform rule).
+    # "mpesa" → one-time mobile-money charge granting 30 days of Premium
+    #           (no auto-renew; buyer repeats the payment to extend).
+    method: str = "card"
+
+
+ONE_TIME_PREMIUM_DAYS = 30
+
+
 class SubscriptionState(BaseModel):
     tier: str
     status: Optional[str] = None
@@ -112,6 +123,8 @@ class SubscriptionState(BaseModel):
     cancel_at_period_end: bool = False
     plan_amount_kes: float = 199.0
     trial_days: int = PREMIUM_PLAN_TRIAL_DAYS
+    # True when Premium came from a one-time M-Pesa pass (no auto-renew).
+    one_time: bool = False
 
 
 class MeOut(BaseModel):
@@ -127,44 +140,71 @@ class MeOut(BaseModel):
 @router.post("/checkout", response_model=CheckoutOut)
 async def checkout(
     request: Request,
+    body: CheckoutIn = CheckoutIn(),
     user: Dict[str, Any] = Depends(get_current_user),
 ) -> CheckoutOut:
-    """Start a Paystack hosted checkout session. Client redirects to
-    ``authorization_url`` and Paystack redirects back to the backend
-    bridge at ``/api/subs/paystack-return?reference=...`` which then
-    deep-links into the mobile app (``oromona://subscription/success``).
-    The ``/verify`` endpoint completes the flow and flips the user to
-    premium.
+    """Start a Paystack hosted checkout session. Two modes:
+
+    * ``method="card"`` — subscription plan checkout (auto-renews;
+      Paystack restricts recurring billing to cards).
+    * ``method="mpesa"`` — one-time mobile-money charge for a 30-day
+      Premium pass. Buying again while a pass is active EXTENDS it.
+
+    Client redirects to ``authorization_url`` and Paystack redirects
+    back to the backend bridge at ``/api/subs/paystack-return`` which
+    deep-links into the mobile app. ``/verify`` completes the flow.
     """
-    if user.get("subscription_tier") == "premium" and user.get("subscription_status") in {
-        "active",
-        "trialing",
-    }:
-        raise HTTPException(status_code=400, detail="Already subscribed")
-    plan_code = get_plan_code()
-    if not plan_code:
-        # Try one more time in case the boot task raced — this keeps the
-        # error message actionable rather than a generic 500.
-        plan_code = await ensure_premium_plan()
-        set_plan_code(plan_code)
-    if not plan_code:
-        raise HTTPException(
-            status_code=503,
-            detail="Payments temporarily unavailable — please retry in a moment",
-        )
+    from core.gating import is_premium as _is_premium
+
+    method = (body.method or "card").lower()
+    if method not in ("card", "mpesa"):
+        raise HTTPException(status_code=400, detail="method must be 'card' or 'mpesa'")
+
+    if _is_premium(user):
+        if method == "card" or not user.get("premium_one_time"):
+            # Auto-renewing subscribers can't double-subscribe; and a
+            # one-time pass holder shouldn't start a card plan mid-pass.
+            raise HTTPException(status_code=400, detail="Already subscribed")
+        # method == mpesa on an active one-time pass → allowed (extend).
+
     reference = f"oromona_{user['id'][:8]}_{uuid.uuid4().hex[:12]}"
     callback_url = _paystack_callback_url(request)
-    try:
-        data = await paystack.initialize_transaction(
-            email=user["email"],
-            amount_kobo=PREMIUM_PLAN_AMOUNT_KOBO,
-            plan_code=plan_code,
-            callback_url=callback_url,
-            reference=reference,
-            metadata={"user_id": user["id"], "purpose": "premium_subscription"},
-        )
-    except paystack.PaystackError as e:
-        raise HTTPException(status_code=502, detail=f"Paystack error: {e}") from e
+
+    if method == "mpesa":
+        try:
+            data = await paystack.initialize_transaction(
+                email=user["email"],
+                amount_kobo=PREMIUM_PLAN_AMOUNT_KOBO,
+                callback_url=callback_url,
+                reference=reference,
+                channels=["mobile_money"],
+                metadata={"user_id": user["id"], "purpose": "premium_once"},
+            )
+        except paystack.PaystackError as e:
+            raise HTTPException(status_code=502, detail=f"Paystack error: {e}") from e
+    else:
+        plan_code = get_plan_code()
+        if not plan_code:
+            # Try one more time in case the boot task raced — this keeps the
+            # error message actionable rather than a generic 500.
+            plan_code = await ensure_premium_plan()
+            set_plan_code(plan_code)
+        if not plan_code:
+            raise HTTPException(
+                status_code=503,
+                detail="Payments temporarily unavailable — please retry in a moment",
+            )
+        try:
+            data = await paystack.initialize_transaction(
+                email=user["email"],
+                amount_kobo=PREMIUM_PLAN_AMOUNT_KOBO,
+                plan_code=plan_code,
+                callback_url=callback_url,
+                reference=reference,
+                metadata={"user_id": user["id"], "purpose": "premium_subscription"},
+            )
+        except paystack.PaystackError as e:
+            raise HTTPException(status_code=502, detail=f"Paystack error: {e}") from e
 
     # Persist the reference so /verify can double-check the user owns
     # this transaction (defence-in-depth against replayed reference ids).
@@ -178,6 +218,65 @@ async def checkout(
         },
     )
     return CheckoutOut(authorization_url=data["authorization_url"], reference=data["reference"])
+
+
+# ---------------------------------------------------------------------------
+# Premium grant helpers (shared by /verify, /paystack-return)
+# ---------------------------------------------------------------------------
+
+
+def _extract_purpose(data: Dict[str, Any]) -> str:
+    md = data.get("metadata") or {}
+    if isinstance(md, str):
+        try:
+            md = json.loads(md)
+        except Exception:
+            md = {}
+    return (md or {}).get("purpose") or "premium_subscription"
+
+
+def _premium_grant_update(user_doc: Optional[Dict[str, Any]], purpose: str) -> Dict[str, Any]:
+    """Build the users.$set payload for a successful premium payment.
+
+    * ``premium_once`` (M-Pesa one-time): 30-day pass, EXTENDS an active
+      pass instead of resetting it. No trial, no auto-renew.
+    * ``premium_subscription`` (card plan): 7-day trial, auto-renews.
+    """
+    now = datetime.now(timezone.utc)
+    if purpose == "premium_once":
+        base = None
+        if (user_doc or {}).get("premium_one_time"):
+            base = (user_doc or {}).get("current_period_end")
+        if isinstance(base, str):
+            try:
+                base = datetime.fromisoformat(base.replace("Z", "+00:00"))
+            except ValueError:
+                base = None
+        if isinstance(base, datetime) and base.tzinfo is None:
+            base = base.replace(tzinfo=timezone.utc)
+        start = base if isinstance(base, datetime) and base > now else now
+        end = start + timedelta(days=ONE_TIME_PREMIUM_DAYS)
+        return {
+            "subscription_tier": "premium",
+            "subscription_status": "active",
+            "premium_one_time": True,
+            "cancel_at_period_end": False,
+            "current_period_end": end,
+            "trial_end": None,
+            "pending_paystack_reference": None,
+            "pending_paystack_reference_at": None,
+        }
+    trial_end = now + timedelta(days=PREMIUM_PLAN_TRIAL_DAYS)
+    return {
+        "subscription_tier": "premium",
+        "subscription_status": "trialing",
+        "premium_one_time": False,
+        "cancel_at_period_end": False,
+        "trial_end": trial_end,
+        "current_period_end": trial_end,
+        "pending_paystack_reference": None,
+        "pending_paystack_reference_at": None,
+    }
 
 
 @router.get("/verify")
@@ -205,29 +304,21 @@ async def verify(
             status_code=400, detail=f"Payment {status_ or 'unknown'} — not upgrading"
         )
 
+    purpose = _extract_purpose(data)
+    update = _premium_grant_update(user, purpose)
     customer_code = (data.get("customer") or {}).get("customer_code")
-    update: Dict[str, Any] = {
-        "subscription_tier": "premium",
-        "subscription_status": "trialing",
-        "cancel_at_period_end": False,
-        "pending_paystack_reference": None,
-        "pending_paystack_reference_at": None,
-    }
     if customer_code:
         update["paystack_customer_code"] = customer_code
-    # Compute a rough trial_end / current_period_end so the UI has
-    # something to show before the webhook lands.
-    now = datetime.now(timezone.utc)
-    trial_end = now + timedelta(days=PREMIUM_PLAN_TRIAL_DAYS)
-    update["trial_end"] = trial_end
-    update["current_period_end"] = trial_end
     await db.users.update_one({"id": user["id"]}, {"$set": update})
 
     fresh = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+    period_end = update.get("current_period_end")
     return {
         "tier": "premium",
-        "status": "trialing",
-        "trial_end": trial_end.isoformat(),
+        "status": update.get("subscription_status"),
+        "one_time": bool(update.get("premium_one_time")),
+        "trial_end": update["trial_end"].isoformat() if update.get("trial_end") else None,
+        "current_period_end": period_end.isoformat() if period_end else None,
         "user": {
             "id": fresh["id"],
             "subscription_tier": fresh.get("subscription_tier"),
@@ -244,6 +335,11 @@ async def cancel(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, 
     """
     if user.get("subscription_tier") != "premium":
         raise HTTPException(status_code=400, detail="No active premium subscription")
+    if user.get("premium_one_time"):
+        raise HTTPException(
+            status_code=400,
+            detail="Your M-Pesa Premium pass doesn't auto-renew — it simply expires. Nothing to cancel.",
+        )
     sub_code = user.get("paystack_subscription_code")
     if sub_code:
         # Paystack's disable endpoint needs both the code and a
@@ -296,6 +392,7 @@ async def me(user: Dict[str, Any] = Depends(get_current_user)) -> MeOut:
         current_period_end=fresh.get("current_period_end"),
         trial_end=fresh.get("trial_end"),
         cancel_at_period_end=bool(fresh.get("cancel_at_period_end", False)),
+        one_time=bool(fresh.get("premium_one_time", False)),
     )
     gate = await gate_snapshot(fresh)
     return MeOut(subscription=state, gate=gate)
@@ -435,6 +532,7 @@ async def webhook(
             "paystack_subscription_code": data.get("subscription_code"),
             "subscription_status": data.get("status") or "active",
             "subscription_tier": "premium",
+            "premium_one_time": False,
             "cancel_at_period_end": False,
         }
         if data.get("next_payment_date"):
@@ -457,6 +555,11 @@ async def webhook(
             update["subscription_status"] = "active"
             if data.get("next_payment_date"):
                 update["current_period_end"] = _to_dt(data["next_payment_date"])
+        elif _extract_purpose(data) == "premium_once":
+            # One-time M-Pesa Premium pass — grant/extend server-side so
+            # the buyer keeps Premium even if they never return to the
+            # app after paying.
+            update = _premium_grant_update(user_doc, "premium_once")
     elif event == "invoice.payment_failed":
         update = {
             "subscription_status": "past_due",
@@ -691,22 +794,17 @@ async def paystack_return(reference: str = "", request: Request = None) -> HTMLR
         user_doc = await db.users.find_one({"email": email})
 
     if user_doc is not None:
-        now = datetime.now(timezone.utc)
-        trial_end = now + timedelta(days=PREMIUM_PLAN_TRIAL_DAYS)
-        update: Dict[str, Any] = {
-            "subscription_tier": "premium",
-            "subscription_status": "trialing",
-            "cancel_at_period_end": False,
-            "pending_paystack_reference": None,
-            "pending_paystack_reference_at": None,
-            "trial_end": trial_end,
-            "current_period_end": trial_end,
-        }
+        purpose = _extract_purpose(data)
+        update = _premium_grant_update(user_doc, purpose)
         cc = customer.get("customer_code")
         if cc:
             update["paystack_customer_code"] = cc
         await db.users.update_one({"id": user_doc["id"]}, {"$set": update})
-        body = "Your Oromona Premium subscription is now active. Returning you to the app…"
+        if purpose == "premium_once":
+            until = update["current_period_end"].strftime("%d %b %Y")
+            body = f"Your Oromona Premium pass is active until {until}. Returning you to the app…"
+        else:
+            body = "Your Oromona Premium subscription is now active. Returning you to the app…"
     else:
         # Test payment or unmatched email — payment succeeded but no
         # user to upgrade. That's a valid state for a browser test run.

@@ -349,23 +349,37 @@ export default function ItemDetail() {
   }
 
   const activeAngleImage = tryOnAngles.find((a) => a.angle === activeAngle);
+  // Photos are grouped by colour (Amazon-style). A colour's group is its
+  // `images` array; legacy items only carry a single `image_b64`.
+  const photosOf = (c: ColorOption): string[] =>
+    c.images && c.images.length > 0 ? c.images : c.image_b64 ? [c.image_b64] : [];
+  const selectedColorPhotos = selectedColor ? photosOf(selectedColor) : [];
   // Hero priority: try-on result > tapped gallery photo > selected colour's
-  // photo > primary image.
-  const colorImage = selectedColor?.image_b64 || null;
+  // group hero > primary image.
   const displayImage = activeAngleImage
     ? dataUriFromBase64(activeAngleImage.image_b64)
-    : dataUriFromBase64(galleryOverride ?? colorImage ?? item.image_b64);
+    : dataUriFromBase64(galleryOverride ?? selectedColorPhotos[0] ?? item.image_b64);
   const hasTryOn = tryOnAngles.length > 0;
-  // Gallery = the item's photos + every colour photo (tagged with its
-  // swatch). Tapping a thumb shows it in the hero; tapping a colour-tagged
-  // thumb also selects that colour.
+  // Gallery order: the selected colour's photo group first, then the
+  // general product photos, then one hero photo per other colour so
+  // buyers can hop between colours. Tapping a colour-tagged thumb also
+  // selects that colour.
   const galleryEntries: { b64: string; colorName?: string; hex?: string }[] = [
+    ...(selectedColor
+      ? selectedColorPhotos.map((b64) => ({
+          b64,
+          colorName: selectedColor.name,
+          hex: selectedColor.hex,
+        }))
+      : []),
     ...(item.images && item.images.length > 0 ? item.images : [item.image_b64]).map((b64) => ({
       b64,
     })),
     ...item.colors
-      .filter((c) => !!c.image_b64)
-      .map((c) => ({ b64: c.image_b64 as string, colorName: c.name, hex: c.hex })),
+      .filter((c) => c.name !== selectedColor?.name)
+      .map((c) => ({ c, group: photosOf(c) }))
+      .filter((x) => x.group.length > 0)
+      .map((x) => ({ b64: x.group[0], colorName: x.c.name, hex: x.c.hex })),
   ];
 
   return (

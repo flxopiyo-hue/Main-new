@@ -17,6 +17,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Image,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -273,7 +274,14 @@ export default function AddItem() {
           const detected = detectChartKey(item.sizes.map((s) => s.label));
           if (detected) setSizeChartKey(detected);
         }
-        setPickedColors(item.colors || []);
+        // Normalize legacy single-photo colours into the photo-group shape.
+        setPickedColors(
+          (item.colors || []).map((c) => ({
+            ...c,
+            images:
+              c.images && c.images.length > 0 ? c.images : c.image_b64 ? [c.image_b64] : [],
+          })),
+        );
         // Hydrate variant grid from existing item variants when the seller
         // is editing something they'd previously customised. If any single
         // variant has non-default state (custom qty, override, disabled),
@@ -480,18 +488,44 @@ export default function AddItem() {
     );
   };
 
-  // Attach / replace the optional per-colour photo. Buyers see it as the
-  // hero image on item detail when they tap that colour's swatch.
-  const attachColorPhoto = async (name: string) => {
-    const res = await pickImageFromLibrary();
+  // Colour photo groups — each colour holds up to 5 photos (first one is
+  // the hero buyers see when they tap the swatch). Photos can be freshly
+  // picked or reused from the step-1 product photos so sellers never
+  // upload the same shot twice.
+  const assignPhotoToColor = (name: string, b64: string) => {
+    setPickedColors((arr) =>
+      arr.map((c) => {
+        if (c.name !== name) return c;
+        const imgs = c.images ?? [];
+        if (imgs.length >= 5 || imgs.includes(b64)) return c;
+        const next = [...imgs, b64];
+        return { ...c, images: next, image_b64: next[0] };
+      }),
+    );
+  };
+
+  const addColorPhoto = async (name: string, source: "camera" | "library") => {
+    const target = pickedColors.find((c) => c.name === name);
+    if ((target?.images?.length ?? 0) >= 5) {
+      toast.show("Up to 5 photos per colour", "error");
+      return;
+    }
+    const res = source === "camera" ? await pickImageFromCamera() : await pickImageFromLibrary();
     if (!res) {
       toast.show("Permission denied or no image picked", "error");
       return;
     }
+    assignPhotoToColor(name, res.base64);
+  };
+
+  const removeColorPhoto = (name: string, idx: number) => {
     setPickedColors((arr) =>
-      arr.map((c) => (c.name === name ? { ...c, image_b64: res.base64 } : c)),
+      arr.map((c) => {
+        if (c.name !== name) return c;
+        const next = (c.images ?? []).filter((_, i) => i !== idx);
+        return { ...c, images: next, image_b64: next[0] ?? null };
+      }),
     );
-    toast.show(`Photo attached to ${name}`, "success");
   };
 
 
@@ -775,7 +809,10 @@ export default function AddItem() {
             onToggleSize={toggleSize}
             onUpdateSize={updateSize}
             onToggleColor={toggleColor}
-            onAttachColorPhoto={attachColorPhoto}
+            onAddColorPhoto={addColorPhoto}
+            onAssignPhotoToColor={assignPhotoToColor}
+            onRemoveColorPhoto={removeColorPhoto}
+            generalPhotos={photos}
             managePerVariant={managePerVariant}
             onToggleManagePerVariant={setManagePerVariant}
             variantCells={variantCells}
@@ -933,7 +970,9 @@ function StepBasics({
     <View>
       <Text style={[tp.h2, styles.stepTitle]}>The basics</Text>
       <Text style={[tp.bodyMuted, styles.stepHint]}>
-        Up to 5 photos, title, brand, and price — the essentials a buyer sees first.
+        Up to 5 product photos, title, brand, and price. If the piece comes in
+        several colours you&apos;ll group photos per colour in step 3 — you can
+        reuse these shots there, no re-uploading.
       </Text>
 
       <Text style={[tp.caption, styles.label]}>
@@ -1287,7 +1326,11 @@ interface StepSizingProps {
   onToggleSize: (label: string) => void;
   onUpdateSize: (label: string, patch: Partial<SizeOption>) => void;
   onToggleColor: (c: ColorOption) => void;
-  onAttachColorPhoto: (name: string) => void;
+  onAddColorPhoto: (name: string, source: "camera" | "library") => void;
+  onAssignPhotoToColor: (name: string, b64: string) => void;
+  onRemoveColorPhoto: (name: string, idx: number) => void;
+  // Step-1 product photos — offered for one-tap reuse in colour groups.
+  generalPhotos: string[];
   // Opt-in variant grid state — provided by the parent so it survives step
   // navigation and gets included in the final payload.
   managePerVariant: boolean;
@@ -1318,7 +1361,10 @@ function StepSizing({
   onToggleSize,
   onUpdateSize,
   onToggleColor,
-  onAttachColorPhoto,
+  onAddColorPhoto,
+  onAssignPhotoToColor,
+  onRemoveColorPhoto,
+  generalPhotos,
   managePerVariant,
   onToggleManagePerVariant,
   variantCells,
@@ -1506,9 +1552,9 @@ function StepSizing({
       <View style={{ height: spacing.lg }} />
       <Text style={[tp.caption, styles.label]}>Colors</Text>
       <Text style={styles.colorHint}>
-        Tap a preset or add your own name & shade. Use the camera button on a
-        picked colour to attach a photo of the item in that colour — buyers
-        see it when they tap the swatch.
+        Tap a preset or add your own name & shade. Each colour then gets its
+        own photo group below — add new shots or reuse your product photos
+        with one tap, no re-uploading.
       </Text>
       <ColorEditor
         picked={pickedColors}
@@ -1516,7 +1562,10 @@ function StepSizing({
         palette={EXTENDED_PALETTE}
         onAdd={onToggleColor}
         onRemove={onToggleColor}
-        onAttachPhoto={onAttachColorPhoto}
+        onAddPhoto={onAddColorPhoto}
+        onAssignPhoto={onAssignPhotoToColor}
+        onRemovePhoto={onRemoveColorPhoto}
+        generalPhotos={generalPhotos}
       />
       {/* --------------------------------------------------------------- */}
       {/* Opt-in per-variant grid (size × color)                          */}
@@ -1725,6 +1774,130 @@ function VariantPriceInput({
 }
 
 /* -------------------------------------------------------------------------- */
+/* Colour photo group — per-colour mini gallery (Amazon-style)                */
+/* -------------------------------------------------------------------------- */
+
+interface ColorPhotoGroupProps {
+  color: ColorOption;
+  generalPhotos: string[];
+  onAddPhoto: (name: string, source: "camera" | "library") => void;
+  onAssignPhoto: (name: string, b64: string) => void;
+  onRemovePhoto: (name: string, idx: number) => void;
+}
+
+function ColorPhotoGroup({
+  color: c,
+  generalPhotos,
+  onAddPhoto,
+  onAssignPhoto,
+  onRemovePhoto,
+}: ColorPhotoGroupProps) {
+  const imgs = c.images ?? [];
+  const canAdd = imgs.length < 5;
+  // Product photos not already in this colour's group — offered for
+  // one-tap reuse so the seller never uploads the same shot twice.
+  const reusable = generalPhotos.filter((b64) => !imgs.includes(b64));
+  return (
+    <View style={styles.groupCard} testID={`wizard-color-group-${c.name}`}>
+      <View style={styles.groupHead}>
+        <View style={[styles.colorPhotoSwatch, { backgroundColor: c.hex }]} />
+        <Text style={styles.groupName} numberOfLines={1}>
+          {c.name}
+        </Text>
+        <Text style={styles.groupCount}>{imgs.length}/5</Text>
+      </View>
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.groupRow}
+      >
+        {imgs.map((b64, i) => (
+          <View key={`${c.name}-img-${i}`} style={styles.groupThumbWrap}>
+            <Image
+              source={{ uri: dataUriFromBase64(b64) }}
+              style={styles.groupThumb}
+              resizeMode="cover"
+            />
+            {i === 0 ? (
+              <View style={styles.groupHeroBadge}>
+                <Text style={styles.groupHeroBadgeLabel}>COVER</Text>
+              </View>
+            ) : null}
+            <TouchableOpacity
+              testID={`wizard-color-photo-remove-${c.name}-${i}`}
+              onPress={() => onRemovePhoto(c.name, i)}
+              style={styles.groupThumbRemove}
+              hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+              accessibilityLabel={`Remove ${c.name} photo ${i + 1}`}
+            >
+              <Feather name="x" size={12} color={colors.primaryFg} />
+            </TouchableOpacity>
+          </View>
+        ))}
+        {canAdd ? (
+          <TouchableOpacity
+            testID={`wizard-color-photo-add-${c.name}`}
+            onPress={() => onAddPhoto(c.name, "library")}
+            style={styles.groupAddTile}
+            accessibilityLabel={`Add ${c.name} photo from library`}
+          >
+            <Feather name="image" size={16} color={colors.mutedFg} />
+            <Text style={styles.colorPhotoAddLabel}>ADD</Text>
+          </TouchableOpacity>
+        ) : null}
+        {canAdd ? (
+          <TouchableOpacity
+            testID={`wizard-color-photo-camera-${c.name}`}
+            onPress={() => onAddPhoto(c.name, "camera")}
+            style={styles.groupAddTile}
+            accessibilityLabel={`Take ${c.name} photo with camera`}
+          >
+            <Feather name="camera" size={16} color={colors.mutedFg} />
+            <Text style={styles.colorPhotoAddLabel}>CAMERA</Text>
+          </TouchableOpacity>
+        ) : null}
+      </ScrollView>
+
+      {canAdd && reusable.length > 0 ? (
+        <>
+          <Text style={styles.groupReuseCaption}>Reuse a product photo — tap to add:</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.groupRow}
+          >
+            {reusable.map((b64, i) => (
+              <TouchableOpacity
+                key={`${c.name}-reuse-${i}`}
+                testID={`wizard-color-photo-reuse-${c.name}-${i}`}
+                onPress={() => onAssignPhoto(c.name, b64)}
+                style={styles.groupReuseThumbWrap}
+              >
+                <Image
+                  source={{ uri: dataUriFromBase64(b64) }}
+                  style={styles.groupReuseThumb}
+                  resizeMode="cover"
+                />
+                <View style={styles.groupReusePlus}>
+                  <Feather name="plus" size={10} color={colors.primaryFg} />
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </>
+      ) : null}
+
+      {imgs.length === 0 ? (
+        <Text style={styles.groupEmptyHint}>
+          No photos yet — buyers will see your main product photos for this colour.
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /* Color editor — free-form list of named color variants                      */
 /* -------------------------------------------------------------------------- */
 
@@ -1734,10 +1907,23 @@ interface ColorEditorProps {
   palette: string[];
   onAdd: (c: ColorOption) => void;
   onRemove: (c: ColorOption) => void;
-  onAttachPhoto: (name: string) => void;
+  onAddPhoto: (name: string, source: "camera" | "library") => void;
+  onAssignPhoto: (name: string, b64: string) => void;
+  onRemovePhoto: (name: string, idx: number) => void;
+  generalPhotos: string[];
 }
 
-function ColorEditor({ picked, presets, palette, onAdd, onRemove, onAttachPhoto }: ColorEditorProps) {
+function ColorEditor({
+  picked,
+  presets,
+  palette,
+  onAdd,
+  onRemove,
+  onAddPhoto,
+  onAssignPhoto,
+  onRemovePhoto,
+  generalPhotos,
+}: ColorEditorProps) {
   const [drafting, setDrafting] = useState(false);
   const [draftName, setDraftName] = useState("");
   const [draftHex, setDraftHex] = useState(palette[0]);
@@ -1803,46 +1989,26 @@ function ColorEditor({ picked, presets, palette, onAdd, onRemove, onAttachPhoto 
         </View>
       ) : null}
 
-      {/* Per-colour photo cards — impossible-to-miss affordance so buyers
-          can toggle between colour photos on the item page. */}
+      {/* Photo groups — Amazon-style: photos are grouped per colour (all
+          sizes share them). Sellers add fresh shots or reuse the step-1
+          product photos with one tap — never re-uploading the same image. */}
       {picked.length > 0 ? (
         <>
-          <Text style={styles.colorSectionCaption}>COLOUR PHOTOS</Text>
-          <View style={styles.colorPhotoStrip} testID="wizard-color-photo-strip">
-            {picked.map((c) => (
-              <TouchableOpacity
-                key={`photo-${c.name}`}
-                testID={`wizard-color-photo-${c.name}`}
-                onPress={() => onAttachPhoto(c.name)}
-                style={styles.colorPhotoCard}
-                accessibilityLabel={
-                  c.image_b64 ? `Replace ${c.name} photo` : `Add ${c.name} photo`
-                }
-              >
-                {c.image_b64 ? (
-                  <Image
-                    source={{ uri: dataUriFromBase64(c.image_b64) }}
-                    style={styles.colorPhotoImg}
-                    resizeMode="cover"
-                  />
-                ) : (
-                  <View style={styles.colorPhotoPlaceholder}>
-                    <Feather name="camera" size={16} color={colors.mutedFg} />
-                    <Text style={styles.colorPhotoAddLabel}>ADD PHOTO</Text>
-                  </View>
-                )}
-                <View style={styles.colorPhotoMeta}>
-                  <View style={[styles.colorPhotoSwatch, { backgroundColor: c.hex }]} />
-                  <Text style={styles.colorPhotoName} numberOfLines={1}>
-                    {c.name}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
+          <Text style={styles.colorSectionCaption}>PHOTOS BY COLOUR</Text>
+          {picked.map((c) => (
+            <ColorPhotoGroup
+              key={`group-${c.name}`}
+              color={c}
+              generalPhotos={generalPhotos}
+              onAddPhoto={onAddPhoto}
+              onAssignPhoto={onAssignPhoto}
+              onRemovePhoto={onRemovePhoto}
+            />
+          ))}
           <Text style={styles.colorPhotoHint}>
-            Add a photo of the item in each colour — buyers tap a colour to
-            see that exact photo.
+            Buyers tap a colour to see its photos. Sizes share the same
+            photos, so there&apos;s nothing to upload per size. A colour without
+            photos falls back to your main product photos.
           </Text>
         </>
       ) : null}
@@ -2416,33 +2582,109 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "rgba(255,255,255,0.18)",
   },
-  colorPhotoStrip: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    marginBottom: 6,
-  },
-  colorPhotoCard: {
-    width: 96,
+  groupCard: {
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
+    padding: 10,
+    marginBottom: 10,
+  },
+  groupHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 8,
+  },
+  groupName: {
+    flex: 1,
+    fontFamily: fonts.bodySemi,
+    fontSize: 13,
+    color: colors.primary,
+  },
+  groupCount: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 11,
+    color: colors.mutedFg,
+  },
+  groupRow: { gap: 8, paddingRight: 8 },
+  groupThumbWrap: {
+    width: 72,
+    height: 96,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.muted,
     overflow: "hidden",
   },
-  colorPhotoImg: {
-    width: "100%",
-    aspectRatio: 3 / 4,
-    backgroundColor: colors.muted,
-  },
-  colorPhotoPlaceholder: {
-    width: "100%",
-    aspectRatio: 3 / 4,
+  groupThumb: { width: "100%", height: "100%" },
+  groupThumbRemove: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
+    backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  groupHeroBadge: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingVertical: 2,
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  groupHeroBadgeLabel: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 8,
+    letterSpacing: 1.5,
+    color: colors.primaryFg,
+  },
+  groupAddTile: {
+    width: 72,
+    height: 96,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: colors.border,
     backgroundColor: colors.muted,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+  },
+  groupReuseCaption: {
+    marginTop: 8,
+    marginBottom: 6,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 11,
+    color: colors.mutedFg,
+  },
+  groupReuseThumbWrap: {
+    width: 48,
+    height: 64,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.muted,
+    overflow: "hidden",
+  },
+  groupReuseThumb: { width: "100%", height: "100%" },
+  groupReusePlus: {
+    position: "absolute",
+    bottom: 3,
+    right: 3,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.6)",
+  },
+  groupEmptyHint: {
+    marginTop: 6,
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: colors.mutedFg,
   },
   colorPhotoAddLabel: {
     fontFamily: fonts.bodyMedium,
@@ -2450,25 +2692,12 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
     color: colors.mutedFg,
   },
-  colorPhotoMeta: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-  },
   colorPhotoSwatch: {
     width: 12,
     height: 12,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: colors.border,
-  },
-  colorPhotoName: {
-    flex: 1,
-    fontFamily: fonts.bodyMedium,
-    fontSize: 11,
-    color: colors.primary,
   },
   colorPhotoHint: {
     fontFamily: fonts.body,

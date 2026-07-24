@@ -41,6 +41,7 @@ interface MeData {
   cancel_at_period_end: boolean;
   plan_amount_kes: number;
   trial_days: number;
+  one_time: boolean;
 }
 
 const BENEFITS = [
@@ -56,7 +57,7 @@ export default function SubscriptionScreen() {
   const toast = useToast();
   const [me, setMe] = useState<MeData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [checkoutBusy, setCheckoutBusy] = useState(false);
+  const [checkoutBusy, setCheckoutBusy] = useState<null | "card" | "mpesa">(null);
   const [cancelBusy, setCancelBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -74,10 +75,14 @@ export default function SubscriptionScreen() {
     load();
   }, [load]);
 
-  const startCheckout = async () => {
-    setCheckoutBusy(true);
+  // Two payment paths (Paystack platform rule — recurring billing is
+  // cards-only, so M-Pesa is offered as a one-time 30-day Premium pass):
+  //   "card"  → subscription plan checkout, 7-day trial, auto-renews.
+  //   "mpesa" → one-time mobile-money charge, 30-day pass, extendable.
+  const startCheckout = async (method: "card" | "mpesa") => {
+    setCheckoutBusy(method);
     try {
-      const res = await api.subsCheckout();
+      const res = await api.subsCheckout(method);
       // On web, do a full-page redirect (Paystack's hosted checkout
       // doesn't play nice with iframes). On native, open in the
       // in-app browser and wait for the redirect callback.
@@ -102,7 +107,7 @@ export default function SubscriptionScreen() {
     } catch (e: any) {
       toast.show(e?.message ?? "Could not start checkout", "error");
     } finally {
-      setCheckoutBusy(false);
+      setCheckoutBusy(null);
     }
   };
 
@@ -178,8 +183,13 @@ export default function SubscriptionScreen() {
           </Text>
           {!isPremium ? (
             <Text style={styles.heroTrial}>
-              Start with a {me?.trial_days ?? 7}-day free trial. Cancel anytime — you keep Premium
-              until the current period ends.
+              Pay by card to start a {me?.trial_days ?? 7}-day free trial that renews
+              automatically, or pay with M-Pesa for a 30-day Premium pass. Cancel anytime.
+            </Text>
+          ) : me?.one_time ? (
+            <Text style={styles.heroTrial} testID="sub-pass-status">
+              Premium pass active until {periodEnd?.toLocaleDateString() ?? "…"} — no
+              auto-renewal. Pay with M-Pesa again to add 30 more days on top.
             </Text>
           ) : (
             <Text style={styles.heroTrial}>
@@ -203,19 +213,74 @@ export default function SubscriptionScreen() {
         </View>
 
         {!isPremium ? (
+          <>
+            <TouchableOpacity
+              testID="sub-upgrade-btn"
+              onPress={() => startCheckout("card")}
+              disabled={checkoutBusy !== null}
+              style={[styles.upgradeBtn, checkoutBusy !== null && { opacity: 0.6 }]}
+              activeOpacity={0.85}
+            >
+              {checkoutBusy === "card" ? (
+                <ActivityIndicator color={colors.primaryFg} />
+              ) : (
+                <>
+                  <Feather name="credit-card" size={16} color={colors.primaryFg} />
+                  <View style={styles.payBtnTextWrap}>
+                    <Text style={styles.upgradeLabel}>Start 7-day free trial</Text>
+                    <Text style={styles.payBtnSub}>Card · auto-renews monthly</Text>
+                  </View>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              testID="sub-mpesa-btn"
+              onPress={() => startCheckout("mpesa")}
+              disabled={checkoutBusy !== null}
+              style={[styles.mpesaBtn, checkoutBusy !== null && { opacity: 0.6 }]}
+              activeOpacity={0.85}
+            >
+              {checkoutBusy === "mpesa" ? (
+                <ActivityIndicator color={colors.primary} />
+              ) : (
+                <>
+                  <Feather name="smartphone" size={16} color={colors.primary} />
+                  <View style={styles.payBtnTextWrap}>
+                    <Text style={styles.mpesaLabel}>Pay with M-Pesa</Text>
+                    <Text style={styles.mpesaSub}>
+                      KSh {me?.plan_amount_kes ?? 199} · 30-day Premium pass
+                    </Text>
+                  </View>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <Text style={styles.channelNote} testID="sub-channel-note">
+              M-Pesa payments can&apos;t auto-renew (recurring billing works on cards
+              only), so an M-Pesa payment buys a 30-day pass. Pay again anytime —
+              the days stack on top of what&apos;s left.
+            </Text>
+          </>
+        ) : me?.one_time ? (
           <TouchableOpacity
-            testID="sub-upgrade-btn"
-            onPress={startCheckout}
-            disabled={checkoutBusy}
-            style={[styles.upgradeBtn, checkoutBusy && { opacity: 0.6 }]}
+            testID="sub-extend-btn"
+            onPress={() => startCheckout("mpesa")}
+            disabled={checkoutBusy !== null}
+            style={[styles.mpesaBtn, checkoutBusy !== null && { opacity: 0.6 }]}
             activeOpacity={0.85}
           >
-            {checkoutBusy ? (
-              <ActivityIndicator color={colors.primaryFg} />
+            {checkoutBusy === "mpesa" ? (
+              <ActivityIndicator color={colors.primary} />
             ) : (
               <>
-                <Feather name="lock" size={14} color={colors.primaryFg} />
-                <Text style={styles.upgradeLabel}>Start 7-day trial</Text>
+                <Feather name="smartphone" size={16} color={colors.primary} />
+                <View style={styles.payBtnTextWrap}>
+                  <Text style={styles.mpesaLabel}>Extend 30 days with M-Pesa</Text>
+                  <Text style={styles.mpesaSub}>
+                    KSh {me?.plan_amount_kes ?? 199} · added on top of your pass
+                  </Text>
+                </View>
               </>
             )}
           </TouchableOpacity>
@@ -253,8 +318,9 @@ export default function SubscriptionScreen() {
         )}
 
         <Text style={styles.fine} testID="sub-fine">
-          Payment powered by Paystack. Charged in Kenyan Shillings. You can
-          cancel any time from this screen.
+          {isPremium && me?.one_time
+            ? "Payment powered by Paystack. Charged in Kenyan Shillings. Your pass expires on its own — nothing to cancel."
+            : "Payment powered by Paystack. Charged in Kenyan Shillings. You can cancel any time from this screen."}
         </Text>
       </ScrollView>
     </SafeAreaView>
@@ -355,6 +421,45 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
     color: colors.primaryFg,
     textTransform: "uppercase",
+  },
+  payBtnTextWrap: { alignItems: "center" },
+  payBtnSub: {
+    marginTop: 2,
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: colors.primaryFg,
+    opacity: 0.8,
+  },
+  mpesaBtn: {
+    marginTop: spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.surface,
+  },
+  mpesaLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 14,
+    letterSpacing: 1.5,
+    color: colors.primary,
+    textTransform: "uppercase",
+  },
+  mpesaSub: {
+    marginTop: 2,
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: colors.mutedFg,
+  },
+  channelNote: {
+    marginTop: spacing.md,
+    fontFamily: fonts.body,
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.mutedFg,
   },
   cancelBtn: {
     marginTop: spacing.xl,

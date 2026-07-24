@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 30 regression for TWO new features: (1) M-Pesa one-time Premium pass via POST /api/subs/checkout {method:'mpesa'}, and (2) Amazon-style per-colour photo groups (colors[].images) with hero-mirror + data:-prefix stripping + max-5 cap. Backend: 13/13 pytest tests PASS (see /app/backend/tests/test_iteration30_subs_mpesa_color_photos.py). Coverage: checkout method routing (mpesa/card/default/paypal→400), /api/subs/me.subscription.one_time boolean present + defaults false, EXPIRED one-time pass (premium_one_time=true + past current_period_end) correctly downgraded via gate.premium=false and restored, /api/subs/cancel returns 400 with the friendly \"doesn't auto-renew\" message for one-time pass holders (and restored), POST /api/items with colors[].images (mixed data:image/png + data:image/jpeg + raw) persists stripped bodies and mirrors image_b64=images[0], legacy image_b64-only colour payloads wrapped into images[], PATCH reordering updates hero mirror, Pydantic max_length=5 enforced up-front (422 for over-cap) with 5-item payload persisting cleanly. Regression: items list, items?q=( special-char safety, categories all still 200. All Paystack calls INITIALIZATION-ONLY — every mpesa/card checkout asserts a checkout.paystack.com URL was returned; NEVER opened. All buyer document mutations wrapped in try/finally that restores the exact snapshot (tier=free, no premium_one_time). Frontend: /subscription screen (viewport 390×844) shows BOTH testIDs (sub-upgrade-btn 'START 7-DAY FREE TRIAL / Card · auto-renews monthly'; sub-mpesa-btn 'PAY WITH M-PESA / KSh 199 · 30-day Premium pass') plus sub-channel-note (\"M-Pesa payments can't auto-renew (recurring billing works on cards only), so an M-Pesa payment buys a 30-day pass. Pay again anytime — the days stack on top of what's left.\"). Tapping sub-mpesa-btn triggers no crash (Paystack navigation was route-aborted for safety). Item detail /item/{id} for a 2-colour item (Polo Tshirt · White/Black) rendered both swatches (testID item-color-White, item-color-Black); tapping each does not crash and the label updates. Wizard step-3 UI (ColorPhotoGroup + reuse) not exhaustively exercised via the seller flow (complex file-picker orchestration) — main agent already validated it interactively per handoff note; backend contract underneath is fully covered by pytest.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "Global styles", "issue": "Deprecation warning still present: '\"shadow*\" style props are deprecated. Use \"boxShadow\"'. Same as iteration 28 — not fixed yet. Reference: grep shadowColor/shadowOffset/shadowOpacity/shadowRadius in /app/frontend/app + /app/frontend/src/components."},
+      {"component": "Global props", "issue": "Deprecation warning still present: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Same as iteration 28 — not fixed yet. Reference: grep 'pointerEvents={' in /app/frontend."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration30_subs_mpesa_color_photos.py",
+    "/app/test_reports/pytest/iteration29_results.xml"
+  ],
+  "action_items": [
+    "None blocking. Both new features (M-Pesa one-time premium + colour photo groups) are functionally correct end-to-end.",
+    "OPTIONAL cleanup: address the two long-standing RN-web deprecation warnings (shadow* → boxShadow; props.pointerEvents → style.pointerEvents) — carried over from iteration 28."
+  ],
+  "critical_code_review_comments": [
+    "core/gating.py::is_premium correctly enforces one-time pass expiry via current_period_end datetime comparison (tz-normalised). Verified with a real past-date simulation — gate.premium flipped to false.",
+    "routers/subs.py::_premium_grant_update correctly EXTENDS one-time passes (base = max(existing current_period_end, now)) instead of resetting. String→datetime coercion for the extension base is present.",
+    "routers/items.py::_normalize_color robustly wraps legacy image_b64-only colours into images[], strips data: prefixes on both fields, and mirrors images[0] back into image_b64. Pydantic max_length=5 rejects over-cap at the boundary before hitting the normaliser — defence-in-depth.",
+    "subs.py::checkout blocks method=paypal (or any non-card/non-mpesa) with a clear 400 message. Default is 'card' when body omitted."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration30_subs_mpesa_color_photos.py (new — 13 tests)"
+  ],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "P0 subscription-screen + item-detail flows verified; wizard UI relies on API contract already covered by pytest"},
+  "seed_data_creation": "Test seller item TEST_iter30_color_group created + auto-cleaned via fixture teardown. Buyer user doc temporarily mutated in-place for expiry + cancel-message tests and RESTORED to its exact snapshot in try/finally. Verified /api/subs/me shows tier=free at end of run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Live Paystack keys — all subscription tests are INITIALIZATION-ONLY (assert authorization_url returned, never open the URL). If you need to touch user doc for premium state simulations, always wrap in try/finally + restore. Do not click sub-upgrade-btn or sub-mpesa-btn in a real browser session without route.abort() on **/checkout.paystack.com/**.",
+  "rca_of_issue": "N/A — no bugs found this iteration."
+}

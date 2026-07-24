@@ -543,8 +543,12 @@ def dimension_keys_for(garment_type: Optional[str]) -> List[str]:
 class ColorOption(BaseModel):
     name: str
     hex: str  # "#000000"
-    # Optional photo of the item in this specific colour. Buyers see it
-    # as the hero image when they tap the colour swatch on item detail.
+    # Colour photo group — up to 5 photos of the item in this exact
+    # colour (first entry is the hero shown when the buyer taps the
+    # swatch). Sellers group photos per colour instead of re-uploading.
+    images: List[str] = Field(default_factory=list, max_length=5)
+    # Back-compat mirror of ``images[0]`` — older clients and the
+    # try-on engine read this single field.
     image_b64: Optional[str] = None
 
 
