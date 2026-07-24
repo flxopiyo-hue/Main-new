@@ -338,16 +338,11 @@ export default function Discover() {
     <SafeAreaView style={styles.root} edges={["top"]}>
       {/* Sticky header */}
       <View style={styles.header}>
-        <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 10 }}>
-          <Image
-            source={require("@/assets/brand/oromona-logo-transparent.png")}
-            style={styles.brandLogo}
-            resizeMode="contain"
-          />
-          <View style={{ flex: 1 }}>
-            <Text style={tp.caption}>OROMONA</Text>
-            <Text style={[tp.h2, styles.headerTitle]}>Hello, {user?.full_name.split(" ")[0]}.</Text>
-          </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={tp.caption} numberOfLines={1}>OROMONA</Text>
+          <Text style={[tp.h2, styles.headerTitle]} numberOfLines={1}>
+            Hello, {user?.full_name.split(" ")[0]}.
+          </Text>
         </View>
         <TouchableOpacity
           testID="discover-search-toggle-btn"
@@ -655,9 +650,8 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
     gap: 8,
   },
-  headerTitle: { marginTop: 4 },
-  iconBtn: { padding: 8 },
-  brandLogo: { width: 40, height: 40 },
+  headerTitle: { marginTop: 2, fontSize: 17, lineHeight: 21 },
+  iconBtn: { padding: 6 },
   brandRow: {
     flexDirection: "row",
     alignItems: "center",

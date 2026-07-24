@@ -199,3 +199,9 @@ Frontend `.env` currently points at preview (`https://fit-finder-app-5.preview.e
 ### Verified by main agent
 - Backend q search (polo/denim). Wizard e2e publish persists colour image_b64. Buyer flow: search chip, item open, Black swatch → black hero, gallery thumbs visible w/ swatch badge, thumb tap → white hero. Colour card strip renders in wizard.
 ### ⚠️ LIVE PAYSTACK — initialization-only payment tests, never complete a charge.
+
+## Iteration 29 — testing agent result + post-fixes
+- Backend 15/15 PASS (test file /app/backend/tests/test_iteration29_search_regression.py, report /app/test_reports/iteration_28.json).
+- Testing agent found + fixed: q-search regex escape/$or had been lost during the items.py corruption repair (truncation reverted the edit) — re-applied by test agent, verified in code (line ~154 re.escape + $or over name/brand_name/description/subcategory).
+- Testing agent found frontend bug: Discover header greeting wrapped char-by-char at 390px. Main agent fix: removed duplicate logo image (OROMONA caption remains), headerTitle 17px + numberOfLines=1, iconBtn padding 6. Verified via screenshot — one-line header with search/bookmark/KES/bell/avatar all fitting.
+- Remaining cosmetic (deferred): RN-web deprecation warnings shadow*→boxShadow, props.pointerEvents→style.pointerEvents.
