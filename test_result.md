@@ -161,3 +161,9 @@ Frontend `.env` currently points at preview (`https://fit-finder-app-5.preview.e
 - Seller wizard: each picked colour chip has a camera button (testID `wizard-color-photo-{name}`) → library picker → thumbnail replaces icon; photo submitted with colors[].
 - Buyer item detail: hero image priority = try-on result > selected colour's photo > primary image.
 - Verified via browser automation: attach flow + hero swap (Black/Rose). Temp items cleaned up.
+
+## Iteration 27b — LIVE mode switch (user-requested)
+- Paystack LIVE secret+public keys installed in backend/.env (user consent given; app not on stores; only user's own card/M-Pesa in play). Premium plan reused from live account: PLN_hujyxez42urid36.
+- Verified with live keys: startup plan bootstrap OK, GET /seller/banks (Kenya list incl. M-PESA) OK, POST /payments/checkout returns real checkout.paystack.com URL (initialization only — NEVER complete payments in tests from now on).
+- Resend: rotated key installed, sender no-reply@oromona.com, domain oromona.com status=verified (checked via Resend API), test send 200, forgot-password email delivered id=7d0ffc9e (no more sandbox recipient restriction).
+- ⚠️ TESTING RULE GOING FORWARD: payments are LIVE — initialization-only assertions, no test cards, no transfers.
