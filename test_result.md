@@ -266,3 +266,18 @@ Frontend `.env` currently points at preview (`https://fit-finder-app-5.preview.e
 - /seller-onboarding renders restored form; /new-collection renders NEW DROP inside seller tab shell.
 - Seller regression: edit wizard step 3 rise focus still highlights + hints (post component change).
 - RBAC note: sellers deep-linking to buyer tabs are bounced to /(seller) by design — the fixed atelier/profile links now bounce unauthorized roles gracefully instead of 404 "Unmatched Route".
+
+## Iteration 34 — Compare-with-body + KES as standard currency
+### Changes
+1. **Compare with my body** (buyer measurement map): GarmentMeasureGuide got optional `compareText` prop (testID garment-guide-compare); item/[id].tsx computes it from the fit score's per-dimension body/diff for the highlighted key of the selected size ("Your waist: 81cm — this size runs 5cm smaller" / "roomier" / "exact match"; cm/in aware). Only shows when the buyer has the matching body measurement.
+2. **KES standard currency always**:
+   - Removed device-locale currency auto-switching entirely (deleted src/lib/locale.ts, syncCurrencyToLocale, region suggestion in registerBuyer/registerSeller — both now send preferred_currency "KES").
+   - Frontend getCurrencyMeta fallback USD→KES; backend models.py item/order currency defaults "USD"→DEFAULT_CURRENCY (=KES config).
+   - DB migration: ALL 52 users now preferred_currency=KES (16 flipped; they were GBP/EUR/INR/USD/None from old locale sync).
+   - Manual picker kept (header pill + Profile → Region & Currency).
+3. **Currency sheet scroll fix** (user: "slider refuses to go up that high"): CurrencyPill FlatList had no bounded height → RN-web let it grow inside the clipped sheet and it refused to scroll. Fixed with style listBox {maxHeight:420, flexGrow:0} + visible scroll indicator. KES remains first row.
+4. Demo buyer (buyer@aurafit.com) now has full measurements seeded (170/92/81/98/44/78) — fit preview/narration/compare all light up on trousers.
+### Verified by main agent (browser)
+- Pill shows KES; sheet scrolls down to EGP and back up to KES; compare line renders on Selvedge Denim size S waist.
+### Note
+- Registration code paths changed (locale removal) — regression-test register buyer + seller.

@@ -25,6 +25,9 @@ interface Props {
   unit?: "cm" | "in";
   // Optional: makes legend rows tappable; tapping the active row clears it.
   onSelectKey?: (k: DimensionKey | null) => void;
+  // Optional: "compare with my body" line shown under the hint while a
+  // measurement is highlighted (e.g. "Your waist: 81cm — runs 5cm smaller").
+  compareText?: string | null;
 }
 
 type Family = "top" | "dress" | "skirt" | "trousers" | "shorts" | "belt" | "tie" | "scarf";
@@ -221,6 +224,7 @@ export function GarmentMeasureGuide({
   values,
   unit = "cm",
   onSelectKey,
+  compareText,
 }: Props) {
   const [box, setBox] = useState<{ w: number; h: number } | null>(null);
   const family = FAMILY_BY_TYPE[garmentType];
@@ -309,6 +313,11 @@ export function GarmentMeasureGuide({
             ? "Tap a measurement to see where it's taken on the garment."
             : "Tap a measurement field below to highlight it on the garment."}
       </Text>
+      {activeKey && compareText ? (
+        <Text style={styles.compare} testID="garment-guide-compare">
+          {compareText}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -348,5 +357,12 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
     paddingTop: spacing.sm,
+  },
+  compare: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 11,
+    lineHeight: 15,
+    color: colors.primary,
+    marginTop: 4,
   },
 });

@@ -103,8 +103,12 @@ export function CurrencyPill({ testID = "currency-pill", onChanged }: Props) {
               <FlatList
                 data={CURRENCIES}
                 keyExtractor={(c) => c.code}
+                // Explicit bounded height — without it RN-web lets the list
+                // grow to full content height inside the clipped sheet, which
+                // makes it refuse to scroll ("the slider won't move").
+                style={styles.listBox}
                 contentContainerStyle={styles.list}
-                showsVerticalScrollIndicator={false}
+                showsVerticalScrollIndicator
                 renderItem={({ item }) => {
                   const active = item.code === current.code;
                   const busy = saving === item.code;
@@ -186,6 +190,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   list: { paddingBottom: spacing.xl },
+  listBox: { maxHeight: 420, flexGrow: 0 },
   row: {
     flexDirection: "row",
     alignItems: "center",

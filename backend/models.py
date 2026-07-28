@@ -632,7 +632,7 @@ class ItemOut(BaseModel):
     category: str
     subcategory: Optional[str] = None
     price_cents: int
-    currency: Currency = "USD"  # listing currency
+    currency: Currency = DEFAULT_CURRENCY  # type: ignore[assignment]  # listing currency
     garment_type: GarmentType = "other"  # layered try-on classification
     image_b64: str  # primary thumb (kept for back-compat clients)
     images: List[str] = Field(default_factory=list)  # full gallery, primary first
@@ -769,7 +769,7 @@ class OrderOut(BaseModel):
     size: str
     color: Optional[str]
     amount_cents: int
-    currency: Currency = "USD"
+    currency: Currency = DEFAULT_CURRENCY  # type: ignore[assignment]
     status: str  # pending / paid / failed / cancelled / in_fulfillment / shipped / delivered
     fit_feedback: Optional[FitFeedback] = None
     session_id: str
@@ -1008,7 +1008,7 @@ def item_to_out(doc: Dict[str, Any], seller_verified: bool = False) -> ItemOut:
         category=doc["category"],
         subcategory=doc.get("subcategory"),
         price_cents=doc["price_cents"],
-        currency=doc.get("currency", "USD"),
+        currency=doc.get("currency", DEFAULT_CURRENCY),
         garment_type=gtype,
         image_b64=doc["image_b64"],
         images=gallery,

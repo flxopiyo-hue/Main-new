@@ -50,9 +50,9 @@ const CURRENCY_INDEX: Record<Currency, CurrencyMeta> = CURRENCIES.reduce(
 );
 
 export function getCurrencyMeta(code?: string | null): CurrencyMeta {
-  if (!code) return CURRENCY_INDEX.USD;
+  if (!code) return CURRENCY_INDEX.KES;
   const upper = code.toUpperCase() as Currency;
-  return CURRENCY_INDEX[upper] ?? CURRENCY_INDEX.USD;
+  return CURRENCY_INDEX[upper] ?? CURRENCY_INDEX.KES;
 }
 
 /**

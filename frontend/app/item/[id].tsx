@@ -98,6 +98,32 @@ export default function ItemDetail() {
   const [fitScore, setFitScore] = useState<FitScore | null>(null);
   const [fitLoading, setFitLoading] = useState(false);
 
+  // "Compare with my body" line for the measurement map — reuses the fit
+  // score's per-dimension body/diff values (same convention as the fit
+  // narration chips) for the highlighted measurement of the selected size.
+  const measureCompareText = useMemo(() => {
+    if (!measureGuideKey || !selectedSize) return null;
+    const sizeFit = fitScore?.per_size?.find((p) => p.label === selectedSize.label);
+    const d = sizeFit?.dimensions?.find((x) => x.key === measureGuideKey);
+    if (!d || d.body == null) return null;
+    const CM_PER_IN = 2.54;
+    const fmtVal = (cm: number) =>
+      sizeUnit === "in"
+        ? `${Math.round((cm / CM_PER_IN) * 10) / 10}"`
+        : `${Math.round(cm)}cm`;
+    const base = `Your ${d.label}: ${fmtVal(d.body)}`;
+    if (d.diff == null) return base;
+    const mag = Math.abs(d.diff);
+    if (mag < 1) return `${base} — this size is an exact match`;
+    const amount =
+      sizeUnit === "in"
+        ? `${Math.round((mag / CM_PER_IN) * 10) / 10}"`
+        : `${Math.round(mag * 10) / 10}cm`;
+    return d.diff > 0
+      ? `${base} — this size runs ${amount} roomier`
+      : `${base} — this size runs ${amount} smaller`;
+  }, [measureGuideKey, selectedSize, fitScore, sizeUnit]);
+
   const addToOutfit = useOutfit((s) => s.add);
   const removeFromOutfit = useOutfit((s) => s.remove);
   const isInOutfit = useOutfit((s) => s.isInOutfit);
@@ -788,6 +814,7 @@ export default function ItemDetail() {
                   onSelectKey={setMeasureGuideKey}
                   values={selectedSize}
                   unit={sizeUnit}
+                  compareText={measureCompareText}
                 />
               ) : null}
             </View>

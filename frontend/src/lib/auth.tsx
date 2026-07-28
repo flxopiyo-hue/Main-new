@@ -17,40 +17,14 @@ import {
   setToken as setTokenStorage,
   User,
 } from "@/src/lib/api";
-import { getDeviceRegion, suggestCurrencyForRegion } from "@/src/lib/locale";
 import { storage } from "@/src/utils/storage";
 
 const TOKEN_KEY = "aurafit.token";
-const LOCALE_SYNC_KEY = "drape.localeCurrencySynced";
 
-/**
- * Silently align the user's preferred_currency with their device region the
- * first time we see them on this device. Runs at most once per device (via
- * AsyncStorage flag) so manually-chosen currencies are never overwritten.
- */
-async function syncCurrencyToLocale(user: User): Promise<User> {
-  try {
-    const alreadySynced = await storage.getItem<string>(LOCALE_SYNC_KEY, "");
-    if (alreadySynced) return user;
-    const region = getDeviceRegion();
-    const suggested = suggestCurrencyForRegion(region);
-    if (!suggested) {
-      await storage.setItem(LOCALE_SYNC_KEY, "skipped");
-      return user;
-    }
-    if (user.preferred_currency === suggested) {
-      await storage.setItem(LOCALE_SYNC_KEY, "matched");
-      return user;
-    }
-    const updated = await api.updatePreferences({ preferred_currency: suggested });
-    await storage.setItem(LOCALE_SYNC_KEY, suggested);
-    return updated;
-  } catch {
-    // If the patch fails (network etc.) we just return the original user —
-    // the next login will retry until the flag is set.
-    return user;
-  }
-}
+// Oromona is a Kenyan marketplace — KSh (KES) is the standard currency for
+// every account. Users can still change it manually in Profile → Region &
+// Currency, but we never auto-switch based on device locale.
+const STANDARD_CURRENCY = "KES" as const;
 
 export type RegisterBuyerOpts = {
   gender: Gender;
@@ -153,9 +127,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         as_role: asRole,
       });
       await setTokenStorage(envelope.token);
-      const synced = await syncCurrencyToLocale(envelope.user);
-      setUser(synced);
-      return { user: synced, needsSellerOnboarding: !!envelope.needs_seller_onboarding };
+      setUser(envelope.user);
+      return { user: envelope.user, needsSellerOnboarding: !!envelope.needs_seller_onboarding };
     },
     [],
   );
@@ -167,8 +140,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       fullName: string,
       opts: RegisterBuyerOpts,
     ) => {
-      const region = getDeviceRegion();
-      const preferred_currency = suggestCurrencyForRegion(region) ?? undefined;
       const { token, user: u } = await api.register({
         email,
         password,
@@ -177,10 +148,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         gender: opts.gender,
         age: opts.age,
         dob: opts.dob,
-        preferred_currency,
+        preferred_currency: STANDARD_CURRENCY,
       });
       await setTokenStorage(token);
-      await storage.setItem(LOCALE_SYNC_KEY, preferred_currency ?? "skipped");
       setUser(u);
       return u;
     },
@@ -194,20 +164,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       fullName: string,
       opts: RegisterSellerOpts,
     ) => {
-      const region = getDeviceRegion();
-      const preferred_currency = suggestCurrencyForRegion(region) ?? undefined;
       const { token, user: u } = await api.register({
         email,
         password,
         full_name: fullName,
         role: "seller",
-        preferred_currency,
+        preferred_currency: STANDARD_CURRENCY,
         company_name: opts.company_name,
         location: opts.location,
         bank_details: opts.bank_details,
       });
       await setTokenStorage(token);
-      await storage.setItem(LOCALE_SYNC_KEY, preferred_currency ?? "skipped");
       setUser(u);
       return u;
     },
