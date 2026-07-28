@@ -195,34 +195,30 @@ export default function Register() {
       >
         <Text style={[tp.h1, styles.title]}>Become{"\n"}a member.</Text>
         <Text style={[tp.bodyMuted, styles.sub]}>
-          Shop curated pieces, list your own atelier, or ride and earn with deliveries.
+          Shop curated pieces or list your own atelier.
         </Text>
         <View style={{ height: spacing.xl }} />
 
-        <Text style={[tp.caption, styles.label]}>I am a</Text>
-        <View style={styles.roleRow}>
-          <RoleCard
-            testID="register-role-buyer"
-            label="Buyer"
-            sub="Find clothes that fit"
-            selected={role === "buyer"}
-            onPress={() => setRole("buyer")}
-          />
-          <RoleCard
-            testID="register-role-seller"
-            label="Seller"
-            sub="List your designs"
-            selected={role === "seller"}
-            onPress={() => setRole("seller")}
-          />
-          <RoleCard
-            testID="register-role-courier"
-            label="Rider"
-            sub="Deliver & earn"
-            selected={role === "courier"}
-            onPress={() => setRole("courier")}
-          />
-        </View>
+        {role === "buyer" ? null : (
+          <View style={styles.riderBanner} testID="register-rider-banner">
+            <Feather name={role === "courier" ? "truck" : "tag"} size={16} color={colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.riderBannerTitle}>
+                {role === "courier" ? "RIDER APPLICATION" : "SELLER APPLICATION"}
+              </Text>
+              <Text style={styles.riderBannerSub}>
+                {role === "courier" ? "Deliver parcels & earn per drop" : "List your designs & get paid"}
+              </Text>
+            </View>
+            <TouchableOpacity
+              testID="register-rider-back"
+              onPress={() => setRole("buyer")}
+              hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+            >
+              <Text style={styles.riderBackLink}>BACK</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         <View style={{ height: spacing.xl }} />
         <AppInput
@@ -313,6 +309,21 @@ export default function Register() {
             Already a member? <Text style={styles.linkBold}>Sign in</Text>
           </Text>
         </TouchableOpacity>
+        {role === "buyer" ? (
+          <View style={styles.altLinksRow}>
+            <TouchableOpacity testID="register-seller-link" onPress={() => setRole("seller")}>
+              <Text style={styles.riderLink}>
+                <Text style={styles.linkBold}>Sell on Oromona</Text>
+              </Text>
+            </TouchableOpacity>
+            <Text style={styles.riderLink}>·</Text>
+            <TouchableOpacity testID="register-rider-link" onPress={() => setRole("courier")}>
+              <Text style={styles.riderLink}>
+                <Text style={styles.linkBold}>Deliver & earn as a rider</Text>
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
       </View>
     </SafeAreaView>
   );
@@ -669,6 +680,38 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   roleRow: { flexDirection: "row", gap: spacing.md },
+  riderBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+  },
+  riderBannerTitle: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 11,
+    letterSpacing: 1.5,
+    color: colors.primary,
+  },
+  riderBannerSub: { fontFamily: fonts.body, fontSize: 11, color: colors.mutedFg, marginTop: 2 },
+  riderBackLink: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 10,
+    letterSpacing: 1.2,
+    color: colors.mutedFg,
+    textDecorationLine: "underline",
+  },
+  riderLinkBtn: { alignItems: "center", marginTop: 6, paddingVertical: 4 },
+  altLinksRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 10,
+    marginTop: 6,
+    paddingVertical: 4,
+  },
+  riderLink: { fontFamily: fonts.body, fontSize: 11, color: colors.mutedFg },
   roleCard: {
     flex: 1,
     padding: spacing.md,
