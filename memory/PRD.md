@@ -78,3 +78,11 @@ Editorial Swiss / High-Contrast: Cormorant Garamond display + Manrope body text,
 - Split: rider earns 90% of zone fee (credited on handover), Oromona keeps 10% (both admin-tunable). Earnings ledger + end-of-day payout recorded by admin mark-paid (real M-Pesa transfers = Phase 2).
 - Seller flow: "Request rider pickup" button on paid door-delivery orders; CBD-pickup orders show drop-at-pickup-point hint.
 - Admin console login: app /login with admin@oromona.com (see test_credentials) → lands on /admin dashboard; new tabs: Riders, Fees.
+
+## Update — June 2026 (Interactive measurement guides)
+- **Buyer guide** (`src/components/BodyMeasureGuide.tsx`, shown on /onboarding/measurements above the input grid): gender-based SVG silhouettes (male/female toggle, defaults from user.gender) with labelled double-arrow measurement lines (height/shoulders/chest/waist/hips/inseam). Focusing an input highlights the matching arrow (solid black + pulsing halo via RN Animated), highlights the legend row (live values, unit-aware cm/in/ft) and swaps in a how-to-measure tip. After AI estimate, applied measurements light up sequentially (900ms apart).
+- **Seller guide** (`src/components/GarmentMeasureGuide.tsx`, add-item wizard step 3 above the per-size grids): flat-lay garment diagram adapts to garment_type (top/dress/skirt/trousers/shorts/belt/tie/scarf) drawing arrows only for that garment's DIMENSION_KEYS_BY_TYPE; focusing a dimension field highlights the arrow + shows DIMENSION_HINTS copy. Shared SVG/animation parts in `src/components/MeasureGuideParts.tsx`.
+- Tested: iteration 32 — testing agent 13/13 frontend PASS (report /app/test_reports/iteration_31.json) incl. trousers/shirt/dress diagrams, unit conversion, save regressions.
+- **Escrow window confirmed by user: stays 48h** (no change made).
+- ⚠️ Known pre-existing dead links (user approval pending to fix): pushes to "/seller", "/seller/new-item", "/seller/new-collection", "/seller/analytics", "/seller/onboarding" in (tabs)/atelier.tsx, (tabs)/profile.tsx, (auth)/login.tsx, HeaderMenu.tsx → Unmatched Route (real routes live under /(seller)/*).
+- ⚠️ Login intent chip flips account role server-side — demo seller was accidentally toggled to buyer during testing and restored; always log in atelier@aurafit.com with the seller chip.
