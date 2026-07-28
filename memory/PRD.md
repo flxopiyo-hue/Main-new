@@ -90,3 +90,10 @@ Editorial Swiss / High-Contrast: Cormorant Garamond display + Manrope body text,
 ## Update — June 2026 (dead links fixed + buyer measurement map)
 - Restored `app/seller-onboarding.tsx` (route /seller-onboarding) and `app/(seller)/new-collection.tsx` (hidden tab) — both were deleted in the seller-portal restructure while links to them remained. All "/seller/*" pushes repointed to real routes (atelier tab, profile, login, HeaderMenu).
 - Buyer item page: "See where size X is measured" toggle under the size details expands the SAME GarmentMeasureGuide diagram with the selected size's dimensions in the legend (cm/in aware); legend rows are tappable to highlight arrows. GarmentMeasureGuide gained optional values/unit/onSelectKey props (seller wizard usage unchanged).
+
+## Update — June 2026 (KES standard + compare-with-body)
+- **KSh (KES) is the standard currency always**: device-locale auto-switching removed (locale.ts deleted); buyer/seller registration hard-defaults preferred_currency=KES; frontend getCurrencyMeta + backend item/order currency fallbacks now KES; all 52 existing users migrated to KES in DB. Manual picker kept (header pill + Profile) for optional display conversion.
+- **Currency sheet scroll bug fixed** (user: "slider refuses to go up"): CurrencyPill FlatList now has bounded height (maxHeight 420, flexGrow 0) so it scrolls on web; KES first with active check.
+- **Compare with my body**: highlighting a measurement in the buyer item measurement map shows "Your waist: 81cm — this size runs 5cm smaller/roomier/exact match" (from fit-score body/diff; cm/in aware; hidden when no body value e.g. rise).
+- Demo buyer seeded with full measurements (170/92/81/98/44/78).
+- Tested: iteration 34 — testing agent 7/7 frontend PASS incl. buyer+seller registration regressions (report /app/test_reports/iteration_32.json).
