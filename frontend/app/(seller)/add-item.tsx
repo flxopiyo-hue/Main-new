@@ -30,6 +30,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppButton } from "@/src/components/AppButton";
 import { AppInput } from "@/src/components/AppInput";
+import { GarmentMeasureGuide } from "@/src/components/GarmentMeasureGuide";
 import { useToast } from "@/src/components/Toast";
 import {
   api,
@@ -797,6 +798,7 @@ export default function AddItem() {
           <StepSizing
             audience={audience}
             category={category}
+            garmentType={gtype}
             sizes={sizes}
             dimKeys={dimKeys}
             chart={activeChart}
@@ -1314,6 +1316,8 @@ function StepTaxonomy({
 interface StepSizingProps {
   audience: Audience;
   category: Category;
+  // Backend garment_type — drives the "where to measure" diagram.
+  garmentType: string;
   sizes: Record<string, SizeOption>;
   dimKeys: DimensionKey[];
   chart: SizeChart;
@@ -1349,6 +1353,7 @@ interface StepSizingProps {
 function StepSizing({
   audience,
   category,
+  garmentType,
   sizes,
   dimKeys,
   chart,
@@ -1376,6 +1381,9 @@ function StepSizing({
   // category-aware chart selected by the parent (waist inches for men's
   // bottoms, UK sizes for women's, bra band+cup, socks EU ranges, …).
   const isShoes = category === "shoes";
+  // Which dimension field the seller is currently editing — drives the
+  // highlighted arrow on the "where to measure" diagram below.
+  const [activeDim, setActiveDim] = useState<DimensionKey | null>(null);
   const sizeLabels = isShoes
     ? (audience === "kids" ? KID_SHOE_SIZES : ADULT_SHOE_SIZES).map((s) => s.value)
     : chart.entries.map((e) => e.value);
@@ -1502,6 +1510,14 @@ function StepSizing({
         <Text style={styles.fieldError}>{errors._sizes}</Text>
       ) : null}
 
+      {!noDims ? (
+        <GarmentMeasureGuide
+          garmentType={garmentType}
+          dimKeys={dimKeys}
+          activeKey={activeDim}
+        />
+      ) : null}
+
       {Object.values(sizes).map((s) => (
         <View key={s.label} style={styles.sizeDetail} testID={`wizard-size-detail-${s.label}`}>
           <View style={styles.sizeDetailHeader}>
@@ -1529,6 +1545,8 @@ function StepSizing({
                 onChange={(v) =>
                   onUpdateSize(s.label, { [k]: v } as Partial<SizeOption>)
                 }
+                onFocus={() => setActiveDim(k)}
+                onBlur={() => setActiveDim((c) => (c === k ? null : c))}
                 errorText={errors[`${s.label}-${k}`]}
               />
             ))}
@@ -2146,13 +2164,26 @@ interface DimFieldProps {
   // the available_qty field, which is always integer count, not length).
   unit: "cm" | "in" | null;
   onChange: (v: number | undefined) => void;
+  onFocus?: () => void;
+  onBlur?: () => void;
   testID: string;
   errorText?: string | null;
 }
 
 const CM_PER_IN = 2.54;
 
-function DimField({ label, hint, optional, value, unit, onChange, testID, errorText }: DimFieldProps) {
+function DimField({
+  label,
+  hint,
+  optional,
+  value,
+  unit,
+  onChange,
+  onFocus,
+  onBlur,
+  testID,
+  errorText,
+}: DimFieldProps) {
   // We always STORE in cm on the backend. When the user is in inch mode,
   // we convert the stored cm value to inches for display and convert
   // their inch input back to cm before bubbling up. Keeps the wire
@@ -2201,6 +2232,8 @@ function DimField({ label, hint, optional, value, unit, onChange, testID, errorT
         keyboardType="decimal-pad"
         value={raw}
         onChangeText={handleChange}
+        onFocus={onFocus}
+        onBlur={onBlur}
         placeholder="—"
         placeholderTextColor={colors.mutedFg}
         style={[

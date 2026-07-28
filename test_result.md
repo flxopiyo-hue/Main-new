@@ -237,3 +237,18 @@ Frontend `.env` currently points at preview (`https://fit-finder-app-5.preview.e
 - /user/toggle-role FLIPS role each call regardless of body — check /auth/me first.
 - DO NOT run parallel search_replace edits against the SAME file — hunks silently race away (bit this session twice).
 - Approved rider creds: test_rider_fc0de2@test.com / rider-pass-123 (see memory/test_credentials.md).
+
+## Iteration 32 — Interactive measurement guides (buyer silhouettes + seller garment diagrams)
+### Built
+1. `/app/frontend/src/components/MeasureGuideParts.tsx`: MeasureLine (SVG double-arrow line + label, dashed grey inactive / solid black active) + PulseHalo (RN Animated pulsing ring over the active line midpoint; useNativeDriver disabled on web).
+2. `/app/frontend/src/components/BodyMeasureGuide.tsx`: gender-based (male/female) SVG body silhouettes with labelled arrows for height/shoulders/chest/waist/hips/inseam; legend with live values (unit-aware via cmToDisplay); how-to-measure hint per active field. testIDs: body-measure-guide, guide-gender-male/female, guide-legend-{key}, guide-hint.
+3. `/app/frontend/src/components/GarmentMeasureGuide.tsx`: garment-type-adaptive flat-lay diagrams (top/dress/skirt/trousers/shorts/belt/tie/scarf) with arrows for exactly the DIMENSION_KEYS_BY_TYPE dims; legend + DIMENSION_HINTS hint. testIDs: garment-measure-guide, garment-legend-{key}, garment-guide-hint.
+4. onboarding/measurements.tsx: guide card inserted above the input grid; each UnitInput got onFocus/onBlur → highlights matching arrow; after AI estimate the applied keys animate sequentially (900ms apart) then clear.
+5. add-item.tsx StepSizing: guide rendered above per-size dimension grids (only when garment has dims); DimField got onFocus/onBlur → setActiveDim.
+### Verified by main agent (browser screenshots)
+- Buyer male guide + waist focus highlight/halo/hint; female silhouette + hips highlight; seller trousers diagram + rise focus highlight/hint (edit Selvedge Denim → step 3).
+### Gotchas hit this session
+- LOGIN INTENT CHIP FLIPS ROLES: logging in atelier@aurafit.com with the default "buyer" chip TOGGLED the demo seller to buyer (restored via DB + seller-intent login). Always click login-intent-seller for the seller account.
+- Playwright force-click on RN-web TextInput does not always fire focus — use locator.focus().
+- PRE-EXISTING dead routes discovered (NOT fixed, awaiting user go-ahead): "/seller", "/seller/new-item", "/seller/new-collection", "/seller/analytics", "/seller/onboarding" referenced in (tabs)/atelier.tsx, (tabs)/profile.tsx, (auth)/login.tsx, HeaderMenu.tsx → Unmatched Route (no app/seller dir; real routes are /(seller)/*).
+### ⚠️ LIVE PAYSTACK — initialization-only payment tests, never complete a charge, no transfers/recipients. Do NOT call AI try-on/estimate endpoints (LLM cost + weekly cap).

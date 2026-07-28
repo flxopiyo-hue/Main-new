@@ -1,12 +1,17 @@
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppButton } from "@/src/components/AppButton";
 import { AppInput } from "@/src/components/AppInput";
+import {
+  BodyMeasureGuide,
+  BodyMeasureKey,
+  GuideGender,
+} from "@/src/components/BodyMeasureGuide";
 import { useToast } from "@/src/components/Toast";
 import { api, Measurements } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
@@ -48,6 +53,35 @@ export default function MeasurementsScreen() {
   const [threeQuarter, setThreeQuarter] = useState<PickState | null>(null);
   const [estimating, setEstimating] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Interactive measurement guide state — the arrow matching the focused
+  // input lights up; after an AI estimate we walk through each applied
+  // measurement so the buyer sees the values land on the silhouette.
+  const [guideKey, setGuideKey] = useState<BodyMeasureKey | null>(null);
+  const [guideGender, setGuideGender] = useState<GuideGender>("male");
+  const aiSeqTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (user?.gender === "female") setGuideGender("female");
+  }, [user?.gender]);
+
+  useEffect(
+    () => () => {
+      if (aiSeqTimer.current) clearTimeout(aiSeqTimer.current);
+    },
+    [],
+  );
+
+  const focusGuide = (k: BodyMeasureKey) => {
+    if (aiSeqTimer.current) {
+      clearTimeout(aiSeqTimer.current);
+      aiSeqTimer.current = null;
+    }
+    setGuideKey(k);
+  };
+  const blurGuide = (k: BodyMeasureKey) => {
+    setGuideKey((curr) => (curr === k && !aiSeqTimer.current ? null : curr));
+  };
 
   const photos: Record<Slot, PickState | null> = useMemo(
     () => ({ front, side, three_quarter: threeQuarter }),
@@ -103,6 +137,28 @@ export default function MeasurementsScreen() {
         height_cm: m.height_cm ?? undefined,
       });
       setM((curr) => ({ ...curr, ...est }));
+      // Walk the guide through each measurement the AI just filled in —
+      // the matching silhouette arrow lights up + pulses one by one.
+      const applied = (
+        ["shoulders_cm", "chest_cm", "waist_cm", "hips_cm", "inseam_cm"] as BodyMeasureKey[]
+      ).filter((k) => (est as Partial<Record<BodyMeasureKey, number | null>>)[k] != null);
+      if (applied.length) {
+        if (aiSeqTimer.current) clearTimeout(aiSeqTimer.current);
+        let i = 0;
+        const step = () => {
+          setGuideKey(applied[i]);
+          i += 1;
+          aiSeqTimer.current = setTimeout(() => {
+            if (i < applied.length) {
+              step();
+            } else {
+              setGuideKey(null);
+              aiSeqTimer.current = null;
+            }
+          }, 900);
+        };
+        step();
+      }
       toast.show(
         `AI estimated ${
           [est.chest_cm, est.waist_cm, est.hips_cm, est.shoulders_cm, est.inseam_cm].filter(
@@ -258,6 +314,14 @@ export default function MeasurementsScreen() {
           </View>
         </View>
 
+        <BodyMeasureGuide
+          gender={guideGender}
+          onChangeGender={setGuideGender}
+          activeKey={guideKey}
+          values={m}
+          unit={unit}
+        />
+
         <View style={styles.grid}>
           <UnitInput
             testID="height-input"
@@ -266,6 +330,8 @@ export default function MeasurementsScreen() {
             unit={unit}
             valueCm={m.height_cm}
             onChange={(cm) => setM({ ...m, height_cm: cm })}
+            onFocus={() => focusGuide("height_cm")}
+            onBlur={() => blurGuide("height_cm")}
           />
           <UnitInput
             testID="chest-input"
@@ -274,6 +340,8 @@ export default function MeasurementsScreen() {
             unit={unit}
             valueCm={m.chest_cm}
             onChange={(cm) => setM({ ...m, chest_cm: cm })}
+            onFocus={() => focusGuide("chest_cm")}
+            onBlur={() => blurGuide("chest_cm")}
           />
           <UnitInput
             testID="waist-input"
@@ -282,6 +350,8 @@ export default function MeasurementsScreen() {
             unit={unit}
             valueCm={m.waist_cm}
             onChange={(cm) => setM({ ...m, waist_cm: cm })}
+            onFocus={() => focusGuide("waist_cm")}
+            onBlur={() => blurGuide("waist_cm")}
           />
           <UnitInput
             testID="hips-input"
@@ -290,6 +360,8 @@ export default function MeasurementsScreen() {
             unit={unit}
             valueCm={m.hips_cm}
             onChange={(cm) => setM({ ...m, hips_cm: cm })}
+            onFocus={() => focusGuide("hips_cm")}
+            onBlur={() => blurGuide("hips_cm")}
           />
           <UnitInput
             testID="shoulders-input"
@@ -298,6 +370,8 @@ export default function MeasurementsScreen() {
             unit={unit}
             valueCm={m.shoulders_cm}
             onChange={(cm) => setM({ ...m, shoulders_cm: cm })}
+            onFocus={() => focusGuide("shoulders_cm")}
+            onBlur={() => blurGuide("shoulders_cm")}
           />
           <UnitInput
             testID="inseam-input"
@@ -306,6 +380,8 @@ export default function MeasurementsScreen() {
             unit={unit}
             valueCm={m.inseam_cm}
             onChange={(cm) => setM({ ...m, inseam_cm: cm })}
+            onFocus={() => focusGuide("inseam_cm")}
+            onBlur={() => blurGuide("inseam_cm")}
           />
         </View>
 
@@ -448,9 +524,20 @@ interface UnitInputProps {
   unit: LengthUnit;
   valueCm?: number | null;
   onChange: (cm: number | undefined) => void;
+  onFocus?: () => void;
+  onBlur?: () => void;
 }
 
-function UnitInput({ testID, label, placeholder, unit, valueCm, onChange }: UnitInputProps) {
+function UnitInput({
+  testID,
+  label,
+  placeholder,
+  unit,
+  valueCm,
+  onChange,
+  onFocus,
+  onBlur,
+}: UnitInputProps) {
   // We keep an internal "draft" string that the user is typing so cm rounding
   // doesn't fight the cursor on every keystroke. The draft is reset whenever
   // the unit changes or the parent re-pushes a new cm value (e.g. after AI estimate).
@@ -472,6 +559,8 @@ function UnitInput({ testID, label, placeholder, unit, valueCm, onChange }: Unit
           const cm = displayToCm(t, unit);
           onChange(cm ?? undefined);
         }}
+        onFocus={onFocus}
+        onBlur={onBlur}
         placeholder={placeholder}
       />
     </View>

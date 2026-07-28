@@ -1,0 +1,21 @@
+{
+  "summary": "Frontend-only regression + feature test of the new interactive measurement guides (BodyMeasureGuide for buyers, GarmentMeasureGuide for sellers). All 13 requested test cases PASS on mobile viewport (390x844). Buyer: body-measure-guide renders with 6 legend rows, focusing each of the 6 inputs (height/chest/waist/hips/shoulders/inseam) via locator.focus() highlights the matching legend row and swaps guide-hint text to the correct how-to-measure copy; blur restores the default hint; typing waist=92 shows '92 cm' in legend and correctly converts to '36.2 in' after unit-in toggle; female/male gender toggle swaps silhouette and legend still renders; Save & Continue redirects out of /onboarding/measurements without error. Seller: login-intent-seller chip clicked before submit — landed on seller dashboard; edit flows tested for TROUSERS (Selvedge Denim, waist/hips/inseam/rise arrows + rise + waist focus hints), TOP (Tailored Linen Shirt, shoulder/chest/sleeve/length arrows + chest 'pit-to-pit' hint), DRESS (Editorial Slip Dress, bust/waist/hips/length arrows + bust hint); Save Changes (wizard-publish-btn) saved without error and returned to dashboard; Add-new-item wizard step 1 opens with no crash. No red-screen errors, only pre-existing 'shadow* style props are deprecated' console warning (unrelated).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_31.json"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "BodyMeasureGuide and GarmentMeasureGuide are cleanly split and stay under 320 lines each; MeasureGuideParts share the SVG arrow + PulseHalo primitives. All new components use testID, React Native primitives (View/Text/TouchableOpacity/Svg), StyleSheet.create, and env-free logic — no violations of code-review guidelines."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped by request)", "frontend": "100%"},
+  "seed_data_creation": "None — used pre-seeded buyer@aurafit.com / atelier@aurafit.com and existing inventory rows.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Feature is stable. All buyer input focus/blur, unit conversion (cm/in), gender toggle, and all three seller garment families (trousers, top, dress) light up the correct arrow + hint. Save flows unaffected. If future iterations touch DIMENSION_HINTS or the FAMILY_BY_TYPE map, re-run this iteration_31 script."
+}
