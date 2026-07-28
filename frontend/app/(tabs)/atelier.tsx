@@ -60,7 +60,7 @@ export default function Atelier() {
         <View style={styles.headerActions}>
           <TouchableOpacity
             testID="atelier-dashboard-btn"
-            onPress={() => router.push("/seller")}
+            onPress={() => router.push("/(seller)")}
             style={styles.secondaryBtn}
           >
             <Feather name="layout" size={16} color={colors.primary} />
@@ -68,7 +68,7 @@ export default function Atelier() {
           </TouchableOpacity>
           <TouchableOpacity
             testID="atelier-new-drop-btn"
-            onPress={() => router.push("/seller/new-collection")}
+            onPress={() => router.push("/(seller)/new-collection")}
             style={styles.secondaryBtn}
           >
             <Feather name="layers" size={16} color={colors.primary} />
@@ -76,7 +76,7 @@ export default function Atelier() {
           </TouchableOpacity>
           <TouchableOpacity
             testID="atelier-add-btn"
-            onPress={() => router.push("/seller/new-item")}
+            onPress={() => router.push("/(seller)/add-item")}
             style={styles.addBtn}
           >
             <Feather name="plus" size={18} color={colors.primaryFg} />

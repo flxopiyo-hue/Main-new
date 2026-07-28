@@ -252,3 +252,17 @@ Frontend `.env` currently points at preview (`https://fit-finder-app-5.preview.e
 - Playwright force-click on RN-web TextInput does not always fire focus — use locator.focus().
 - PRE-EXISTING dead routes discovered (NOT fixed, awaiting user go-ahead): "/seller", "/seller/new-item", "/seller/new-collection", "/seller/analytics", "/seller/onboarding" referenced in (tabs)/atelier.tsx, (tabs)/profile.tsx, (auth)/login.tsx, HeaderMenu.tsx → Unmatched Route (no app/seller dir; real routes are /(seller)/*).
 ### ⚠️ LIVE PAYSTACK — initialization-only payment tests, never complete a charge, no transfers/recipients. Do NOT call AI try-on/estimate endpoints (LLM cost + weekly cap).
+
+## Iteration 33 — Dead seller links fixed + buyer item "measurement map"
+### Changes
+1. Restored two screens deleted in the July-23 seller-portal restructure (commit 473464c) whose links were left dangling:
+   - `/app/frontend/app/seller-onboarding.tsx` (was app/seller/onboarding.tsx) — buyer→seller 1-screen onboarding (company/city + optional payout), submits toggleRole → /(seller).
+   - `/app/frontend/app/(seller)/new-collection.tsx` (was app/seller/new-collection.tsx) — "Curate a drop" collection builder; registered in (seller)/_layout as hidden tab (href: null).
+2. Repointed all dangling "/seller/*" pushes: atelier.tsx (Dashboard→/(seller), Drop→/(seller)/new-collection, New→/(seller)/add-item), profile.tsx (dashboard→/(seller), analytics→/(seller)/analytics, onboarding→/seller-onboarding), login.tsx + HeaderMenu.tsx (onboarding→/seller-onboarding). Zero "/seller/*" refs remain.
+3. GarmentMeasureGuide extended (backwards-compatible optional props): values (per-dim numbers shown in legend), unit ("cm"|"in"), onSelectKey (makes legend rows tappable, tap active row to clear). Seller wizard usage unchanged.
+4. Buyer item page (item/[id].tsx): after selecting a size, a "See where size X is measured" toggle (item-measure-guide-toggle) expands the garment diagram with the selected size's dimensions in the legend (unit follows the cm/in toggle); tapping a legend row highlights the arrow + shows the measuring hint.
+### Verified by main agent (browser)
+- Buyer: Selvedge Denim → size S → measurement map open → Waist row tap → arrow highlight + halo + "Waist — Around narrowest point, flat × 2" + values 76cm/96cm/—/—.
+- /seller-onboarding renders restored form; /new-collection renders NEW DROP inside seller tab shell.
+- Seller regression: edit wizard step 3 rise focus still highlights + hints (post component change).
+- RBAC note: sellers deep-linking to buyer tabs are bounced to /(seller) by design — the fixed atelier/profile links now bounce unauthorized roles gracefully instead of 404 "Unmatched Route".

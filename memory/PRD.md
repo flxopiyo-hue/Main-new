@@ -86,3 +86,7 @@ Editorial Swiss / High-Contrast: Cormorant Garamond display + Manrope body text,
 - **Escrow window confirmed by user: stays 48h** (no change made).
 - ⚠️ Known pre-existing dead links (user approval pending to fix): pushes to "/seller", "/seller/new-item", "/seller/new-collection", "/seller/analytics", "/seller/onboarding" in (tabs)/atelier.tsx, (tabs)/profile.tsx, (auth)/login.tsx, HeaderMenu.tsx → Unmatched Route (real routes live under /(seller)/*).
 - ⚠️ Login intent chip flips account role server-side — demo seller was accidentally toggled to buyer during testing and restored; always log in atelier@aurafit.com with the seller chip.
+
+## Update — June 2026 (dead links fixed + buyer measurement map)
+- Restored `app/seller-onboarding.tsx` (route /seller-onboarding) and `app/(seller)/new-collection.tsx` (hidden tab) — both were deleted in the seller-portal restructure while links to them remained. All "/seller/*" pushes repointed to real routes (atelier tab, profile, login, HeaderMenu).
+- Buyer item page: "See where size X is measured" toggle under the size details expands the SAME GarmentMeasureGuide diagram with the selected size's dimensions in the legend (cm/in aware); legend rows are tappable to highlight arrows. GarmentMeasureGuide gained optional values/unit/onSelectKey props (seller wizard usage unchanged).

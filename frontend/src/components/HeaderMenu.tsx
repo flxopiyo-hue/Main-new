@@ -70,7 +70,7 @@ export function HeaderMenu({ testID }: Props) {
         const hasSellerData =
           !!user.company_name && !!user.location?.city && !!user.location?.country;
         if (!hasSellerData) {
-          router.push("/seller/onboarding");
+          router.push("/seller-onboarding");
           return;
         }
       }

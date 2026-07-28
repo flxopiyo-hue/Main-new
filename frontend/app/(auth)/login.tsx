@@ -56,7 +56,7 @@ export default function Login() {
         return;
       }
       if (needsSellerOnboarding) {
-        router.replace("/seller/onboarding");
+        router.replace("/seller-onboarding");
         return;
       }
       // Trust the *resolved* role on the user object — that's what survived

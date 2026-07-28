@@ -79,6 +79,10 @@ export default function SellerTabsLayout() {
         options={{ title: "Add Item", href: null }}
       />
       <Tabs.Screen
+        name="new-collection"
+        options={{ title: "New Drop", href: null }}
+      />
+      <Tabs.Screen
         name="payouts"
         options={{ title: "Payouts", href: null }}
       />

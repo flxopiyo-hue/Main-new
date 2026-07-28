@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppButton } from "@/src/components/AppButton";
+import { GarmentMeasureGuide } from "@/src/components/GarmentMeasureGuide";
 import { HeartButton } from "@/src/components/HeartButton";
 import { OutfitDrawer } from "@/src/components/OutfitDrawer";
 import { PaywallModal } from "@/src/components/PaywallModal";
@@ -23,6 +24,8 @@ import {
   api,
   BACKEND_URL,
   ColorOption,
+  DIMENSION_KEYS_BY_TYPE,
+  DimensionKey,
   isPaywallError,
   Item,
   ItemVariant,
@@ -87,6 +90,9 @@ export default function ItemDetail() {
   // strip on this screen. The default tracks rough device locale guesses:
   // US visitors see inches by default; everyone else sees centimetres.
   const [sizeUnit, setSizeUnit] = useState<"cm" | "in">("cm");
+  // "Where it's measured" garment diagram — reuses the seller wizard guide.
+  const [measureGuideOpen, setMeasureGuideOpen] = useState(false);
+  const [measureGuideKey, setMeasureGuideKey] = useState<DimensionKey | null>(null);
   // Fit Match score for this item against the buyer's active profile.
   // `recommended_size` is also used to auto-pick a size on first arrival.
   const [fitScore, setFitScore] = useState<FitScore | null>(null);
@@ -754,6 +760,39 @@ export default function ItemDetail() {
             })()
           ) : null}
 
+          {selectedSize &&
+          (DIMENSION_KEYS_BY_TYPE[item.garment_type] ?? []).length > 0 ? (
+            <View style={styles.measureGuideWrap}>
+              <TouchableOpacity
+                testID="item-measure-guide-toggle"
+                onPress={() => setMeasureGuideOpen((o) => !o)}
+                style={styles.measureGuideToggle}
+                activeOpacity={0.8}
+              >
+                <Feather
+                  name={measureGuideOpen ? "chevron-up" : "chevron-down"}
+                  size={14}
+                  color={colors.mutedFg}
+                />
+                <Text style={styles.measureGuideToggleLabel}>
+                  {measureGuideOpen
+                    ? "Hide measurement map"
+                    : `See where size ${selectedSize.label} is measured`}
+                </Text>
+              </TouchableOpacity>
+              {measureGuideOpen ? (
+                <GarmentMeasureGuide
+                  garmentType={item.garment_type}
+                  dimKeys={DIMENSION_KEYS_BY_TYPE[item.garment_type] as DimensionKey[]}
+                  activeKey={measureGuideKey}
+                  onSelectKey={setMeasureGuideKey}
+                  values={selectedSize}
+                  unit={sizeUnit}
+                />
+              ) : null}
+            </View>
+          ) : null}
+
           {item.colors.length > 0 ? (
             <>
               <Text style={[tp.caption, styles.subhead]}>Color</Text>
@@ -1178,6 +1217,19 @@ const styles = StyleSheet.create({
   sizeLabelActive: { color: colors.primaryFg },
   sizeLabelOut: { textDecorationLine: "line-through" },
   sizeMeta: { marginTop: spacing.md },
+  measureGuideWrap: { marginTop: spacing.sm },
+  measureGuideToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 6,
+  },
+  measureGuideToggleLabel: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 12,
+    color: colors.mutedFg,
+    letterSpacing: 0.3,
+  },
   sellerRow: {
     flexDirection: "row",
     alignItems: "center",

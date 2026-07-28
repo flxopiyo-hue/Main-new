@@ -46,7 +46,7 @@ export default function Profile() {
     const hasSellerData =
       !!user?.company_name && !!user?.location?.city && !!user?.location?.country;
     if (!hasSellerData) {
-      router.push("/seller/onboarding");
+      router.push("/seller-onboarding");
       return;
     }
     setSwitching(true);
@@ -506,7 +506,7 @@ export default function Profile() {
           <View style={styles.section}>
             <TouchableOpacity
               testID="profile-seller-dashboard-link"
-              onPress={() => router.push("/seller")}
+              onPress={() => router.push("/(seller)")}
               style={styles.analyticsCard}
               activeOpacity={0.85}
             >
@@ -521,7 +521,7 @@ export default function Profile() {
             </TouchableOpacity>
             <TouchableOpacity
               testID="profile-analytics-link"
-              onPress={() => router.push("/seller/analytics")}
+              onPress={() => router.push("/(seller)/analytics")}
               style={[styles.analyticsCard, { marginTop: spacing.md }]}
               activeOpacity={0.85}
             >

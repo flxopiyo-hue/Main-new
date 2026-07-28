@@ -7,7 +7,7 @@
 // ambiguity about WHERE each number is measured.
 
 import React, { useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import Svg, { Circle, Line, Path, Rect } from "react-native-svg";
 
 import { DIMENSION_HINTS, DIMENSION_LABELS, DimensionKey } from "@/src/lib/api";
@@ -19,6 +19,12 @@ interface Props {
   garmentType: string;
   dimKeys: DimensionKey[];
   activeKey: DimensionKey | null;
+  // Optional (buyer size-guide reuse): per-dimension values shown in the
+  // legend — e.g. the selected size's garment measurements.
+  values?: Partial<Record<DimensionKey, number | null | undefined>>;
+  unit?: "cm" | "in";
+  // Optional: makes legend rows tappable; tapping the active row clears it.
+  onSelectKey?: (k: DimensionKey | null) => void;
 }
 
 type Family = "top" | "dress" | "skirt" | "trousers" | "shorts" | "belt" | "tie" | "scarf";
@@ -208,7 +214,14 @@ const DIAGRAMS: Record<Family, Diagram> = {
   },
 };
 
-export function GarmentMeasureGuide({ garmentType, dimKeys, activeKey }: Props) {
+export function GarmentMeasureGuide({
+  garmentType,
+  dimKeys,
+  activeKey,
+  values,
+  unit = "cm",
+  onSelectKey,
+}: Props) {
   const [box, setBox] = useState<{ w: number; h: number } | null>(null);
   const family = FAMILY_BY_TYPE[garmentType];
   if (!family) return null;
@@ -246,15 +259,44 @@ export function GarmentMeasureGuide({ garmentType, dimKeys, activeKey }: Props) 
         <View style={styles.legend}>
           {lineKeys.map((k) => {
             const on = k === activeKey;
-            return (
+            const v = values ? values[k] : undefined;
+            const valueText =
+              values === undefined
+                ? null
+                : v == null
+                  ? "—"
+                  : unit === "in"
+                    ? `${Math.round((v / 2.54) * 10) / 10}"`
+                    : `${Math.round(v)}cm`;
+            const inner = (
+              <>
+                <Text style={[styles.legendLabel, on && styles.legendLabelActive]}>
+                  {DIMENSION_LABELS[k]}
+                </Text>
+                {valueText !== null ? (
+                  <Text style={[styles.legendValue, on && styles.legendValueActive]}>
+                    {valueText}
+                  </Text>
+                ) : null}
+              </>
+            );
+            return onSelectKey ? (
+              <TouchableOpacity
+                key={k}
+                onPress={() => onSelectKey(on ? null : k)}
+                activeOpacity={0.8}
+                style={[styles.legendRow, on && styles.legendRowActive]}
+                testID={`garment-legend-${k}`}
+              >
+                {inner}
+              </TouchableOpacity>
+            ) : (
               <View
                 key={k}
                 style={[styles.legendRow, on && styles.legendRowActive]}
                 testID={`garment-legend-${k}`}
               >
-                <Text style={[styles.legendLabel, on && styles.legendLabelActive]}>
-                  {DIMENSION_LABELS[k]}
-                </Text>
+                {inner}
               </View>
             );
           })}
@@ -263,7 +305,9 @@ export function GarmentMeasureGuide({ garmentType, dimKeys, activeKey }: Props) 
       <Text style={styles.hint} testID="garment-guide-hint">
         {activeKey && d.lines[activeKey]
           ? `${DIMENSION_LABELS[activeKey]} — ${DIMENSION_HINTS[activeKey]}`
-          : "Tap a measurement field below to highlight it on the garment."}
+          : onSelectKey
+            ? "Tap a measurement to see where it's taken on the garment."
+            : "Tap a measurement field below to highlight it on the garment."}
       </Text>
     </View>
   );
@@ -282,6 +326,9 @@ const styles = StyleSheet.create({
   figureWrap: { width: "52%" },
   legend: { flex: 1, justifyContent: "center", gap: 4 },
   legendRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingVertical: 7,
     paddingHorizontal: 10,
     borderLeftWidth: 2,
@@ -290,6 +337,8 @@ const styles = StyleSheet.create({
   legendRowActive: { borderLeftColor: colors.primary, backgroundColor: colors.muted },
   legendLabel: { fontFamily: fonts.bodyMedium, fontSize: 12, color: colors.mutedFg },
   legendLabelActive: { color: colors.primary, fontFamily: fonts.bodySemi },
+  legendValue: { fontFamily: fonts.body, fontSize: 12, color: colors.mutedFg },
+  legendValueActive: { color: colors.primary, fontFamily: fonts.bodySemi },
   hint: {
     fontFamily: fonts.body,
     fontSize: 11,
