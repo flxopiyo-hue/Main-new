@@ -41,7 +41,7 @@ const formatDobDisplay = (d: Date): string =>
   d.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
 
 export default function Register() {
-  const { registerBuyer, registerSeller } = useAuth();
+  const { registerBuyer, registerSeller, registerCourier } = useAuth();
   const toast = useToast();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");

@@ -221,3 +221,19 @@ Frontend `.env` currently points at preview (`https://fit-finder-app-5.preview.e
 2. **"I received my item" button dead on web**: order/[id].tsx used Alert.alert with a button list — a SILENT NO-OP on react-native-web. Added `/app/frontend/src/lib/confirm.ts` (`confirmDialog`: window.confirm on web, Alert.alert on native) and wired the confirm-delivery button to it. Other 4 Alert.alert call sites already had web guards. Verified e2e in browser: click → confirm dialog → 200 → "Delivery confirmed by you" timeline + escrow banner (TEST_checkout order flipped to shipped for the test; no live transfer occurred — seed seller has no recipient).
 ### Note
 - Beware: previous session left multiple file-tail corruptions (subs.py, add-item.tsx) and this missing-constant bug — check `git diff`/log references when a feature 500s unexpectedly.
+
+## Iteration 31b — Phase 1 Courier System (zone fees, rider role, jobs, earnings)
+### Built
+1. Zone fees from Nairobi CBD (core/delivery.py + routers/delivery.py): nairobi_inner 300 / nairobi_outer 600 (CBD→Karen anchor) / nairobi_metro 900 / major_towns 500 / rest_of_kenya 700 KSh; free delivery ≥ KSh 20,000 (platform absorbs); "Pick up at Nairobi CBD point" = KSh 0; fees KES-only. Admin-editable: /api/admin/delivery-zones + /admin/delivery-settings (threshold + platform bps, default 10%).
+2. Checkout: POST /payments/checkout accepts delivery_option door|pickup; charges item+fee; order stores delivery_fee_cents/zone/total_charged_cents (amount_cents stays item-only so 15% commission unchanged). AddressPickerSheet has DELIVERY METHOD panel (checkout-delivery-door/pickup, checkout-total-row) with live quote.
+3. Courier role: register role=courier (phone required, mpesa optional) → courier_status pending; admin approve/reject at /admin/couriers (bumps token_version → re-login); login/index redirect courier → /(courier); toggle-role immune for courier+admin.
+4. Delivery jobs: seller "Request rider pickup" (action request_courier, door orders, paid|in_fulfillment) → job open on rider board; accept atomic (409); picked_up (order→shipped, carrier "Oromona Rider"); out_for_delivery; deliver requires buyer's 4-digit handover_code → order delivered + 48h escrow window + rider earning (90% of zone fee). Buyer order page shows courier card + handover code (buyer-only, order-handover-code) + call-rider btn.
+5. Courier portal /(courier): jobs board, job detail w/ code entry, earnings (today/pending/paid ledger); admin mark-paid records end-of-day M-Pesa payout batch.
+### Verified
+- Main agent smoke /app/backend/tests/smoke_courier_phase1.py — 20/20 lifecycle steps pass.
+- Testing agent iteration 30 (report /app/test_reports/iteration_30.json): backend courier suite + quote matrix + checkout order fields PASS; found 2 frontend bugs.
+- Bugs fixed post-report: (a) login.tsx missing courier redirect branch; (b) register.tsx registerCourier destructure lost in an earlier same-file parallel-edit race → "registerCourier is not defined". Both re-verified in browser: rider registration → pending card; approved rider login → portal.
+### Notes / gotchas
+- /user/toggle-role FLIPS role each call regardless of body — check /auth/me first.
+- DO NOT run parallel search_replace edits against the SAME file — hunks silently race away (bit this session twice).
+- Approved rider creds: test_rider_fc0de2@test.com / rider-pass-123 (see memory/test_credentials.md).

@@ -71,3 +71,10 @@ Editorial Swiss / High-Contrast: Cormorant Garamond display + Manrope body text,
   - UI `/subscription`: two buttons (sub-upgrade-btn card / sub-mpesa-btn) + channel note; pass holders see status + "Extend 30 days with M-Pesa" (sub-extend-btn).
 - **Colour photo groups (Amazon-style)**: `ColorOption.images: List[str]` (max 5, first = hero; `image_b64` kept as back-compat mirror of images[0], maintained by `_normalize_color` in items POST/PATCH). Seller wizard step 3: per-colour group card (`wizard-color-group-{name}`) with thumbs (COVER badge, remove), ADD/CAMERA tiles, and one-tap "Reuse a product photo" row (no re-uploading). Buyer item page: selected colour's photo group leads the gallery + hero; colour without photos falls back to general photos honestly.
 - Tested: iteration 30 — backend 13/13 pytest + frontend UI verified (report /app/test_reports/iteration_29.json). LIVE Paystack: initialization-only testing forever.
+
+## Update — June 2026 (Phase 1 Courier System)
+- Zone-based courier fees from Nairobi CBD (buyer pays at checkout; admin-editable at /admin/delivery): inner 300 / outer 600 (Karen anchor) / metro 900 / major towns 500 / rest 700 KSh; free ≥ KSh 20,000; CBD pickup option KSh 0.
+- Courier role (boda riders): self-register w/ phone + M-Pesa → admin approval (/admin/couriers) → rider portal /(courier) with job board, accept → picked_up → out_for_delivery → deliver via buyer's 4-digit handover code (code entry = proof of delivery, starts 48h escrow window).
+- Split: rider earns 90% of zone fee (credited on handover), Oromona keeps 10% (both admin-tunable). Earnings ledger + end-of-day payout recorded by admin mark-paid (real M-Pesa transfers = Phase 2).
+- Seller flow: "Request rider pickup" button on paid door-delivery orders; CBD-pickup orders show drop-at-pickup-point hint.
+- Admin console login: app /login with admin@oromona.com (see test_credentials) → lands on /admin dashboard; new tabs: Riders, Fees.

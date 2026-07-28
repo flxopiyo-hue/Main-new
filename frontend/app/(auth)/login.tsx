@@ -63,6 +63,8 @@ export default function Login() {
       // the server-side toggle (if any).
       if (u.role === "seller") {
         router.replace("/(seller)");
+      } else if (u.role === "courier") {
+        router.replace("/(courier)");
       } else {
         router.replace("/(tabs)");
       }
