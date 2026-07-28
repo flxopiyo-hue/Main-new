@@ -318,7 +318,7 @@ export default function ItemDetail() {
     setAddressSheetOpen(true);
   };
 
-  const buyWithAddress = async (addressId: string) => {
+  const buyWithAddress = async (addressId: string, deliveryOption: "door" | "pickup") => {
     if (!item || !selectedSize) return;
     setBuying(true);
     try {
@@ -329,6 +329,7 @@ export default function ItemDetail() {
         variant_id: selectedVariant?.id,
         origin_url: BACKEND_URL,
         address_id: addressId,
+        delivery_option: deliveryOption,
       });
       await WebBrowser.openBrowserAsync(url);
       // After return, navigate to orders
@@ -925,9 +926,11 @@ export default function ItemDetail() {
       <AddressPickerSheet
         visible={addressSheetOpen}
         onClose={() => setAddressSheetOpen(false)}
-        onConfirm={(addr) => {
+        itemTotalCents={chargedPriceCents}
+        currency={item.currency}
+        onConfirm={(addr, deliveryOption) => {
           setAddressSheetOpen(false);
-          buyWithAddress(addr.id);
+          buyWithAddress(addr.id, deliveryOption);
         }}
       />
     </View>

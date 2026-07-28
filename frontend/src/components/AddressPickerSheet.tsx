@@ -17,14 +17,20 @@ import {
 import { AddressFields, validateAddress } from "@/src/components/AddressFields";
 import { AppButton } from "@/src/components/AppButton";
 import { useToast } from "@/src/components/Toast";
-import { Address, AddressInput, api } from "@/src/lib/api";
+import { Address, AddressInput, api, DeliveryQuote } from "@/src/lib/api";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
+
+const fmtKsh = (cents: number) => `KSh ${Math.round(cents / 100).toLocaleString()}`;
 
 interface Props {
   visible: boolean;
   onClose: () => void;
-  /** Called with the chosen address id once the buyer confirms. */
-  onConfirm: (addr: Address) => void;
+  /** Charged item price in cents — used for the courier-fee quote. */
+  itemTotalCents: number;
+  /** Listing currency — courier fees only apply to KES checkouts. */
+  currency: string;
+  /** Called with the chosen address + delivery method once the buyer confirms. */
+  onConfirm: (addr: Address, deliveryOption: "door" | "pickup") => void;
 }
 
 function labelOf(addr: Address): string {
@@ -41,7 +47,7 @@ function summary(addr: Address): string {
   return bits.join(" — ");
 }
 
-export function AddressPickerSheet({ visible, onClose, onConfirm }: Props) {
+export function AddressPickerSheet({ visible, onClose, itemTotalCents, currency, onConfirm }: Props) {
   const toast = useToast();
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [loading, setLoading] = useState(false);
@@ -52,6 +58,35 @@ export function AddressPickerSheet({ visible, onClose, onConfirm }: Props) {
     country: "Kenya",
   });
   const [saving, setSaving] = useState(false);
+
+  // Courier fee quote for the selected address (zone-based from Nairobi
+  // CBD). Refreshes whenever the buyer highlights a different address.
+  const [deliveryOption, setDeliveryOption] = useState<"door" | "pickup">("door");
+  const [quote, setQuote] = useState<DeliveryQuote | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+
+  useEffect(() => {
+    if (!visible || !selectedId) {
+      setQuote(null);
+      return;
+    }
+    let cancelled = false;
+    setQuoteLoading(true);
+    api
+      .deliveryQuote({ address_id: selectedId, item_total_cents: itemTotalCents, currency })
+      .then((q) => {
+        if (!cancelled) setQuote(q);
+      })
+      .catch(() => {
+        if (!cancelled) setQuote(null);
+      })
+      .finally(() => {
+        if (!cancelled) setQuoteLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, selectedId, itemTotalCents, currency]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -85,7 +120,7 @@ export function AddressPickerSheet({ visible, onClose, onConfirm }: Props) {
       toast.show("Address not found", "error");
       return;
     }
-    onConfirm(addr);
+    onConfirm(addr, deliveryOption);
   };
 
   const saveNew = async () => {
@@ -112,8 +147,11 @@ export function AddressPickerSheet({ visible, onClose, onConfirm }: Props) {
         delivery_notes: draft.delivery_notes,
         is_default: draft.is_default ?? addresses.length === 0,
       });
-      // Use the new address immediately.
-      onConfirm(created);
+      // Back to the list with the new address selected so the buyer can
+      // review the delivery fee before paying.
+      setAddresses((arr) => [...arr, created]);
+      setSelectedId(created.id);
+      setMode("list");
     } catch (e: any) {
       toast.show(e?.message ?? "Could not save address", "error");
     } finally {
@@ -190,6 +228,77 @@ export function AddressPickerSheet({ visible, onClose, onConfirm }: Props) {
               </TouchableOpacity>
             </ScrollView>
           )}
+
+          {/* Delivery method — door delivery (zone fee from Nairobi CBD)
+              vs free CBD pickup. Fee is waived above the free-delivery
+              threshold; non-KES listings skip the fee entirely. */}
+          {mode === "list" && !loading ? (
+            <View style={styles.deliveryPanel} testID="checkout-delivery-panel">
+              <Text style={styles.deliveryCaption}>DELIVERY METHOD</Text>
+              <TouchableOpacity
+                testID="checkout-delivery-door"
+                onPress={() => setDeliveryOption("door")}
+                style={[styles.deliveryRow, deliveryOption === "door" && styles.deliveryRowActive]}
+                activeOpacity={0.85}
+              >
+                <View style={styles.radioOuter}>
+                  {deliveryOption === "door" ? <View style={styles.radioInner} /> : null}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.deliveryLabel}>Door delivery</Text>
+                  <Text style={styles.deliverySub}>
+                    {quoteLoading
+                      ? "Checking your zone…"
+                      : quote?.supported
+                        ? quote.free_applied
+                          ? `${quote.zone_label} · free over ${fmtKsh(quote.free_delivery_threshold_cents)}`
+                          : `${quote.zone_label ?? "Kenya"}`
+                        : "Seller arranges shipping"}
+                  </Text>
+                </View>
+                <Text style={styles.deliveryFee}>
+                  {quoteLoading
+                    ? "…"
+                    : quote?.supported
+                      ? quote.free_applied
+                        ? "FREE"
+                        : fmtKsh(quote.fee_due_cents)
+                      : "—"}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="checkout-delivery-pickup"
+                onPress={() => setDeliveryOption("pickup")}
+                style={[styles.deliveryRow, deliveryOption === "pickup" && styles.deliveryRowActive]}
+                activeOpacity={0.85}
+              >
+                <View style={styles.radioOuter}>
+                  {deliveryOption === "pickup" ? <View style={styles.radioInner} /> : null}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.deliveryLabel}>Pick up at Nairobi CBD point</Text>
+                  <Text style={styles.deliverySub}>Collect your parcel yourself — free</Text>
+                </View>
+                <Text style={styles.deliveryFee}>KSh 0</Text>
+              </TouchableOpacity>
+              {(currency || "KES").toUpperCase() === "KES" ? (
+                <View style={styles.totalRow} testID="checkout-total-row">
+                  <Text style={styles.totalLabel}>
+                    Item {fmtKsh(itemTotalCents)} · Delivery{" "}
+                    {deliveryOption === "pickup" || !quote?.supported || quote.free_applied
+                      ? "FREE"
+                      : fmtKsh(quote.fee_due_cents)}
+                  </Text>
+                  <Text style={styles.totalValue}>
+                    {fmtKsh(
+                      itemTotalCents +
+                        (deliveryOption === "door" && quote?.supported ? quote.fee_due_cents : 0),
+                    )}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
 
           <View style={styles.actions}>
             {mode === "new" && addresses.length > 0 ? (
@@ -298,6 +407,42 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   actions: { flexDirection: "row", gap: spacing.md, marginTop: spacing.md },
+  deliveryPanel: {
+    marginTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.md,
+  },
+  deliveryCaption: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 11,
+    letterSpacing: 1.5,
+    color: colors.mutedFg,
+    marginBottom: spacing.sm,
+  },
+  deliveryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    paddingVertical: 10,
+    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    marginBottom: spacing.sm,
+  },
+  deliveryRowActive: { borderColor: colors.primary },
+  deliveryLabel: { fontFamily: fonts.bodySemi, fontSize: 13, color: colors.primary },
+  deliverySub: { fontFamily: fonts.body, fontSize: 11, color: colors.mutedFg, marginTop: 2 },
+  deliveryFee: { fontFamily: fonts.bodySemi, fontSize: 13, color: colors.primary },
+  totalRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingTop: spacing.sm,
+  },
+  totalLabel: { fontFamily: fonts.body, fontSize: 12, color: colors.mutedFg },
+  totalValue: { fontFamily: fonts.bodySemi, fontSize: 15, color: colors.primary },
   btn: {
     paddingHorizontal: spacing.md,
     height: 48,

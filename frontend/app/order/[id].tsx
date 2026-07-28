@@ -258,6 +258,57 @@ export default function OrderDetailScreen() {
               <Text style={tp.caption}>DELIVERY TIMELINE</Text>
               <OrderTimeline order={order} />
 
+              {/* Courier delivery card — rider status, call button, and the
+                  buyer's 4-digit handover code (proof of delivery). */}
+              {order.courier || (isBuyer && order.handover_code) ? (
+                <View style={styles.courierCard} testID="order-courier-card">
+                  <View style={styles.trackingHeader}>
+                    <Feather name="truck" size={16} color={colors.primary} />
+                    <Text style={styles.trackingCarrier}>
+                      {!order.courier || order.courier.status === "open"
+                        ? "Looking for a rider…"
+                        : order.courier.status === "accepted"
+                          ? "Rider assigned — pickup soon"
+                          : order.courier.status === "picked_up"
+                            ? "Rider has your parcel"
+                            : order.courier.status === "out_for_delivery"
+                              ? "Out for delivery — rider on the way"
+                              : "Delivered by Oromona Rider"}
+                    </Text>
+                  </View>
+                  {order.courier?.rider_name ? (
+                    <View style={styles.courierRiderRow}>
+                      <Feather name="user" size={14} color={colors.mutedFg} />
+                      <Text style={styles.courierRiderName}>{order.courier.rider_name}</Text>
+                      {isBuyer && order.courier.rider_phone ? (
+                        <TouchableOpacity
+                          testID="order-call-rider-btn"
+                          onPress={() => Linking.openURL(`tel:${order.courier?.rider_phone}`)}
+                          style={styles.courierCallBtn}
+                        >
+                          <Feather name="phone" size={12} color={colors.primaryFg} />
+                          <Text style={styles.courierCallLabel}>CALL RIDER</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+                  ) : null}
+                  {isBuyer && order.handover_code && order.courier?.status !== "delivered" ? (
+                    <View style={styles.handoverBox} testID="order-handover-code">
+                      <Text style={styles.handoverLabel}>
+                        HANDOVER CODE — give this to the rider
+                      </Text>
+                      <Text style={styles.handoverCode} selectable>
+                        {order.handover_code}
+                      </Text>
+                      <Text style={styles.handoverHint}>
+                        The rider enters this code to complete your delivery —
+                        only share it once the parcel is in your hands.
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
+
               {/* Tracking card */}
               {order.tracking_number ? (
                 <View style={styles.trackingCard} testID="order-tracking-card">
@@ -810,6 +861,63 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.mutedFg,
     fontStyle: "italic",
+  },
+  courierCard: {
+    marginTop: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+  },
+  courierRiderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: spacing.sm,
+  },
+  courierRiderName: { flex: 1, fontFamily: fonts.bodySemi, fontSize: 13, color: colors.primary },
+  courierCallBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: colors.primary,
+  },
+  courierCallLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 10,
+    letterSpacing: 1.2,
+    color: colors.primaryFg,
+  },
+  handoverBox: {
+    marginTop: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.background,
+    padding: spacing.md,
+    alignItems: "center",
+  },
+  handoverLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 10,
+    letterSpacing: 1.2,
+    color: colors.mutedFg,
+  },
+  handoverCode: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 32,
+    letterSpacing: 12,
+    color: colors.primary,
+    marginTop: 6,
+  },
+  handoverHint: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: colors.mutedFg,
+    textAlign: "center",
+    marginTop: 6,
+    lineHeight: 16,
   },
   trackingActions: {
     flexDirection: "row",

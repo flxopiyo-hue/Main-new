@@ -143,6 +143,15 @@ async def register(body: RegisterIn) -> AuthOut:
         resolved_age = None
         dob_iso = None
         gender = None
+    elif body.role == "courier":
+        # Boda riders — phone is mandatory (buyers call them during
+        # delivery); M-Pesa number funds end-of-day payouts. Accounts
+        # start PENDING and must be approved by admin before jobs show.
+        if not body.phone or not body.phone.strip():
+            raise HTTPException(status_code=400, detail="Phone number is required for couriers")
+        resolved_age = None
+        dob_iso = None
+        gender = None
     elif body.role == "admin":
         # Admin accounts can only be created via seed.py or another admin.
         raise HTTPException(
@@ -170,6 +179,10 @@ async def register(body: RegisterIn) -> AuthOut:
         doc["bank_details"] = (
             body.bank_details.model_dump(exclude_none=True) if body.bank_details else None
         )
+    if body.role == "courier":
+        doc["phone"] = body.phone.strip() if body.phone else None
+        doc["mpesa_number"] = body.mpesa_number.strip() if body.mpesa_number else None
+        doc["courier_status"] = "pending"
     await db.users.insert_one(doc)
     token = make_jwt(user_id, body.role, 0)
     return AuthOut(token=token, user=user_to_out(doc), needs_seller_onboarding=False)
@@ -181,11 +194,11 @@ async def login(body: LoginIn) -> AuthOut:
     if not doc or not verify_password(body.password, doc["hashed_password"]):
         raise HTTPException(status_code=400, detail="Invalid email or password")
 
-    # Optional buyer↔seller flip at the login moment. Admins are immune —
-    # the admin flag is set out-of-band via seed.py and cannot be downgraded
-    # by hitting this endpoint with a custom `as_role`.
+    # Optional buyer↔seller flip at the login moment. Admins and couriers
+    # are immune — those roles are fixed (courier approval state would be
+    # lost if the account flipped to buyer via a stray `as_role`).
     needs_onboarding = False
-    if body.as_role and doc["role"] != "admin" and body.as_role != doc["role"]:
+    if body.as_role and doc["role"] not in ("admin", "courier") and body.as_role != doc["role"]:
         if body.as_role == "seller" and not _is_seller_complete(doc):
             # The user wants to log in as a seller but their account is
             # incomplete. We DO NOT flip the role yet — we keep them as a

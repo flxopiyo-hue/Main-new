@@ -130,6 +130,21 @@ export default function SellerOrders() {
     }
   };
 
+  // Opens a job on the Oromona rider board — a boda rider picks up the
+  // parcel and delivers it against the buyer's handover code.
+  const requestCourier = async (order: Order) => {
+    setBusyId(order.id);
+    try {
+      await api.sellerUpdateFulfillment(order.id, { action: "request_courier" });
+      toast.show("Rider requested — keep the parcel ready for pickup", "success");
+      await load();
+    } catch (e: any) {
+      toast.show(e?.message ?? "Could not request a rider", "error");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const markDelivered = async (order: Order) => {
     setBusyId(order.id);
     try {
@@ -277,6 +292,7 @@ export default function SellerOrders() {
                 onAcknowledge={() => acknowledge(o)}
                 onShip={() => setShipModal({ open: true, order: o })}
                 onDeliver={() => markDelivered(o)}
+                onRequestCourier={() => requestCourier(o)}
               />
             ))}
           </View>
@@ -307,12 +323,14 @@ function OrderRow({
   onAcknowledge,
   onShip,
   onDeliver,
+  onRequestCourier,
 }: {
   order: Order;
   busy: boolean;
   onAcknowledge: () => void;
   onShip: () => void;
   onDeliver: () => void;
+  onRequestCourier: () => void;
 }) {
   const [imgB64, setImgB64] = useState<string | null>(null);
 
@@ -394,8 +412,44 @@ function OrderRow({
         </View>
       ) : null}
 
+      {/* Delivery method hint (Phase 1 courier system) */}
+      {order.delivery_option === "pickup" ? (
+        <View style={styles.deliveryHintRow} testID={`seller-order-${order.id}-pickup-hint`}>
+          <Feather name="map-pin" size={13} color={colors.mutedFg} />
+          <Text style={styles.deliveryHintText}>
+            Buyer collects at the Nairobi CBD pickup point — drop the parcel there.
+          </Text>
+        </View>
+      ) : order.courier_job_id ? (
+        <View style={styles.deliveryHintRow} testID={`seller-order-${order.id}-courier-hint`}>
+          <Feather name="truck" size={13} color={colors.mutedFg} />
+          <Text style={styles.deliveryHintText}>
+            Rider requested — keep the parcel ready for pickup.
+          </Text>
+        </View>
+      ) : null}
+
       {/* Actions row */}
       <View style={styles.actions}>
+        {(status === "paid" || status === "in_fulfillment") &&
+        order.delivery_option !== "pickup" &&
+        !order.courier_job_id ? (
+          <TouchableOpacity
+            testID={`seller-order-${order.id}-request-courier`}
+            onPress={onRequestCourier}
+            disabled={busy}
+            style={[styles.actionBtn, styles.actionPrimary]}
+          >
+            {busy ? (
+              <ActivityIndicator size="small" color={colors.primaryFg} />
+            ) : (
+              <>
+                <Feather name="truck" size={14} color={colors.primaryFg} />
+                <Text style={styles.actionPrimaryLabel}>Request rider pickup</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        ) : null}
         {status === "paid" ? (
           <TouchableOpacity
             testID={`seller-order-${order.id}-acknowledge`}
@@ -736,6 +790,16 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   deliveredHint: { flexDirection: "row", gap: 6, alignItems: "center" },
+  deliveryHintRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: spacing.sm,
+    paddingVertical: 8,
+    paddingHorizontal: spacing.sm,
+    backgroundColor: colors.muted,
+  },
+  deliveryHintText: { flex: 1, fontFamily: fonts.body, fontSize: 12, color: colors.mutedFg },
   empty: {
     alignItems: "center",
     justifyContent: "center",

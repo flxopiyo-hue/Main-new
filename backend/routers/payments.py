@@ -135,7 +135,31 @@ async def create_checkout(
     charged_price_cents = int(
         (variant or {}).get("price_cents_override") or item["price_cents"]
     )
-    amount_minor = _amount_for_paystack(charged_price_cents, pay_currency)
+
+    # ------------------------------------------------------------------
+    # Courier fee — zone-based from Nairobi CBD (Phase 1 courier system).
+    # Only applies to KES charges (cross-currency fee conversion isn't
+    # supported). "pickup" = buyer collects at the CBD point for free.
+    # Fee is waived above the free-delivery threshold (platform absorbs
+    # the rider's cut in that case).
+    from core import delivery as dlv
+
+    delivery_option = (body.delivery_option or "door").lower()
+    delivery_fee_cents = 0
+    delivery_zone_key: Optional[str] = None
+    delivery_zone_label: Optional[str] = None
+    if delivery_option == "pickup":
+        delivery_zone_key = "cbd_pickup"
+        delivery_zone_label = dlv.CBD_PICKUP_LABEL
+    elif pay_currency == "KES":
+        q = await dlv.quote_for_address(addr, charged_price_cents)
+        delivery_fee_cents = int(q["fee_due_cents"])
+        delivery_zone_key = q["zone_key"]
+        delivery_zone_label = q["zone_label"]
+
+    amount_minor = _amount_for_paystack(
+        charged_price_cents + delivery_fee_cents, pay_currency
+    )
 
     order_id = str(uuid.uuid4())
     reference = f"oromona_order_{order_id[:8]}_{uuid.uuid4().hex[:8]}"
@@ -212,6 +236,14 @@ async def create_checkout(
             "paystack_reference": reference,
             "address_id": body.address_id,
             "shipping_address": shipping_snapshot,
+            # Courier delivery (Phase 1) — fee the buyer paid on top of
+            # the item price. amount_cents stays item-only so platform
+            # fee / seller net semantics are unchanged.
+            "delivery_option": delivery_option,
+            "delivery_fee_cents": delivery_fee_cents,
+            "delivery_zone_key": delivery_zone_key,
+            "delivery_zone_label": delivery_zone_label,
+            "total_charged_cents": charged_price_cents + delivery_fee_cents,
             "created_at": now,
         }
     )

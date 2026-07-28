@@ -139,6 +139,15 @@ async def seller_orders(
             fit_feedback=d.get("fit_feedback"),
             session_id=d["session_id"],
             created_at=d["created_at"],
+            tracking_number=d.get("tracking_number"),
+            tracking_url=d.get("tracking_url"),
+            carrier=d.get("carrier"),
+            shipped_at=d.get("shipped_at"),
+            delivered_at=d.get("delivered_at"),
+            delivery_option=d.get("delivery_option"),
+            delivery_fee_cents=int(d.get("delivery_fee_cents") or 0),
+            courier_job_id=d.get("courier_job_id"),
+            courier_requested_at=d.get("courier_requested_at"),
         )
         for d in docs
     ]
@@ -491,6 +500,29 @@ async def update_fulfillment(
             # can be added if buyers ask, but for KE couriers ±1d
             # accuracy is fine.
             update["estimated_delivery_at"] = now + timedelta(days=days)
+    elif body.action == "request_courier":
+        # Opens a job on the rider board (Phase 1 courier system). Only
+        # meaningful for door-delivery orders that have been paid.
+        if current not in ("paid", "in_fulfillment"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot request a courier from status '{current}'",
+            )
+        if (order.get("delivery_option") or "door") != "door":
+            raise HTTPException(
+                status_code=400,
+                detail="Buyer chose CBD pickup — hand the parcel to the pickup point instead",
+            )
+        if order.get("courier_job_id"):
+            raise HTTPException(status_code=400, detail="Courier already requested")
+        from core import delivery as dlv
+
+        job = await dlv.create_delivery_job(order, seller=user)
+        update["courier_requested_at"] = now
+        if current == "paid":
+            update["status"] = "in_fulfillment"
+            update["acknowledged_at"] = now
+        logger.info("courier job %s opened for order %s", job["id"], order_id)
     elif body.action == "deliver":
         if current not in ("shipped", "in_fulfillment"):
             raise HTTPException(

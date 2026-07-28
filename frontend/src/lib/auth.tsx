@@ -89,6 +89,13 @@ interface AuthValue {
     fullName: string,
     opts: RegisterSellerOpts,
   ) => Promise<User>;
+  // Boda rider signup — account starts pending until admin approval.
+  registerCourier: (
+    email: string,
+    password: string,
+    fullName: string,
+    opts: { phone: string; mpesa_number?: string },
+  ) => Promise<User>;
   // Flip between buyer ↔ seller. When switching TO seller the caller may
   // need to pass the seller onboarding fields; the backend rejects the
   // toggle if essentials are still missing.
@@ -207,6 +214,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  const registerCourier = useCallback(
+    async (
+      email: string,
+      password: string,
+      fullName: string,
+      opts: { phone: string; mpesa_number?: string },
+    ) => {
+      const { token, user: u } = await api.register({
+        email,
+        password,
+        full_name: fullName,
+        role: "courier",
+        phone: opts.phone,
+        mpesa_number: opts.mpesa_number,
+      });
+      await setTokenStorage(token);
+      setUser(u);
+      return u;
+    },
+    [],
+  );
+
   const toggleRole = useCallback(
     async (opts: {
       to?: "buyer" | "seller";
@@ -242,12 +271,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       login,
       registerBuyer,
       registerSeller,
+      registerCourier,
       toggleRole,
       logout,
       refresh,
       adoptSession,
     }),
-    [user, loading, login, registerBuyer, registerSeller, toggleRole, logout, refresh, adoptSession],
+    [user, loading, login, registerBuyer, registerSeller, registerCourier, toggleRole, logout, refresh, adoptSession],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

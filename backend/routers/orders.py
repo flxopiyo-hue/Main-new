@@ -57,6 +57,10 @@ def _order_doc_to_out(d: Dict[str, Any]) -> OrderOut:
         escrow_status=d.get("escrow_status"),
         payout_id=d.get("payout_id"),
         notified_seller_at=d.get("notified_seller_at"),
+        delivery_option=d.get("delivery_option"),
+        delivery_fee_cents=int(d.get("delivery_fee_cents") or 0),
+        courier_job_id=d.get("courier_job_id"),
+        courier_requested_at=d.get("courier_requested_at"),
     )
 
 
@@ -78,7 +82,9 @@ def _payout_summary(bank: Optional[Dict[str, Any]]) -> Optional[str]:
     return " · ".join(parts) if parts else None
 
 
-async def _order_doc_to_detail(d: Dict[str, Any]) -> OrderDetailOut:
+async def _order_doc_to_detail(
+    d: Dict[str, Any], *, include_code: bool = False
+) -> OrderDetailOut:
     item = await db.items.find_one(
         {"id": d["item_id"]},
         {"_id": 0, "image_b64": 1, "garment_type": 1},
@@ -115,6 +121,21 @@ async def _order_doc_to_detail(d: Dict[str, Any]) -> OrderDetailOut:
     # Enrich the doc with the auto-detected carrier so buyers get a
     # friendly carrier label the moment tracking is added.
     d = enrich_order_with_carrier(d)
+    # Courier delivery snapshot (Phase 1 courier system). The handover
+    # code is BUYER-ONLY — the rider proves delivery by entering it.
+    courier_view: Optional[Dict[str, Any]] = None
+    if d.get("courier_job_id"):
+        job = await db.delivery_jobs.find_one({"id": d["courier_job_id"]}, {"_id": 0})
+        if job:
+            courier_view = {
+                "status": job.get("status"),
+                "rider_name": d.get("courier_name"),
+                "rider_phone": d.get("courier_phone"),
+                "accepted_at": job.get("accepted_at"),
+                "picked_up_at": job.get("picked_up_at"),
+                "out_for_delivery_at": job.get("out_for_delivery_at"),
+                "delivered_at": job.get("delivered_at"),
+            }
     return OrderDetailOut(
         id=d["id"],
         buyer_id=d["buyer_id"],
@@ -151,6 +172,12 @@ async def _order_doc_to_detail(d: Dict[str, Any]) -> OrderDetailOut:
         escrow_status=d.get("escrow_status"),
         payout_id=d.get("payout_id"),
         notified_seller_at=d.get("notified_seller_at"),
+        delivery_option=d.get("delivery_option"),
+        delivery_fee_cents=int(d.get("delivery_fee_cents") or 0),
+        delivery_zone_label=d.get("delivery_zone_label"),
+        out_for_delivery_at=d.get("out_for_delivery_at"),
+        handover_code=d.get("handover_code") if include_code else None,
+        courier=courier_view,
     )
 
 
@@ -178,7 +205,7 @@ async def order_detail(
     is_admin = role == "admin"
     if not (is_buyer or is_seller or is_admin):
         raise HTTPException(status_code=403, detail="Not your order")
-    return await _order_doc_to_detail(order)
+    return await _order_doc_to_detail(order, include_code=is_buyer)
 
 
 @router.post("/orders/{order_id}/feedback", response_model=OrderDetailOut)
@@ -201,7 +228,7 @@ async def submit_fit_feedback(
         set_doc["fit_feedback_comment"] = body.comment.strip()
     await db.orders.update_one({"id": order_id}, {"$set": set_doc})
     fresh = await db.orders.find_one({"id": order_id}, {"_id": 0})
-    return await _order_doc_to_detail(fresh)
+    return await _order_doc_to_detail(fresh, include_code=True)
 
 
 
@@ -274,7 +301,7 @@ async def confirm_delivery(
     if not result.get("ok"):
         raise HTTPException(status_code=400, detail=result.get("reason", "Failed"))
     fresh = await db.orders.find_one({"id": order_id}, {"_id": 0})
-    return await _order_doc_to_detail(fresh)
+    return await _order_doc_to_detail(fresh, include_code=True)
 
 
 @router.post("/orders/{order_id}/report-problem", response_model=OrderDetailOut)
@@ -303,4 +330,4 @@ async def report_problem(
     if not result.get("ok"):
         raise HTTPException(status_code=400, detail=result.get("reason", "Failed"))
     fresh = await db.orders.find_one({"id": order_id}, {"_id": 0})
-    return await _order_doc_to_detail(fresh)
+    return await _order_doc_to_detail(fresh, include_code=True)

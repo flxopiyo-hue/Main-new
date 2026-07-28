@@ -21,6 +21,8 @@ const TABS: { path: string; label: string; icon: keyof typeof Feather.glyphMap }
   { path: "/admin/users", label: "Users", icon: "users" },
   { path: "/admin/items", label: "Items", icon: "package" },
   { path: "/admin/orders", label: "Orders", icon: "shopping-bag" },
+  { path: "/admin/couriers", label: "Riders", icon: "truck" },
+  { path: "/admin/delivery", label: "Fees", icon: "map-pin" },
 ];
 
 export function AdminShell({ title, subtitle, children, trailing }: Props) {

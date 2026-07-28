@@ -65,6 +65,10 @@ export default function Register() {
   const [mpesaPaybill, setMpesaPaybill] = useState("");
   const [mpesaTill, setMpesaTill] = useState("");
 
+  // Courier-only fields (boda riders)
+  const [courierPhone, setCourierPhone] = useState("");
+  const [courierMpesa, setCourierMpesa] = useState("");
+
   const maxDob = useMemo(() => {
     const d = new Date();
     d.setFullYear(d.getFullYear() - 13);
@@ -115,7 +119,7 @@ export default function Register() {
           dob: formatDob(dob),
         });
         router.replace("/onboarding/measurements");
-      } else {
+      } else if (role === "seller") {
         if (!companyName.trim()) {
           toast.show("Company name is required", "error");
           setLoading(false);
@@ -147,6 +151,18 @@ export default function Register() {
           bank_details,
         });
         router.replace("/(seller)");
+      } else {
+        // Courier (boda rider) — pending until admin approves.
+        if (!courierPhone.trim()) {
+          toast.show("Phone number is required for riders", "error");
+          setLoading(false);
+          return;
+        }
+        await registerCourier(email.trim(), password, fullName.trim(), {
+          phone: courierPhone.trim(),
+          mpesa_number: courierMpesa.trim() || undefined,
+        });
+        router.replace("/(courier)");
       }
     } catch (e: any) {
       toast.show(e?.message ?? "Registration failed", "error");
@@ -179,7 +195,7 @@ export default function Register() {
       >
         <Text style={[tp.h1, styles.title]}>Become{"\n"}a member.</Text>
         <Text style={[tp.bodyMuted, styles.sub]}>
-          Two ways to join. Shop curated pieces or list your own atelier.
+          Shop curated pieces, list your own atelier, or ride and earn with deliveries.
         </Text>
         <View style={{ height: spacing.xl }} />
 
@@ -198,6 +214,13 @@ export default function Register() {
             sub="List your designs"
             selected={role === "seller"}
             onPress={() => setRole("seller")}
+          />
+          <RoleCard
+            testID="register-role-courier"
+            label="Rider"
+            sub="Deliver & earn"
+            selected={role === "courier"}
+            onPress={() => setRole("courier")}
           />
         </View>
 
@@ -237,7 +260,7 @@ export default function Register() {
             derivedAge={derivedAge}
             openPicker={() => setShowPicker(true)}
           />
-        ) : (
+        ) : role === "seller" ? (
           <SellerFields
             companyName={companyName}
             setCompanyName={setCompanyName}
@@ -257,6 +280,13 @@ export default function Register() {
             setMpesaPaybill={setMpesaPaybill}
             mpesaTill={mpesaTill}
             setMpesaTill={setMpesaTill}
+          />
+        ) : (
+          <CourierFields
+            phone={courierPhone}
+            setPhone={setCourierPhone}
+            mpesa={courierMpesa}
+            setMpesa={setCourierMpesa}
           />
         )}
 
@@ -554,6 +584,47 @@ interface RoleCardProps {
   selected: boolean;
   onPress: () => void;
   testID: string;
+}
+
+function CourierFields({
+  phone,
+  setPhone,
+  mpesa,
+  setMpesa,
+}: {
+  phone: string;
+  setPhone: (s: string) => void;
+  mpesa: string;
+  setMpesa: (s: string) => void;
+}) {
+  return (
+    <>
+      <View style={styles.sectionDivider}>
+        <Text style={[tp.caption, { color: colors.primary }]}>Rider details</Text>
+        <Text style={[tp.bodyMuted, { marginTop: 4, fontSize: 12 }]}>
+          Deliver parcels for Oromona sellers and earn per drop — paid to your
+          M-Pesa at the end of each day. New rider accounts are reviewed by
+          our team before jobs appear.
+        </Text>
+      </View>
+      <AppInput
+        testID="register-courier-phone-input"
+        label="Phone number"
+        value={phone}
+        onChangeText={setPhone}
+        keyboardType="phone-pad"
+        placeholder="07XX XXX XXX"
+      />
+      <AppInput
+        testID="register-courier-mpesa-input"
+        label="M-Pesa number (for payouts)"
+        value={mpesa}
+        onChangeText={setMpesa}
+        keyboardType="phone-pad"
+        placeholder="Same as phone if blank"
+      />
+    </>
+  );
 }
 
 function RoleCard({ label, sub, selected, onPress, testID }: RoleCardProps) {

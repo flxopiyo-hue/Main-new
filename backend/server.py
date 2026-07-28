@@ -32,6 +32,7 @@ from routers import (
     auth,
     categories,
     collections,
+    delivery,
     items,
     loved_ones,
     orders,
@@ -74,6 +75,7 @@ api_router.include_router(tryon.router)
 api_router.include_router(orders.router)
 api_router.include_router(payments.router)
 api_router.include_router(seller.router)
+api_router.include_router(delivery.router)
 api_router.include_router(collections.router)
 api_router.include_router(admin.router)
 
@@ -213,6 +215,17 @@ async def bootstrap_categories() -> None:
         logger.info("categories: seeded system rows + indexes ready")
     except Exception as e:  # pragma: no cover
         logger.warning("categories bootstrap skipped: %s", e)
+
+
+@app.on_event("startup")
+async def bootstrap_delivery() -> None:
+    """Seed courier delivery zones + platform settings (idempotent)."""
+    try:
+        from core.delivery import ensure_delivery_seed
+
+        await ensure_delivery_seed()
+    except Exception as e:  # pragma: no cover
+        logger.warning("delivery bootstrap skipped: %s", e)
 
 
 @app.on_event("startup")

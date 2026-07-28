@@ -16,7 +16,7 @@ from core.config import DEFAULT_CURRENCY, PLATFORM_FEE_BPS
 # ---------------------------------------------------------------------------
 # Literal types
 # ---------------------------------------------------------------------------
-Role = Literal["buyer", "seller", "admin"]
+Role = Literal["buyer", "seller", "admin", "courier"]
 Gender = Literal["male", "female", "other", "prefer_not_to_say"]
 Audience = Literal["men", "women", "unisex", "kids"]
 KidAgeGroup = Literal["0-2", "3-5", "6-9", "10-13", "14-17"]
@@ -228,6 +228,10 @@ class RegisterIn(BaseModel):
     company_name: Optional[str] = Field(default=None, max_length=120)
     location: Optional[Location] = None
     bank_details: Optional[BankDetails] = None
+    # Courier-only fields (boda riders) — phone is required for couriers
+    # at endpoint level; M-Pesa number funds their end-of-day payouts.
+    phone: Optional[str] = Field(default=None, max_length=20)
+    mpesa_number: Optional[str] = Field(default=None, max_length=20)
 
 
 class LoginIn(BaseModel):
@@ -272,6 +276,10 @@ class UserOut(BaseModel):
     company_name: Optional[str] = None
     location: Optional[Location] = None
     bank_details: Optional[BankDetails] = None
+    # Courier-only (null for other roles)
+    phone: Optional[str] = None
+    mpesa_number: Optional[str] = None
+    courier_status: Optional[Literal["pending", "approved", "rejected"]] = None
     suspended: bool = False
     # Trust signal shown next to seller names once they cross the paid-
     # order threshold. Auto-granted; the platform never awards this
@@ -743,6 +751,9 @@ class CheckoutIn(BaseModel):
     variant_id: Optional[str] = None
     origin_url: str  # frontend base url for redirect targets
     address_id: Optional[str] = None  # required at endpoint level — graceful 400 if missing
+    # "door" = courier delivery to the address (zone fee applies);
+    # "pickup" = buyer collects at the Nairobi CBD point (KSh 0).
+    delivery_option: Literal["door", "pickup"] = "door"
 
 
 class CheckoutOut(BaseModel):
@@ -788,6 +799,12 @@ class OrderOut(BaseModel):
     escrow_status: Optional[str] = None  # held / released / settled / disputed / cancelled
     payout_id: Optional[str] = None
     notified_seller_at: Optional[datetime] = None  # rate-limit buyer nudges
+    # Courier delivery (Phase 1) — surfaced on list rows so sellers and
+    # buyers see the chosen method + whether a rider job already exists.
+    delivery_option: Optional[str] = None  # door | pickup
+    delivery_fee_cents: int = 0
+    courier_job_id: Optional[str] = None
+    courier_requested_at: Optional[datetime] = None
 
 
 class OrderSellerOut(BaseModel):
@@ -809,6 +826,14 @@ class OrderDetailOut(OrderOut):
     fit_feedback_comment: Optional[str] = None
     seller: Optional[OrderSellerOut] = None
     shipping_address: Optional[Dict[str, Any]] = None
+    # Courier delivery (Phase 1 courier system)
+    delivery_zone_label: Optional[str] = None
+    out_for_delivery_at: Optional[datetime] = None
+    # 4-digit code the buyer reads to the rider at handover. Only
+    # populated for the BUYER (never for seller/rider responses).
+    handover_code: Optional[str] = None
+    # Rider snapshot once a courier job exists.
+    courier: Optional[Dict[str, Any]] = None
 
 
 class FitFeedbackIn(BaseModel):
@@ -826,9 +851,12 @@ class FulfillmentIn(BaseModel):
       - `action: "deliver"` → shipped → delivered (marked by seller/
                               courier). Starts the 48h buyer-confirmation
                               window before funds auto-release.
+      - `action: "request_courier"` → paid | in_fulfillment: opens a
+                              delivery job on the rider board (door-
+                              delivery orders only).
     """
 
-    action: Literal["acknowledge", "ship", "deliver"]
+    action: Literal["acknowledge", "ship", "deliver", "request_courier"]
     tracking_number: Optional[str] = Field(default=None, max_length=120)
     tracking_url: Optional[str] = Field(default=None, max_length=400)
     estimated_delivery_days: Optional[int] = Field(default=None, ge=1, le=5)
@@ -946,6 +974,9 @@ def user_to_out(doc: Dict[str, Any]) -> UserOut:
         company_name=doc.get("company_name"),
         location=Location(**raw_loc) if raw_loc else None,
         bank_details=BankDetails(**raw_bank) if raw_bank else None,
+        phone=doc.get("phone"),
+        mpesa_number=doc.get("mpesa_number"),
+        courier_status=doc.get("courier_status"),
         suspended=bool(doc.get("suspended", False)),
         verified_seller=bool(doc.get("verified_seller", False)),
         verified_orders_count=int(doc.get("verified_orders_count") or 0),

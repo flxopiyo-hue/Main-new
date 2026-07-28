@@ -6,7 +6,7 @@ import { storage } from "@/src/utils/storage";
 const BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL as string;
 const TOKEN_KEY = "aurafit.token";
 
-export type Role = "buyer" | "seller" | "admin";
+export type Role = "buyer" | "seller" | "admin" | "courier";
 export type Gender = "male" | "female" | "other" | "prefer_not_to_say";
 export type ConnectStatusCode = "unstarted" | "pending" | "active";
 export type Audience = "men" | "women" | "unisex" | "kids";
@@ -73,6 +73,10 @@ export interface User {
   company_name?: string | null;
   location?: Location | null;
   bank_details?: BankDetails | null;
+  // Courier-specific (null for other roles)
+  phone?: string | null;
+  mpesa_number?: string | null;
+  courier_status?: "pending" | "approved" | "rejected" | null;
   suspended?: boolean;
   // Auto-awarded once the seller has 5+ paid orders. Buyer surfaces
   // (Discover card, Item Detail seller strip) show a small check-mark
@@ -474,6 +478,11 @@ export interface Order {
   escrow_status?: "held" | "released" | "settled" | "disputed" | "cancelled" | null;
   payout_id?: string | null;
   notified_seller_at?: string | null;
+  // Courier delivery (Phase 1 courier system)
+  delivery_option?: "door" | "pickup" | null;
+  delivery_fee_cents?: number;
+  courier_job_id?: string | null;
+  courier_requested_at?: string | null;
 }
 
 export type FitFeedback = "small" | "perfect" | "large";
@@ -494,6 +503,87 @@ export interface OrderDetail extends Order {
   item_garment_type?: string | null;
   fit_feedback_comment?: string | null;
   seller?: OrderSeller | null;
+  // Courier delivery extras (buyer/seller order screen)
+  delivery_zone_label?: string | null;
+  out_for_delivery_at?: string | null;
+  // 4-digit code the buyer reads to the rider at handover (buyer-only).
+  handover_code?: string | null;
+  courier?: {
+    status: "open" | "accepted" | "picked_up" | "out_for_delivery" | "delivered";
+    rider_name?: string | null;
+    rider_phone?: string | null;
+    accepted_at?: string | null;
+    picked_up_at?: string | null;
+    out_for_delivery_at?: string | null;
+    delivered_at?: string | null;
+  } | null;
+}
+
+export interface DeliveryQuote {
+  supported: boolean;
+  zone_key: string | null;
+  zone_label: string | null;
+  fee_cents: number;
+  fee_due_cents: number;
+  free_applied: boolean;
+  free_delivery_threshold_cents: number;
+}
+
+export interface CourierJob {
+  id: string;
+  order_id: string;
+  status: "open" | "accepted" | "picked_up" | "out_for_delivery" | "delivered";
+  item_name?: string | null;
+  pickup_area?: string | null;
+  dropoff_area?: string | null;
+  zone_label?: string | null;
+  rider_cut_cents?: number;
+  created_at?: string;
+  accepted_at?: string | null;
+  picked_up_at?: string | null;
+  out_for_delivery_at?: string | null;
+  delivered_at?: string | null;
+  // Full address — present only after the rider accepts the job.
+  dropoff_address?: {
+    recipient_name?: string | null;
+    phone?: string | null;
+    building_estate?: string | null;
+    house_number?: string | null;
+    street?: string | null;
+    area?: string | null;
+    city?: string | null;
+    delivery_notes?: string | null;
+  } | null;
+}
+
+export interface CourierEarningRow {
+  id: string;
+  job_id: string;
+  order_id: string;
+  item_name?: string | null;
+  amount_cents: number;
+  status: "pending" | "paid";
+  created_at: string;
+  paid_at?: string | null;
+}
+
+export interface DeliveryZone {
+  key: string;
+  label: string;
+  fee_cents: number;
+  sort: number;
+}
+
+export interface AdminCourierRow {
+  id: string;
+  full_name: string;
+  email: string;
+  phone?: string | null;
+  mpesa_number?: string | null;
+  courier_status: "pending" | "approved" | "rejected";
+  created_at: string;
+  pending_cents: number;
+  pending_count: number;
 }
 
 export interface ItemAnalytics {
@@ -729,6 +819,9 @@ export const api = {
     company_name?: string;
     location?: Location;
     bank_details?: BankDetails;
+    // Courier-only
+    phone?: string;
+    mpesa_number?: string;
   }) => request<AuthEnvelope>("/auth/register", { method: "POST", body, auth: false }),
   login: (body: {
     email: string;
@@ -871,7 +964,7 @@ export const api = {
   sellerUpdateFulfillment: (
     orderId: string,
     body: {
-      action: "acknowledge" | "ship" | "deliver";
+      action: "acknowledge" | "ship" | "deliver" | "request_courier";
       tracking_number?: string;
       tracking_url?: string;
       estimated_delivery_days?: number;
@@ -1011,8 +1104,72 @@ export const api = {
     variant_id?: string;
     origin_url: string;
     address_id: string;
+    delivery_option?: "door" | "pickup";
   }) =>
     request<{ session_id: string; url: string }>("/payments/checkout", { method: "POST", body }),
+  // Zone-based courier fee preview (Nairobi CBD anchored).
+  deliveryQuote: (body: { address_id: string; item_total_cents: number; currency?: string }) =>
+    request<DeliveryQuote>("/delivery/quote", { method: "POST", body }),
+
+  // ------------------------------------------------------------------
+  // Courier (boda rider) endpoints
+  courierMe: () =>
+    request<{ courier_status: "pending" | "approved" | "rejected"; phone?: string; mpesa_number?: string }>(
+      "/courier/me",
+    ),
+  courierJobs: () => request<{ open: CourierJob[]; mine: CourierJob[] }>("/courier/jobs"),
+  courierJobDetail: (jobId: string) =>
+    request<CourierJob>(`/courier/jobs/${encodeURIComponent(jobId)}`),
+  courierAccept: (jobId: string) =>
+    request<CourierJob>(`/courier/jobs/${encodeURIComponent(jobId)}/accept`, { method: "POST" }),
+  courierJobStatus: (jobId: string, action: "picked_up" | "out_for_delivery") =>
+    request<CourierJob>(`/courier/jobs/${encodeURIComponent(jobId)}/status`, {
+      method: "POST",
+      body: { action },
+    }),
+  courierDeliver: (jobId: string, code: string) =>
+    request<{ ok: boolean; earned_cents?: number }>(
+      `/courier/jobs/${encodeURIComponent(jobId)}/deliver`,
+      { method: "POST", body: { code } },
+    ),
+  courierEarnings: () =>
+    request<{
+      today_cents: number;
+      pending_cents: number;
+      paid_cents: number;
+      rows: CourierEarningRow[];
+    }>("/courier/earnings"),
+
+  // ------------------------------------------------------------------
+  // Admin: courier + delivery-fee management
+  adminCouriers: () => request<AdminCourierRow[]>("/admin/couriers"),
+  adminCourierApprove: (userId: string) =>
+    request<{ ok: boolean }>(`/admin/couriers/${encodeURIComponent(userId)}/approve`, { method: "POST" }),
+  adminCourierReject: (userId: string) =>
+    request<{ ok: boolean }>(`/admin/couriers/${encodeURIComponent(userId)}/reject`, { method: "POST" }),
+  adminCourierMarkPaid: (userId: string) =>
+    request<{ ok: boolean; total_cents: number; deliveries: number }>(
+      `/admin/couriers/${encodeURIComponent(userId)}/mark-paid`,
+      { method: "POST" },
+    ),
+  adminDeliveryZones: () => request<DeliveryZone[]>("/admin/delivery-zones"),
+  adminPatchDeliveryZone: (key: string, body: { fee_cents?: number; label?: string }) =>
+    request<DeliveryZone>(`/admin/delivery-zones/${encodeURIComponent(key)}`, {
+      method: "PATCH",
+      body,
+    }),
+  adminDeliverySettings: () =>
+    request<{ free_delivery_threshold_cents: number; courier_platform_bps: number }>(
+      "/admin/delivery-settings",
+    ),
+  adminPatchDeliverySettings: (body: {
+    free_delivery_threshold_cents?: number;
+    courier_platform_bps?: number;
+  }) =>
+    request<{ free_delivery_threshold_cents: number; courier_platform_bps: number }>(
+      "/admin/delivery-settings",
+      { method: "PATCH", body },
+    ),
   paymentStatus: (sessionId: string) =>
     request<{ session_id: string; status: string; item_name: string; amount_cents: number }>(
       `/payments/status/${sessionId}`,
