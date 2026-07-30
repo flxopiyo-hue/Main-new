@@ -510,6 +510,30 @@ async def webhook(
         # we short-circuit here.
         return {"status": "ok", "kind": "item_purchase"}
 
+    # Rider payout settlements (Phase 2). Batch references are always
+    # prefixed ``rider_`` — reconcile the transfer outcome and, on a
+    # failed/reversed transfer, hand the rider their pending balance back
+    # so admin can retry the payout.
+    if reference.startswith("rider_") and event.startswith("transfer."):
+        batches_col = db.users.database["courier_payout_batches"]
+        batch = await batches_col.find_one({"reference": reference}, {"_id": 0})
+        if batch:
+            ps_status = str(data.get("status") or event.split(".", 1)[1]).lower()
+            new_status = batch.get("status")
+            if event == "transfer.success":
+                new_status = "settled"
+            elif event in {"transfer.failed", "transfer.reversed"}:
+                new_status = "failed"
+                await db.users.database["courier_earnings"].update_many(
+                    {"batch_id": batch["id"]},
+                    {"$set": {"status": "pending", "paid_at": None}, "$unset": {"batch_id": ""}},
+                )
+            await batches_col.update_one(
+                {"id": batch["id"]},
+                {"$set": {"status": new_status, "paystack_status": ps_status}},
+            )
+        return {"status": "ok", "kind": "rider_payout"}
+
     customer = data.get("customer") or {}
     customer_code = customer.get("customer_code")
     email = customer.get("email")

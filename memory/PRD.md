@@ -100,3 +100,10 @@ Editorial Swiss / High-Contrast: Cormorant Garamond display + Manrope body text,
 
 ## Update — June 2026 (fit banner size suggestion)
 - Fit-preview banner now suggests the better size when the selected one runs tight/loose: "Size S runs 5cm tight — M fits your waist better →" (tappable, jumps to that size). Only suggests sizes with a strictly better overall fit score; prefers in-stock. Implemented in SizeSlider.tsx; verified in browser.
+
+## Update — June 2026 (Phase 2: Rider M-Pesa payouts)
+- Riders add their M-Pesa number under Earnings → creates a live Paystack transfer recipient (mobile_money/MPESA/KES).
+- Admin → Riders: "M-PESA KSh X" one-tap settlement of a rider's full pending balance via Paystack Transfer (earnings claimed before transfer, auto-rollback to pending on failure); "Mark paid manually" fallback retained; payout history with per-batch status (processing/sent/settled/failed) + VERIFY poll button; transfer webhooks (rider_ refs) reconcile automatically.
+- Rider Earnings screen: payout account card + payout history with status chips.
+- ⚠️ BLOCKER (user side): the Paystack account is a **starter business** — Paystack rejects third-party payouts until the account is upgraded to a Registered Business (Paystack dashboard → Compliance). All code paths verified live; failed transfers roll back safely and surface the exact Paystack reason.
+- Verified: live recipient creation, payout attempt + rollback + failure reason in UI, manual settlement, history rendering (iteration 36, main-agent E2E).

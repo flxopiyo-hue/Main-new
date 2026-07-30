@@ -10,15 +10,24 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
+  TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useToast } from "@/src/components/Toast";
-import { api, CourierEarningRow } from "@/src/lib/api";
+import { api, CourierEarningRow, CourierPayoutBatch } from "@/src/lib/api";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
 const fmtKsh = (cents: number) => `KSh ${Math.round(cents / 100).toLocaleString()}`;
+
+const BATCH_COLOR: Record<string, string> = {
+  settled: colors.success,
+  sent: "#B45309",
+  processing: "#B45309",
+  failed: colors.error,
+};
 
 export default function CourierEarnings() {
   const toast = useToast();
@@ -26,6 +35,12 @@ export default function CourierEarnings() {
   const [pending, setPending] = useState(0);
   const [paid, setPaid] = useState(0);
   const [rows, setRows] = useState<CourierEarningRow[]>([]);
+  const [batches, setBatches] = useState<CourierPayoutBatch[]>([]);
+  const [mpesa, setMpesa] = useState<string | null>(null);
+  const [hasRecipient, setHasRecipient] = useState(false);
+  const [editingPayout, setEditingPayout] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [savingPayout, setSavingPayout] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -36,6 +51,9 @@ export default function CourierEarnings() {
       setPending(r.pending_cents);
       setPaid(r.paid_cents);
       setRows(r.rows);
+      setBatches(r.batches ?? []);
+      setMpesa(r.mpesa_number ?? null);
+      setHasRecipient(!!r.has_recipient);
     } catch (e: any) {
       toast.show(e?.message ?? "Failed to load earnings", "error");
     } finally {
@@ -43,6 +61,22 @@ export default function CourierEarnings() {
       setRefreshing(false);
     }
   }, [toast]);
+
+  const savePayout = async () => {
+    if (!draft.trim()) return;
+    setSavingPayout(true);
+    try {
+      const res = await api.courierSetPayoutAccount(draft.trim());
+      setMpesa(res.mpesa_number);
+      setHasRecipient(res.has_recipient);
+      setEditingPayout(false);
+      toast.show("M-Pesa payout number saved", "success");
+    } catch (e: any) {
+      toast.show(e?.message ?? "Failed to save payout number", "error");
+    } finally {
+      setSavingPayout(false);
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -92,6 +126,100 @@ export default function CourierEarnings() {
         <Text style={[tp.bodyMuted, { marginTop: spacing.sm, fontSize: 12 }]}>
           Pending earnings are paid to your M-Pesa at the end of each day.
         </Text>
+
+        <Text style={styles.sectionTitle}>M-PESA PAYOUT ACCOUNT</Text>
+        <View style={styles.payoutCard} testID="courier-payout-card">
+          {editingPayout || !hasRecipient ? (
+            <>
+              <Text style={[tp.bodyMuted, { fontSize: 12 }]}>
+                {hasRecipient
+                  ? "Update the M-Pesa number we pay you on."
+                  : "Add your M-Pesa number so Oromona can send your earnings automatically."}
+              </Text>
+              <TextInput
+                testID="courier-mpesa-input"
+                value={draft}
+                onChangeText={setDraft}
+                placeholder="07XX XXX XXX"
+                placeholderTextColor={colors.mutedFg}
+                keyboardType="phone-pad"
+                style={styles.mpesaInput}
+              />
+              <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                <TouchableOpacity
+                  testID="courier-mpesa-save"
+                  onPress={savePayout}
+                  disabled={savingPayout}
+                  style={styles.saveBtn}
+                >
+                  {savingPayout ? (
+                    <ActivityIndicator size="small" color={colors.primaryFg} />
+                  ) : (
+                    <Text style={styles.saveBtnLabel}>SAVE NUMBER</Text>
+                  )}
+                </TouchableOpacity>
+                {hasRecipient ? (
+                  <TouchableOpacity
+                    onPress={() => setEditingPayout(false)}
+                    style={styles.ghostBtn}
+                  >
+                    <Text style={styles.ghostBtnLabel}>CANCEL</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            </>
+          ) : (
+            <View style={styles.payoutRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.payoutNumber}>{mpesa}</Text>
+                <Text style={[tp.bodyMuted, { fontSize: 11, marginTop: 2 }]}>
+                  Automatic M-Pesa payouts active
+                </Text>
+              </View>
+              <TouchableOpacity
+                testID="courier-mpesa-edit"
+                onPress={() => {
+                  setDraft(mpesa ?? "");
+                  setEditingPayout(true);
+                }}
+                style={styles.ghostBtn}
+              >
+                <Text style={styles.ghostBtnLabel}>EDIT</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        {batches.length > 0 ? (
+          <>
+            <Text style={styles.sectionTitle}>PAYOUT HISTORY</Text>
+            {batches.map((b) => (
+              <View key={b.id} style={styles.row} testID={`courier-batch-${b.id}`}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowItem}>
+                    {fmtKsh(b.total_cents)} · {b.deliveries}{" "}
+                    {b.deliveries === 1 ? "delivery" : "deliveries"}
+                  </Text>
+                  <Text style={styles.rowDate}>
+                    {new Date(b.created_at).toLocaleDateString(undefined, {
+                      day: "numeric",
+                      month: "short",
+                    })}{" "}
+                    · {b.method === "mpesa" ? "M-Pesa" : "paid manually"}
+                  </Text>
+                </View>
+                <Text
+                  style={[
+                    styles.rowStatus,
+                    { color: BATCH_COLOR[b.status ?? "settled"] ?? colors.mutedFg },
+                  ]}
+                >
+                  {(b.status ?? "settled").toUpperCase()}
+                </Text>
+              </View>
+            ))}
+          </>
+        ) : null}
 
         <Text style={styles.sectionTitle}>DELIVERY LEDGER</Text>
         {rows.length === 0 ? (
@@ -181,5 +309,55 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     color: colors.mutedFg,
     marginTop: 2,
+  },
+  payoutCard: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+  },
+  payoutRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  payoutNumber: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 15,
+    color: colors.primary,
+    letterSpacing: 0.5,
+  },
+  mpesaInput: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.primary,
+    paddingVertical: 8,
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 15,
+    color: colors.primary,
+  },
+  saveBtn: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  saveBtnLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 10,
+    letterSpacing: 1.2,
+    color: colors.primaryFg,
+  },
+  ghostBtn: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  ghostBtnLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 10,
+    letterSpacing: 1.2,
+    color: colors.primary,
   },
 });

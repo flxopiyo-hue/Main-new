@@ -108,6 +108,81 @@ async def courier_me(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[s
     }
 
 
+# ---------------------------------------------------------------------------
+# Courier: M-Pesa payout account (Phase 2 — automated settlements)
+# ---------------------------------------------------------------------------
+
+
+def _normalize_ke_msisdn(phone: str) -> str:
+    """+2547XXXXXXXX / 2547XXXXXXXX / 07XX XXX XXX → 07XXXXXXXX."""
+    digits = "".join(ch for ch in phone if ch.isdigit())
+    if digits.startswith("254") and len(digits) == 12:
+        digits = "0" + digits[3:]
+    return digits
+
+
+class PayoutAccountIn(BaseModel):
+    mpesa_number: str = Field(min_length=9, max_length=16)
+
+
+@router.post("/courier/payout-account")
+async def courier_set_payout_account(
+    body: PayoutAccountIn, user: Dict[str, Any] = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """Register the rider's M-Pesa number as a Paystack Transfer
+    Recipient (type=mobile_money, bank_code=MPESA, KES) so admin payout
+    batches can be pushed to their phone automatically."""
+    if user.get("role") != "courier":
+        raise HTTPException(status_code=403, detail="Requires courier role")
+    from core import paystack
+
+    msisdn = _normalize_ke_msisdn(body.mpesa_number)
+    if len(msisdn) != 10 or not msisdn.startswith(("07", "01")):
+        raise HTTPException(
+            status_code=400,
+            detail="Enter a valid Kenyan M-Pesa number, e.g. 07XX XXX XXX",
+        )
+    try:
+        recipient = await paystack.create_transfer_recipient(
+            type_="mobile_money",
+            name=user.get("full_name") or user.get("email") or "Oromona rider",
+            account_number=msisdn,
+            bank_code="MPESA",
+            currency="KES",
+        )
+    except paystack.PaystackError as e:
+        raise HTTPException(status_code=400, detail=f"M-Pesa setup failed: {e}") from e
+    recipient_code = recipient.get("recipient_code")
+    await db.users.update_one(
+        {"id": user["id"]},
+        {
+            "$set": {
+                "mpesa_number": msisdn,
+                "courier_recipient_code": recipient_code,
+                "courier_payout_updated_at": datetime.now(timezone.utc),
+            }
+        },
+    )
+    return {
+        "ok": bool(recipient_code),
+        "mpesa_number": msisdn,
+        "has_recipient": bool(recipient_code),
+    }
+
+
+@router.get("/courier/payout-account")
+async def courier_get_payout_account(
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    if user.get("role") != "courier":
+        raise HTTPException(status_code=403, detail="Requires courier role")
+    fresh = await db.users.find_one({"id": user["id"]}, {"_id": 0}) or {}
+    return {
+        "mpesa_number": fresh.get("mpesa_number"),
+        "has_recipient": bool(fresh.get("courier_recipient_code")),
+    }
+
+
 @router.get("/courier/jobs")
 async def courier_jobs(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
     await _require_courier(user)
@@ -294,11 +369,22 @@ async def courier_earnings(user: Dict[str, Any] = Depends(get_current_user)) -> 
     today = sum(r["amount_cents"] for r in rows if _aware(r["created_at"]) >= day_start)
     pending = sum(r["amount_cents"] for r in rows if r["status"] == "pending")
     paid = sum(r["amount_cents"] for r in rows if r["status"] == "paid")
+    fresh = await db.users.find_one(
+        {"id": user["id"]}, {"_id": 0, "mpesa_number": 1, "courier_recipient_code": 1}
+    ) or {}
+    batches = (
+        await db.courier_payout_batches.find({"courier_id": user["id"]}, {"_id": 0})
+        .sort("created_at", -1)
+        .to_list(50)
+    )
     return {
         "today_cents": today,
         "pending_cents": pending,
         "paid_cents": paid,
         "rows": rows,
+        "batches": batches,
+        "mpesa_number": fresh.get("mpesa_number"),
+        "has_recipient": bool(fresh.get("courier_recipient_code")),
     }
 
 
@@ -312,7 +398,7 @@ async def admin_couriers(admin: Dict[str, Any] = Depends(require_admin)) -> List
     riders = (
         await db.users.find(
             {"role": "courier"},
-            {"_id": 0, "id": 1, "full_name": 1, "email": 1, "phone": 1, "mpesa_number": 1, "courier_status": 1, "created_at": 1},
+            {"_id": 0, "id": 1, "full_name": 1, "email": 1, "phone": 1, "mpesa_number": 1, "courier_status": 1, "created_at": 1, "courier_recipient_code": 1},
         )
         .sort("created_at", -1)
         .to_list(200)
@@ -327,6 +413,7 @@ async def admin_couriers(admin: Dict[str, Any] = Depends(require_admin)) -> List
         ).to_list(1)
         r["pending_cents"] = int(pend[0]["total"]) if pend else 0
         r["pending_count"] = int(pend[0]["n"]) if pend else 0
+        r["has_recipient"] = bool(r.pop("courier_recipient_code", None))
         out.append(r)
     return out
 
@@ -383,9 +470,170 @@ async def mark_courier_paid(user_id: str, admin: Dict[str, Any] = Depends(requir
             "deliveries": n,
             "created_at": now,
             "created_by": admin["id"],
+            "method": "manual",
+            "status": "settled",
+            "reference": None,
+            "transfer_code": None,
+            "paystack_status": None,
+            "failure_reason": None,
+            "mpesa_number": None,
         }
     )
     return {"ok": True, "batch_id": batch_id, "total_cents": total, "deliveries": n}
+
+
+@router.post("/admin/couriers/{user_id}/payout")
+async def payout_courier_mpesa(
+    user_id: str, admin: Dict[str, Any] = Depends(require_admin)
+) -> Dict[str, Any]:
+    """Phase 2 automated settlement: push the rider's full pending balance
+    to their M-Pesa via a Paystack Transfer. Earnings are claimed BEFORE the
+    transfer call (idempotency) and rolled back if Paystack rejects it, so
+    the pending balance stays visible for a retry."""
+    from core import paystack
+
+    rider = await db.users.find_one({"id": user_id, "role": "courier"}, {"_id": 0})
+    if not rider:
+        raise HTTPException(status_code=404, detail="Courier not found")
+    recipient = rider.get("courier_recipient_code")
+    if not recipient:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Rider hasn't added an M-Pesa payout number yet — ask them to "
+                "set it under Earnings, or use Mark paid manually."
+            ),
+        )
+    pend = await db.courier_earnings.aggregate(
+        [
+            {"$match": {"courier_id": user_id, "status": "pending"}},
+            {"$group": {"_id": None, "total": {"$sum": "$amount_cents"}, "n": {"$sum": 1}}},
+        ]
+    ).to_list(1)
+    total = int(pend[0]["total"]) if pend else 0
+    n = int(pend[0]["n"]) if pend else 0
+    if n == 0:
+        raise HTTPException(status_code=400, detail="No pending earnings for this rider")
+
+    now = datetime.now(timezone.utc)
+    batch_id = str(uuid.uuid4())
+    reference = f"rider_{batch_id[:8]}_{uuid.uuid4().hex[:8]}"
+    await db.courier_earnings.update_many(
+        {"courier_id": user_id, "status": "pending"},
+        {"$set": {"status": "paid", "paid_at": now, "batch_id": batch_id}},
+    )
+    await db.courier_payout_batches.insert_one(
+        {
+            "id": batch_id,
+            "courier_id": user_id,
+            "courier_name": rider.get("full_name"),
+            "total_cents": total,
+            "deliveries": n,
+            "created_at": now,
+            "created_by": admin["id"],
+            "method": "mpesa",
+            "status": "processing",
+            "reference": reference,
+            "transfer_code": None,
+            "paystack_status": None,
+            "failure_reason": None,
+            "mpesa_number": rider.get("mpesa_number"),
+        }
+    )
+    try:
+        transfer = await paystack.initiate_transfer(
+            amount_kobo=total,
+            recipient_code=recipient,
+            reference=reference,
+            reason=f"Oromona rider payout · {n} deliveries",
+        )
+    except paystack.PaystackError as e:
+        # Roll back so the rider's pending balance reappears for a retry.
+        await db.courier_earnings.update_many(
+            {"batch_id": batch_id},
+            {"$set": {"status": "pending", "paid_at": None}, "$unset": {"batch_id": ""}},
+        )
+        await db.courier_payout_batches.update_one(
+            {"id": batch_id},
+            {"$set": {"status": "failed", "failure_reason": str(e)}},
+        )
+        # 400 (not 502) — the preview proxy replaces 5xx bodies with its own
+        # error page, which would hide the actionable Paystack message.
+        raise HTTPException(status_code=400, detail=f"M-Pesa transfer failed: {e}") from e
+
+    ps_status = str(transfer.get("status") or "pending").lower()
+    await db.courier_payout_batches.update_one(
+        {"id": batch_id},
+        {
+            "$set": {
+                "status": "settled" if ps_status == "success" else "sent",
+                "transfer_code": transfer.get("transfer_code"),
+                "paystack_status": ps_status,
+            }
+        },
+    )
+    return {
+        "ok": True,
+        "batch_id": batch_id,
+        "total_cents": total,
+        "deliveries": n,
+        "paystack_status": ps_status,
+    }
+
+
+@router.get("/admin/courier-payouts")
+async def admin_courier_payouts(
+    admin: Dict[str, Any] = Depends(require_admin),
+) -> List[Dict[str, Any]]:
+    """Recent payout batches across all riders, newest first."""
+    batches = (
+        await db.courier_payout_batches.find({}, {"_id": 0})
+        .sort("created_at", -1)
+        .to_list(100)
+    )
+    names: Dict[str, str] = {}
+    for b in batches:
+        if not b.get("courier_name"):
+            cid = b.get("courier_id") or ""
+            if cid not in names:
+                u = await db.users.find_one({"id": cid}, {"_id": 0, "full_name": 1})
+                names[cid] = (u or {}).get("full_name") or "Rider"
+            b["courier_name"] = names[cid]
+    return batches
+
+
+@router.post("/admin/courier-payouts/{batch_id}/verify")
+async def verify_courier_payout(
+    batch_id: str, admin: Dict[str, Any] = Depends(require_admin)
+) -> Dict[str, Any]:
+    """Poll Paystack for the transfer outcome of a sent batch. On a
+    failed/reversed transfer the rider's earnings go back to pending."""
+    from core import paystack
+
+    batch = await db.courier_payout_batches.find_one({"id": batch_id}, {"_id": 0})
+    if not batch:
+        raise HTTPException(status_code=404, detail="Payout batch not found")
+    if not batch.get("reference"):
+        raise HTTPException(status_code=400, detail="Manual batch — nothing to verify on Paystack")
+    try:
+        transfer = await paystack.verify_transfer(batch["reference"])
+    except paystack.PaystackError as e:
+        raise HTTPException(status_code=400, detail=f"Verification failed: {e}") from e
+    ps_status = str(transfer.get("status") or "").lower()
+    new_status = batch["status"]
+    if ps_status == "success":
+        new_status = "settled"
+    elif ps_status in {"failed", "reversed"}:
+        new_status = "failed"
+        await db.courier_earnings.update_many(
+            {"batch_id": batch_id},
+            {"$set": {"status": "pending", "paid_at": None}, "$unset": {"batch_id": ""}},
+        )
+    await db.courier_payout_batches.update_one(
+        {"id": batch_id},
+        {"$set": {"status": new_status, "paystack_status": ps_status}},
+    )
+    return {"ok": True, "paystack_status": ps_status, "status": new_status}
 
 
 @router.get("/admin/delivery-zones")

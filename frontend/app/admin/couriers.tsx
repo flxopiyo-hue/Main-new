@@ -16,7 +16,7 @@ import {
 
 import { AdminShell } from "@/src/components/AdminShell";
 import { useToast } from "@/src/components/Toast";
-import { AdminCourierRow, api } from "@/src/lib/api";
+import { AdminCourierRow, api, CourierPayoutBatch } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
 import { confirmDialog } from "@/src/lib/confirm";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
@@ -33,14 +33,19 @@ export default function AdminCouriers() {
   const { user, loading: authLoading } = useAuth();
   const toast = useToast();
   const [riders, setRiders] = useState<AdminCourierRow[]>([]);
+  const [batches, setBatches] = useState<CourierPayoutBatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const list = await api.adminCouriers();
+      const [list, history] = await Promise.all([
+        api.adminCouriers(),
+        api.adminCourierPayouts(),
+      ]);
       setRiders(list);
+      setBatches(history);
     } catch (e: any) {
       toast.show(e?.message ?? "Failed to load riders", "error");
     } finally {
@@ -77,8 +82,8 @@ export default function AdminCouriers() {
 
   const markPaid = (rider: AdminCourierRow) => {
     confirmDialog({
-      title: "Record payout?",
-      message: `Confirm you've sent ${fmtKsh(rider.pending_cents)} to ${rider.full_name}'s M-Pesa (${rider.mpesa_number || rider.phone || "no number"}). This marks ${rider.pending_count} deliveries as paid.`,
+      title: "Record manual payout?",
+      message: `Confirm you've sent ${fmtKsh(rider.pending_cents)} to ${rider.full_name}'s M-Pesa (${rider.mpesa_number || rider.phone || "no number"}) yourself. This marks ${rider.pending_count} deliveries as paid.`,
       confirmLabel: "Mark paid",
       onConfirm: async () => {
         setBusyId(rider.id);
@@ -93,6 +98,45 @@ export default function AdminCouriers() {
         }
       },
     });
+  };
+
+  const payMpesa = (rider: AdminCourierRow) => {
+    confirmDialog({
+      title: "Send M-Pesa payout?",
+      message: `Send ${fmtKsh(rider.pending_cents)} to ${rider.full_name}'s M-Pesa (${rider.mpesa_number ?? "—"}) now via Paystack? Covers ${rider.pending_count} ${rider.pending_count === 1 ? "delivery" : "deliveries"}.`,
+      confirmLabel: "Send payout",
+      onConfirm: async () => {
+        setBusyId(rider.id);
+        try {
+          const res = await api.adminCourierPayout(rider.id);
+          toast.show(
+            `Transfer ${res.paystack_status}: ${fmtKsh(res.total_cents)} → ${rider.full_name}`,
+            "success",
+          );
+          await load();
+        } catch (e: any) {
+          toast.show(e?.message ?? "Transfer failed", "error");
+        } finally {
+          setBusyId(null);
+        }
+      },
+    });
+  };
+
+  const verifyBatch = async (batchId: string) => {
+    setBusyId(batchId);
+    try {
+      const res = await api.adminCourierPayoutVerify(batchId);
+      toast.show(
+        `Paystack status: ${res.paystack_status || "unknown"}`,
+        res.status === "failed" ? "error" : "success",
+      );
+      await load();
+    } catch (e: any) {
+      toast.show(e?.message ?? "Verify failed", "error");
+    } finally {
+      setBusyId(null);
+    }
   };
 
   const pendingApps = riders.filter((r) => r.courier_status === "pending").length;
@@ -137,6 +181,11 @@ export default function AdminCouriers() {
                       <Text style={styles.meta}>
                         {r.phone ?? "no phone"} · M-Pesa {r.mpesa_number || r.phone || "—"}
                       </Text>
+                      {!r.has_recipient ? (
+                        <Text style={[styles.meta, { color: "#B45309" }]}>
+                          No M-Pesa payout account yet
+                        </Text>
+                      ) : null}
                     </View>
                     <View style={[styles.badge, { backgroundColor: sty.bg }]}>
                       <Text style={[styles.badgeLabel, { color: sty.fg }]}>
@@ -181,16 +230,84 @@ export default function AdminCouriers() {
                       </TouchableOpacity>
                     ) : null}
                     {r.pending_cents > 0 ? (
+                      <>
+                        {r.has_recipient ? (
+                          <TouchableOpacity
+                            testID={`admin-courier-pay-${r.id}`}
+                            onPress={() => payMpesa(r)}
+                            disabled={busy}
+                            style={[styles.btn, styles.btnPay]}
+                          >
+                            <Feather name="smartphone" size={12} color={colors.primaryFg} />
+                            <Text style={styles.btnPrimaryLabel}>
+                              M-PESA {fmtKsh(r.pending_cents)}
+                            </Text>
+                          </TouchableOpacity>
+                        ) : null}
+                        <TouchableOpacity
+                          testID={`admin-courier-markpaid-${r.id}`}
+                          onPress={() => markPaid(r)}
+                          disabled={busy}
+                          style={[styles.btn, styles.btnGhost]}
+                        >
+                          <Text style={styles.btnGhostLabel}>MARK PAID MANUALLY</Text>
+                        </TouchableOpacity>
+                      </>
+                    ) : null}
+                  </View>
+                </View>
+              );
+            })
+          )}
+
+          <Text style={styles.sectionTitle}>PAYOUT HISTORY</Text>
+          {batches.length === 0 ? (
+            <Text style={tp.bodyMuted}>No payouts recorded yet.</Text>
+          ) : (
+            batches.map((b) => {
+              const busy = busyId === b.id;
+              const color =
+                b.status === "settled"
+                  ? colors.success
+                  : b.status === "failed"
+                    ? colors.error
+                    : "#B45309";
+              return (
+                <View key={b.id} style={styles.batchRow} testID={`admin-batch-${b.id}`}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.batchName}>
+                      {b.courier_name ?? "Rider"} · {fmtKsh(b.total_cents)}
+                    </Text>
+                    <Text style={styles.meta}>
+                      {new Date(b.created_at).toLocaleDateString()} · {b.deliveries}{" "}
+                      {b.deliveries === 1 ? "delivery" : "deliveries"} ·{" "}
+                      {b.method === "mpesa"
+                        ? `M-Pesa${b.mpesa_number ? ` ${b.mpesa_number}` : ""}`
+                        : "manual"}
+                    </Text>
+                    {b.failure_reason ? (
+                      <Text style={[styles.meta, { color: colors.error }]} numberOfLines={2}>
+                        {b.failure_reason}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <View style={{ alignItems: "flex-end", gap: 6 }}>
+                    <Text style={[styles.batchStatus, { color }]}>
+                      {(b.status ?? "settled").toUpperCase()}
+                    </Text>
+                    {b.method === "mpesa" &&
+                    (b.status === "sent" || b.status === "processing") ? (
                       <TouchableOpacity
-                        testID={`admin-courier-pay-${r.id}`}
-                        onPress={() => markPaid(r)}
+                        testID={`admin-batch-verify-${b.id}`}
+                        onPress={() => verifyBatch(b.id)}
                         disabled={busy}
-                        style={[styles.btn, styles.btnPay]}
+                        style={[styles.btn, styles.btnGhost, { paddingVertical: 6 }]}
                       >
-                        <Feather name="dollar-sign" size={12} color={colors.primaryFg} />
-                        <Text style={styles.btnPrimaryLabel}>
-                          PAY {fmtKsh(r.pending_cents)}
-                        </Text>
+                        {busy ? (
+                          <ActivityIndicator size="small" color={colors.primary} />
+                        ) : (
+                          <Text style={styles.btnGhostLabel}>VERIFY</Text>
+                        )}
                       </TouchableOpacity>
                     ) : null}
                   </View>
@@ -228,6 +345,26 @@ const styles = StyleSheet.create({
   badge: { paddingHorizontal: 8, paddingVertical: 4, alignSelf: "flex-start" },
   badgeLabel: { fontFamily: fonts.bodySemi, fontSize: 9, letterSpacing: 1.2 },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.md },
+  sectionTitle: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 11,
+    letterSpacing: 1.5,
+    color: colors.mutedFg,
+    marginTop: spacing.xl,
+    marginBottom: spacing.sm,
+  },
+  batchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  batchName: { fontFamily: fonts.bodySemi, fontSize: 13, color: colors.primary },
+  batchStatus: { fontFamily: fonts.bodySemi, fontSize: 9, letterSpacing: 1.2 },
   btn: {
     flexDirection: "row",
     alignItems: "center",

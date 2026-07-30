@@ -289,3 +289,18 @@ Frontend `.env` currently points at preview (`https://fit-finder-app-5.preview.e
 ### Verified by main agent (browser, Selvedge Denim as buyer@aurafit.com)
 - Size S → "Size S runs 5cm tight — M fits your waist better →"; tap jumps to M.
 - Size M (recommended, score 85) → no suggestion shown.
+
+## Iteration 36 — Phase 2: Rider M-Pesa payouts (Paystack Transfers)
+### Backend (routers/delivery.py, routers/subs.py webhook)
+1. POST/GET /api/courier/payout-account — rider registers M-Pesa number; normalizes KE MSISDN (+254→0), validates 07/01 prefix; creates LIVE Paystack transfer recipient (mobile_money/MPESA/KES) → stored as users.courier_recipient_code. VERIFIED live: recipient RCP_rd9h8gvq261j4ej created for test rider.
+2. GET /api/courier/earnings now returns batches + mpesa_number + has_recipient.
+3. POST /api/admin/couriers/{id}/payout — claims pending earnings FIRST (batch status processing), then paystack.initiate_transfer; on PaystackError rolls earnings back to pending + batch failed (VERIFIED live: rollback worked). Errors use HTTP 400 NOT 5xx (Cloudflare proxy replaces 5xx bodies, hiding the Paystack message).
+4. GET /api/admin/courier-payouts (history, rider names) + POST /api/admin/courier-payouts/{batch}/verify (poll transfer; failed/reversed → revert earnings).
+5. subs.py webhook: transfer.success/failed/reversed events for references prefixed rider_ reconcile batches + revert earnings on failure.
+6. mark-paid batches now carry method=manual/status=settled; display treats any non-"mpesa" method as manual (legacy batches had method None).
+### Frontend
+- (courier)/earnings.tsx: M-PESA PAYOUT ACCOUNT card (add/edit number, testIDs courier-mpesa-input/save/edit, courier-payout-card) + PAYOUT HISTORY with status chips.
+- admin/couriers.tsx: green "M-PESA KSh X" button (admin-courier-pay-{id}) when rider has recipient + pending; ghost "MARK PAID MANUALLY" (admin-courier-markpaid-{id}); "No M-Pesa payout account yet" warning; PAYOUT HISTORY section with VERIFY button (admin-batch-verify-{id}) for sent/processing mpesa batches.
+### Live findings (IMPORTANT)
+- ⚠️ **Paystack account is a STARTER BUSINESS** — transfers rejected with "You cannot initiate third party payouts as a starter business". NO live transfer can succeed until the user upgrades to a Registered Business on Paystack. All money-movement paths are therefore safely blocked account-side; error surfaces verbatim in admin toast + batch failure_reason.
+- Full UI E2E verified by main agent: pay attempt → confirm dialog (window.confirm; playwright needs page.on dialog accept) → failed batch with reason in history → pending balance retained → manual mark-paid → settled batch, buttons cleared. Synthetic KSh 10 test earning/batches cleaned after.

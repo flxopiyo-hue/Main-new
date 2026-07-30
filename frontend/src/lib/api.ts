@@ -584,6 +584,22 @@ export interface AdminCourierRow {
   created_at: string;
   pending_cents: number;
   pending_count: number;
+  has_recipient?: boolean;
+}
+
+export interface CourierPayoutBatch {
+  id: string;
+  courier_id: string;
+  courier_name?: string | null;
+  total_cents: number;
+  deliveries: number;
+  created_at: string;
+  method?: "mpesa" | "manual" | null;
+  status?: "processing" | "sent" | "settled" | "failed" | null;
+  reference?: string | null;
+  paystack_status?: string | null;
+  failure_reason?: string | null;
+  mpesa_number?: string | null;
 }
 
 export interface ItemAnalytics {
@@ -1138,7 +1154,17 @@ export const api = {
       pending_cents: number;
       paid_cents: number;
       rows: CourierEarningRow[];
+      batches: CourierPayoutBatch[];
+      mpesa_number?: string | null;
+      has_recipient?: boolean;
     }>("/courier/earnings"),
+  courierPayoutAccount: () =>
+    request<{ mpesa_number?: string | null; has_recipient: boolean }>("/courier/payout-account"),
+  courierSetPayoutAccount: (mpesaNumber: string) =>
+    request<{ ok: boolean; mpesa_number: string; has_recipient: boolean }>(
+      "/courier/payout-account",
+      { method: "POST", body: { mpesa_number: mpesaNumber } },
+    ),
 
   // ------------------------------------------------------------------
   // Admin: courier + delivery-fee management
@@ -1150,6 +1176,20 @@ export const api = {
   adminCourierMarkPaid: (userId: string) =>
     request<{ ok: boolean; total_cents: number; deliveries: number }>(
       `/admin/couriers/${encodeURIComponent(userId)}/mark-paid`,
+      { method: "POST" },
+    ),
+  adminCourierPayout: (userId: string) =>
+    request<{
+      ok: boolean;
+      batch_id: string;
+      total_cents: number;
+      deliveries: number;
+      paystack_status: string;
+    }>(`/admin/couriers/${encodeURIComponent(userId)}/payout`, { method: "POST" }),
+  adminCourierPayouts: () => request<CourierPayoutBatch[]>("/admin/courier-payouts"),
+  adminCourierPayoutVerify: (batchId: string) =>
+    request<{ ok: boolean; paystack_status: string; status: string }>(
+      `/admin/courier-payouts/${encodeURIComponent(batchId)}/verify`,
       { method: "POST" },
     ),
   adminDeliveryZones: () => request<DeliveryZone[]>("/admin/delivery-zones"),
