@@ -97,3 +97,6 @@ Editorial Swiss / High-Contrast: Cormorant Garamond display + Manrope body text,
 - **Compare with my body**: highlighting a measurement in the buyer item measurement map shows "Your waist: 81cm — this size runs 5cm smaller/roomier/exact match" (from fit-score body/diff; cm/in aware; hidden when no body value e.g. rise).
 - Demo buyer seeded with full measurements (170/92/81/98/44/78).
 - Tested: iteration 34 — testing agent 7/7 frontend PASS incl. buyer+seller registration regressions (report /app/test_reports/iteration_32.json).
+
+## Update — June 2026 (fit banner size suggestion)
+- Fit-preview banner now suggests the better size when the selected one runs tight/loose: "Size S runs 5cm tight — M fits your waist better →" (tappable, jumps to that size). Only suggests sizes with a strictly better overall fit score; prefers in-stock. Implemented in SizeSlider.tsx; verified in browser.

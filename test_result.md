@@ -281,3 +281,11 @@ Frontend `.env` currently points at preview (`https://fit-finder-app-5.preview.e
 - Pill shows KES; sheet scrolls down to EGP and back up to KES; compare line renders on Selvedge Denim size S waist.
 ### Note
 - Registration code paths changed (locale removal) — regression-test register buyer + seller.
+
+## Iteration 35 — Fit banner better-size suggestion
+### Change (frontend only, src/components/SizeSlider.tsx)
+- Added betterSizeSuggestion(): when the selected size's worst dimension diff is ≥2cm off, finds the size whose SAME dimension diff is closest to 0 — but ONLY among sizes with a strictly better overall fit score (prevents S↔M ping-pong on the recommended size). Prefers in-stock; falls back with "(out of stock)" note.
+- Rendered as a tappable underlined line inside the fit-preview banner (testID size-slider-suggestion) — tapping selects that size via onChange.
+### Verified by main agent (browser, Selvedge Denim as buyer@aurafit.com)
+- Size S → "Size S runs 5cm tight — M fits your waist better →"; tap jumps to M.
+- Size M (recommended, score 85) → no suggestion shown.

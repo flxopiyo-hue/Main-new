@@ -77,6 +77,56 @@ function dominantNarrative(fit: FitScoreSize | undefined): string {
   return `${tone} (${magnitude})`;
 }
 
+// When the selected size runs small (or loose) on its worst dimension,
+// find another size that fits that dimension meaningfully better so we can
+// suggest it: "Size S runs 5cm tight — M fits your waist better".
+function betterSizeSuggestion(
+  active: FitScoreSize | undefined,
+  activeLabel: string | undefined,
+  enriched: { size: SizeOption; fit?: FitScoreSize; outOfStock: boolean }[],
+): { text: string; label: string } | null {
+  if (!active?.dimensions?.length || !activeLabel) return null;
+  const valid = active.dimensions.filter((d) => d.diff !== null);
+  if (valid.length === 0) return null;
+  const worst = [...valid].sort(
+    (a, b) => Math.abs(b.diff ?? 0) - Math.abs(a.diff ?? 0),
+  )[0];
+  const diff = worst.diff ?? 0;
+  if (Math.abs(diff) < 2) return null; // already fits well — nothing to suggest
+  const candidates = enriched
+    .filter(
+      (e) =>
+        e.fit &&
+        e.size.label !== activeLabel &&
+        // Never point the buyer at a size that fits WORSE overall — this
+        // also prevents S↔M suggestion ping-pong on the recommended size.
+        (e.fit.score ?? 0) > (active.score ?? 0),
+    )
+    .map((e) => {
+      const d = e.fit!.dimensions?.find((x) => x.key === worst.key);
+      return d && d.diff !== null
+        ? { label: e.size.label, diff: d.diff, out: e.outOfStock }
+        : null;
+    })
+    .filter((x): x is { label: string; diff: number; out: boolean } => x !== null);
+  if (candidates.length === 0) return null;
+  const closest = (pool: { label: string; diff: number; out: boolean }[]) =>
+    pool.length
+      ? pool.reduce((best, c) => (Math.abs(c.diff) < Math.abs(best.diff) ? c : best))
+      : null;
+  // Prefer an in-stock size; fall back to out-of-stock with a note.
+  const best = closest(candidates.filter((c) => !c.out)) ?? closest(candidates);
+  if (!best || Math.abs(best.diff) >= Math.abs(diff) - 0.5) return null;
+  const mag = Number.isInteger(Math.abs(diff))
+    ? `${Math.abs(diff)}`
+    : Math.abs(diff).toFixed(1);
+  const tone = diff < 0 ? "tight" : "loose";
+  return {
+    text: `Size ${activeLabel} runs ${mag}cm ${tone} — ${best.label} fits your ${worst.label} better${best.out ? " (out of stock)" : ""}`,
+    label: best.label,
+  };
+}
+
 export function SizeSlider({
   sizes,
   selected,
@@ -114,6 +164,11 @@ export function SizeSlider({
   );
   const activeEntry = enriched[selectedIdx];
   const thumbColor = colorForScore(activeEntry?.score);
+  const suggestion = betterSizeSuggestion(
+    activeEntry?.fit,
+    activeEntry?.size.label,
+    enriched,
+  );
 
   // PanResponder lets the user drag across the track to scrub sizes.
   // We snap to the closest tick centre on every move event.
@@ -235,6 +290,20 @@ export function SizeSlider({
           <Text style={styles.narrativeText}>
             {activeEntry ? activeEntry.narrative : "Pick a size"}
           </Text>
+          {suggestion ? (
+            <Pressable
+              testID="size-slider-suggestion"
+              onPress={() => {
+                const target = sizes.find((s) => s.label === suggestion.label);
+                if (target) onChange(target);
+              }}
+              accessibilityRole="button"
+            >
+              <Text style={styles.suggestionText}>
+                {suggestion.text} <Text style={styles.suggestionArrow}>→</Text>
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
         {activeEntry?.score != null ? (
           <View style={[styles.narrativeScore, { backgroundColor: thumbColor }]}>
@@ -325,6 +394,15 @@ const styles = StyleSheet.create({
     color: colors.primary,
     marginTop: 2,
   },
+  suggestionText: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 12,
+    lineHeight: 16,
+    color: colors.primary,
+    marginTop: 4,
+    textDecorationLine: "underline",
+  },
+  suggestionArrow: { textDecorationLine: "none" },
   narrativeScore: {
     minWidth: 36,
     height: 36,
