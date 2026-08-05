@@ -29,8 +29,8 @@ interface Props {
   itemTotalCents: number;
   /** Listing currency — courier fees only apply to KES checkouts. */
   currency: string;
-  /** Called with the chosen address + delivery method once the buyer confirms. */
-  onConfirm: (addr: Address, deliveryOption: "door" | "pickup") => void;
+  /** Called with the chosen address once the buyer confirms. */
+  onConfirm: (addr: Address) => void;
 }
 
 function labelOf(addr: Address): string {
@@ -61,7 +61,6 @@ export function AddressPickerSheet({ visible, onClose, itemTotalCents, currency,
 
   // Courier fee quote for the selected address (zone-based from Nairobi
   // CBD). Refreshes whenever the buyer highlights a different address.
-  const [deliveryOption, setDeliveryOption] = useState<"door" | "pickup">("door");
   const [quote, setQuote] = useState<DeliveryQuote | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
 
@@ -120,7 +119,7 @@ export function AddressPickerSheet({ visible, onClose, itemTotalCents, currency,
       toast.show("Address not found", "error");
       return;
     }
-    onConfirm(addr, deliveryOption);
+    onConfirm(addr);
   };
 
   const saveNew = async () => {
@@ -229,23 +228,16 @@ export function AddressPickerSheet({ visible, onClose, itemTotalCents, currency,
             </ScrollView>
           )}
 
-          {/* Delivery method — door delivery (zone fee from Nairobi CBD)
-              vs free CBD pickup. Fee is waived above the free-delivery
+          {/* Delivery — door delivery by an Oromona rider (zone fee from
+              Nairobi CBD). Fee is waived above the free-delivery
               threshold; non-KES listings skip the fee entirely. */}
           {mode === "list" && !loading ? (
             <View style={styles.deliveryPanel} testID="checkout-delivery-panel">
-              <Text style={styles.deliveryCaption}>DELIVERY METHOD</Text>
-              <TouchableOpacity
-                testID="checkout-delivery-door"
-                onPress={() => setDeliveryOption("door")}
-                style={[styles.deliveryRow, deliveryOption === "door" && styles.deliveryRowActive]}
-                activeOpacity={0.85}
-              >
-                <View style={styles.radioOuter}>
-                  {deliveryOption === "door" ? <View style={styles.radioInner} /> : null}
-                </View>
+              <Text style={styles.deliveryCaption}>DELIVERY</Text>
+              <View style={styles.deliveryRow} testID="checkout-delivery-door">
+                <Feather name="truck" size={16} color={colors.primary} />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.deliveryLabel}>Door delivery</Text>
+                  <Text style={styles.deliveryLabel}>Door delivery by rider</Text>
                   <Text style={styles.deliverySub}>
                     {quoteLoading
                       ? "Checking your zone…"
@@ -265,34 +257,18 @@ export function AddressPickerSheet({ visible, onClose, itemTotalCents, currency,
                         : fmtKsh(quote.fee_due_cents)
                       : "—"}
                 </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                testID="checkout-delivery-pickup"
-                onPress={() => setDeliveryOption("pickup")}
-                style={[styles.deliveryRow, deliveryOption === "pickup" && styles.deliveryRowActive]}
-                activeOpacity={0.85}
-              >
-                <View style={styles.radioOuter}>
-                  {deliveryOption === "pickup" ? <View style={styles.radioInner} /> : null}
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.deliveryLabel}>Pick up at Nairobi CBD point</Text>
-                  <Text style={styles.deliverySub}>Collect your parcel yourself — free</Text>
-                </View>
-                <Text style={styles.deliveryFee}>KSh 0</Text>
-              </TouchableOpacity>
+              </View>
               {(currency || "KES").toUpperCase() === "KES" ? (
                 <View style={styles.totalRow} testID="checkout-total-row">
                   <Text style={styles.totalLabel}>
                     Item {fmtKsh(itemTotalCents)} · Delivery{" "}
-                    {deliveryOption === "pickup" || !quote?.supported || quote.free_applied
+                    {!quote?.supported || quote.free_applied
                       ? "FREE"
                       : fmtKsh(quote.fee_due_cents)}
                   </Text>
                   <Text style={styles.totalValue}>
                     {fmtKsh(
-                      itemTotalCents +
-                        (deliveryOption === "door" && quote?.supported ? quote.fee_due_cents : 0),
+                      itemTotalCents + (quote?.supported ? quote.fee_due_cents : 0),
                     )}
                   </Text>
                 </View>

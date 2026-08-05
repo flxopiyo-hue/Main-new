@@ -355,7 +355,7 @@ export default function ItemDetail() {
     setAddressSheetOpen(true);
   };
 
-  const buyWithAddress = async (addressId: string, deliveryOption: "door" | "pickup") => {
+  const buyWithAddress = async (addressId: string) => {
     if (!item || !selectedSize) return;
     setBuying(true);
     try {
@@ -366,7 +366,7 @@ export default function ItemDetail() {
         variant_id: selectedVariant?.id,
         origin_url: BACKEND_URL,
         address_id: addressId,
-        delivery_option: deliveryOption,
+        delivery_option: "door",
       });
       await WebBrowser.openBrowserAsync(url);
       // After return, navigate to orders
@@ -849,6 +849,16 @@ export default function ItemDetail() {
                       key={c.name}
                       testID={`item-color-${c.name}`}
                       onPress={() => {
+                        // A different colour invalidates any AI try-on that
+                        // was generated for the previous shade — reset it so
+                        // the hero shows this colour's photo and the next
+                        // generation renders the newly selected colour.
+                        if (selectedColor?.name !== c.name && tryOnAngles.length > 0) {
+                          setTryOnAngles([]);
+                          setTryOnId(null);
+                          setFitSummary(null);
+                          setActiveAngle("front");
+                        }
                         setSelectedColor(c);
                         // Colour tap wins over any tapped gallery photo so
                         // the hero switches to this colour's picture.
@@ -999,9 +1009,9 @@ export default function ItemDetail() {
         onClose={() => setAddressSheetOpen(false)}
         itemTotalCents={chargedPriceCents}
         currency={item.currency}
-        onConfirm={(addr, deliveryOption) => {
+        onConfirm={(addr) => {
           setAddressSheetOpen(false);
-          buyWithAddress(addr.id, deliveryOption);
+          buyWithAddress(addr.id);
         }}
       />
     </View>

@@ -89,13 +89,17 @@ export function OutfitDrawer({ visible, onClose }: DrawerProps) {
     <Modal
       visible={visible}
       transparent
-      animationType="slide"
+      // "none" — RN-web's slide/fade animations can miss their
+      // animationend event and leave the sheet stuck off-screen or
+      // half-faded, making the Generate buttons untappable. Instant
+      // presentation is deterministic on web and native.
+      animationType="none"
       onRequestClose={onClose}
       testID="outfit-drawer-modal"
     >
-      <Pressable style={styles.backdrop} onPress={onClose} />
-      <SafeAreaView style={styles.sheetWrap} edges={["bottom"]}>
-        <View style={styles.sheet}>
+      <View style={styles.overlay}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <SafeAreaView edges={["bottom"]} style={styles.sheet}>
           <View style={styles.handle} />
           <View style={styles.header}>
             <View style={{ flex: 1 }}>
@@ -208,8 +212,8 @@ export function OutfitDrawer({ visible, onClose }: DrawerProps) {
               <Text style={styles.generatingText}>Composing your outfit…</Text>
             </View>
           ) : null}
-        </View>
-      </SafeAreaView>
+        </SafeAreaView>
+      </View>
       <PaywallModal
         visible={!!paywallInfo}
         feature={paywallInfo?.feature}
@@ -221,16 +225,16 @@ export function OutfitDrawer({ visible, onClose }: DrawerProps) {
 }
 
 const styles = StyleSheet.create({
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.55)" },
-  sheetWrap: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    maxHeight: "88%",
-    backgroundColor: colors.surface,
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "flex-end",
   },
-  sheet: { paddingTop: spacing.sm },
+  sheet: {
+    backgroundColor: colors.surface,
+    paddingTop: spacing.sm,
+    maxHeight: "88%",
+  },
   handle: {
     alignSelf: "center",
     width: 56,
@@ -261,7 +265,7 @@ const styles = StyleSheet.create({
   },
   emptyText: { textAlign: "center", maxWidth: 320 },
   emptyAccent: { fontFamily: fonts.bodySemi, color: colors.primary },
-  list: { maxHeight: 460 },
+  list: { flexGrow: 0, flexShrink: 1 },
   listContent: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   subhead: {
     fontFamily: fonts.bodyMedium,

@@ -1,0 +1,37 @@
+{
+  "summary": "Backend 14/14 PASS (checkout 422 for pickup + 200 with paystack URL for door; seller state machine acknowledge → request_courier → job opened w/ handover_code; rider accept → picked_up (order shipped, carrier 'Oromona Rider') → deliver w/ handover_code (order delivered, escrow_release_at set, courier_earnings row created); self-ship acknowledge → ship w/ tracking → deliver). Frontend outfit drawer at 390x800 ✅ — both Generate buttons in viewport (front y=672 h=56, multi y=736 h=56; bottoms 728 & 792 within 800). Checkout sheet ✅ — only static 'Door delivery by rider · Outer Nairobi · KSh 600' row, no pickup radios, item + delivery split total shown. Add-item wizard ✅ — hint '1st = front, 2nd = back' present, 'Add front' placeholder, 'FRONT · COVER' badge string in code (line 1001), 'Add the BACK photo too' error string in code (line 342). SELLER ORDERS SCREEN REGRESSION — the new workflow is documented in the file's header comments (lines 5-13) but the JSX still renders the OLD buttons: for a PAID order the UI shows 'Request rider pickup' + 'Acknowledge' + 'Mark as shipped' simultaneously (all three) — spec requires only 'Accept order' at paid, then 'Package ready · Call rider' + 'Ship myself' at in_fulfillment. Also stale copy: line 423 mentions 'Nairobi CBD pickup point' which violates the 'NO in-store/CBD pickup' rule.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "(seller)/orders.tsx OrderCard actions", "issue": "Renders OLD workflow: 'Request rider pickup' (line 451), 'Acknowledge' (line 468), 'Mark as shipped' (line 485) shown together for paid state. Spec requires paid → only 'Accept order'; in_fulfillment → 'Package ready · Call rider' (primary) + 'Ship myself' (ghost). Confirmed live: 1 paid order rendered all three buttons at once. Reference: /app/frontend/app/(seller)/orders.tsx:436-489", "testID": "seller-order-*-request-courier / -acknowledge / -ship", "priority": "HIGH"},
+      {"component": "(seller)/orders.tsx courier hint copy", "issue": "Hint reads 'Rider requested — keep the parcel ready for pickup.' (line 430) instead of spec's 'Riders notified — hand the parcel over when the rider arrives' (which only exists as a toast in line 142). After 'call rider' the action buttons should also disappear entirely.", "testID": "seller-order-*-courier-hint", "priority": "MEDIUM"},
+      {"component": "(seller)/orders.tsx CBD pickup copy", "issue": "Line 423 still renders 'Buyer collects at the Nairobi CBD pickup point — drop the parcel there.' — user explicitly banned in-store/CBD pickup this iteration.", "testID": "seller-order-*-pickup-hint", "priority": "MEDIUM"},
+      {"component": "(seller)/orders.tsx status='shipped' Mark as delivered", "issue": "Line 491-506 shows 'Mark as delivered' for any shipped order. Spec says this should remain only for SELF-SHIPPED (no courier_job_id) orders — courier orders should NOT show a manual deliver button (rider enters handover code). Add `&& !order.courier_job_id` guard.", "testID": "seller-order-*-deliver", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration33_courier_workflow.py",
+    "/app/test_reports/pytest/iteration33_results.xml"
+  ],
+  "action_items": [
+    "Rewrite (seller)/orders.tsx OrderCard action row per spec: paid → only 'Accept order' (primary, calls acknowledge); in_fulfillment && !courier_job_id → 'Package ready · Call rider' primary + 'Ship myself' ghost; in_fulfillment && courier_job_id → no action buttons, show 'Riders notified — hand the parcel over when the rider arrives' hint; shipped && !courier_job_id → 'Mark as delivered' (self-ship only); shipped && courier_job_id → no buttons (rider confirms via handover code).",
+    "Remove or repurpose the CBD pickup hint on line 420-425 — no in-store/CBD pickup in this iteration.",
+    "Update label 'Acknowledge' → 'Accept order' and 'Request rider pickup' → 'Package ready · Call rider' to match the spec (docstrings on lines 5-13 already describe the target labels)."
+  ],
+  "critical_code_review_comments": [
+    "Backend state machine in routers/seller.py:462-542 is CORRECT and matches spec (request_courier requires in_fulfillment; ship/deliver 400 for courier orders). The frontend just hasn't caught up to the API.",
+    "Backend delivery_option Literal['door'] in models.py:756 correctly returns 422 for 'pickup' — validated by test_checkout_pickup_rejected.",
+    "delivery.py::job_status picked_up handler correctly stamps carrier='Oromona Rider' and generates RIDER-<jobid> tracking number.",
+    "delivery.py::deliver_job correctly gates on handover_code match and inserts a courier_earnings row (validated end-to-end)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "75% (3/4 flows — outfit drawer, checkout sheet, add-item all PASS; seller orders FAIL)"},
+  "seed_data_creation": "Two synthetic orders inserted into aurafit.orders during the pytest run; both cleaned up in fixture teardown along with any delivery_jobs/courier_earnings rows. No leftover Paystack recipients/transfers created.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Seller orders screen renders old action buttons — the fix is a JSX rewrite of lines 436-506 in /app/frontend/app/(seller)/orders.tsx. Backend is already correct. Login intent chip testID is 'login-intent-seller' — must be tapped BEFORE submit or role flips. Outfit drawer testIDs: item-outfit-toggle-btn, item-outfit-open-btn, outfit-tryon-front-btn, outfit-tryon-multi-btn (at bottom of drawer sheet). Checkout delivery testID is 'checkout-delivery-door' (static row, not a radio). Backend DB name is 'aurafit' (env DB_NAME), NOT 'test_database' as the review request suggested — used the real DB and cleaned up. Add-item add-front image slot uses 'add-item-photo-0' testID (from screenshots) — no photo-upload triggered in the automated run since a real image file is needed.",
+  "rca_of_issue": "The header comment of /app/frontend/app/(seller)/orders.tsx (lines 3-15) documents the intended new workflow (Accept order / Package ready · Call rider / Ship myself) but the JSX render block (lines 436-506) was never updated — the old labels 'Request rider pickup', 'Acknowledge', 'Mark as shipped' remain. Additionally the 'Mark as delivered' button (line 491) fires for any shipped order without checking courier_job_id, which conflicts with the backend rejecting 'deliver' for courier orders (routers/seller.py:527-531)."
+}

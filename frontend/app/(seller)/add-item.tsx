@@ -337,7 +337,9 @@ export default function AddItem() {
   // -----------------------------------------------------------------------
   const step1Errors = useMemo(() => {
     const errs: Record<string, string> = {};
-    if (photos.length === 0) errs.image = "Add at least one product photo";
+    if (photos.length === 0) errs.image = "Add the FRONT photo of the piece";
+    else if (photos.length < 2)
+      errs.image = "Add the BACK photo too — AI try-on needs front + back to render both sides";
     if (!name.trim()) errs.name = "Title is required";
     const cents = parseAmountToCents(priceInput, currency);
     if (!priceInput.trim()) errs.price = "Price is required";
@@ -599,7 +601,7 @@ export default function AddItem() {
       return;
     }
     const priceCents = parseAmountToCents(priceInput, currency);
-    if (photos.length === 0 || !priceCents) return; // type guard
+    if (photos.length < 2 || !priceCents) return; // type guard
 
     setSaving(true);
     try {
@@ -972,15 +974,17 @@ function StepBasics({
     <View>
       <Text style={[tp.h2, styles.stepTitle]}>The basics</Text>
       <Text style={[tp.bodyMuted, styles.stepHint]}>
-        Up to 5 product photos, title, brand, and price. If the piece comes in
-        several colours you&apos;ll group photos per colour in step 3 — you can
-        reuse these shots there, no re-uploading.
+        Up to 5 product photos, title, brand, and price. The 1st photo must show
+        the FRONT of the piece and the 2nd its BACK — the AI try-on uses them to
+        render both sides correctly. If the piece comes in several colours
+        you&apos;ll group photos per colour in step 3 — you can reuse these
+        shots there, no re-uploading.
       </Text>
 
       <Text style={[tp.caption, styles.label]}>
         Photos{" "}
         <Text style={{ color: colors.mutedFg, textTransform: "none" }}>
-          ({photos.length}/5 · first is the cover)
+          ({photos.length}/5 · 1st = front, 2nd = back)
         </Text>
       </Text>
       {/* Gallery grid */}
@@ -994,7 +998,11 @@ function StepBasics({
             />
             {i === 0 ? (
               <View style={styles.coverBadge}>
-                <Text style={styles.coverBadgeLabel}>COVER</Text>
+                <Text style={styles.coverBadgeLabel}>FRONT · COVER</Text>
+              </View>
+            ) : i === 1 ? (
+              <View style={styles.coverBadge}>
+                <Text style={styles.coverBadgeLabel}>BACK</Text>
               </View>
             ) : null}
             <View style={styles.photoActions}>
@@ -1035,7 +1043,11 @@ function StepBasics({
             <View style={styles.photoEmptyInner}>
               <Feather name="image" size={22} color={colors.mutedFg} />
               <Text style={styles.photoEmptyLabel}>
-                {photos.length === 0 ? "Add cover" : `Add ${photos.length === 4 ? "last" : "more"}`}
+                {photos.length === 0
+                  ? "Add front"
+                  : photos.length === 1
+                    ? "Add back"
+                    : `Add ${photos.length === 4 ? "last" : "more"}`}
               </Text>
               <View style={{ flexDirection: "row", gap: 6, marginTop: 6 }}>
                 <TouchableOpacity
@@ -1839,7 +1851,11 @@ function ColorPhotoGroup({
             />
             {i === 0 ? (
               <View style={styles.groupHeroBadge}>
-                <Text style={styles.groupHeroBadgeLabel}>COVER</Text>
+                <Text style={styles.groupHeroBadgeLabel}>FRONT</Text>
+              </View>
+            ) : i === 1 ? (
+              <View style={styles.groupHeroBadge}>
+                <Text style={styles.groupHeroBadgeLabel}>BACK</Text>
               </View>
             ) : null}
             <TouchableOpacity

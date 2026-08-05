@@ -1,16 +1,19 @@
 // Orders to Fulfill — seller's order management center.
 //
-// Each row represents a paid order. The seller can:
+// Each row represents a paid order. The seller flow:
 //
-//   • Tap a row to expand the fulfillment panel.
-//   • "Acknowledge"      → paid → in_fulfillment (informs the buyer the
-//                          seller is preparing the order).
-//   • "Mark as shipped"  → in_fulfillment | paid → shipped. Requires a
-//                          tracking_number (and accepts an optional
-//                          tracking_url that the buyer can click).
-//   • "Mark as delivered" → shipped → delivered. Manual override when the
-//                          seller knows for sure (couriers don't always
-//                          callback our app).
+//   • "Accept order"          → paid → in_fulfillment (buyer sees
+//                               "Preparing"). Seller packs the parcel.
+//   • "Package ready · Call rider" → opens a job on the Oromona rider
+//                               board. Riders are notified ONLY at this
+//                               moment. The rider's pickup flips the order
+//                               to shipped; the buyer's 4-digit handover
+//                               code (entered by the rider) marks it
+//                               delivered and starts the 48h escrow timer.
+//   • "Ship myself"           → for intercity/self-arranged shipping via
+//                               an external carrier. Requires a
+//                               tracking_number; only these self-shipped
+//                               orders get a manual "Mark as delivered".
 //
 // The list is filterable by status; the default view shows everything
 // EXCEPT cancelled/failed so the seller's attention naturally lands on
@@ -121,7 +124,7 @@ export default function SellerOrders() {
     setBusyId(order.id);
     try {
       await api.sellerUpdateFulfillment(order.id, { action: "acknowledge" });
-      toast.show(`Marked "${order.item_name}" as preparing`, "success");
+      toast.show(`Order accepted — pack "${order.item_name}", then call a rider`, "success");
       await load();
     } catch (e: any) {
       toast.show(e?.message ?? "Could not update", "error");
@@ -136,7 +139,7 @@ export default function SellerOrders() {
     setBusyId(order.id);
     try {
       await api.sellerUpdateFulfillment(order.id, { action: "request_courier" });
-      toast.show("Rider requested — keep the parcel ready for pickup", "success");
+      toast.show("Riders notified — hand the parcel over when the rider arrives", "success");
       await load();
     } catch (e: any) {
       toast.show(e?.message ?? "Could not request a rider", "error");

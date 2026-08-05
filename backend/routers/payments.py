@@ -137,21 +137,18 @@ async def create_checkout(
     )
 
     # ------------------------------------------------------------------
-    # Courier fee — zone-based from Nairobi CBD (Phase 1 courier system).
-    # Only applies to KES charges (cross-currency fee conversion isn't
-    # supported). "pickup" = buyer collects at the CBD point for free.
-    # Fee is waived above the free-delivery threshold (platform absorbs
-    # the rider's cut in that case).
+    # Courier fee — zone-based from Nairobi CBD. Door delivery is the
+    # only option (no in-store/CBD pickup). Only applies to KES charges
+    # (cross-currency fee conversion isn't supported). Fee is waived
+    # above the free-delivery threshold (platform absorbs the rider's
+    # cut in that case).
     from core import delivery as dlv
 
-    delivery_option = (body.delivery_option or "door").lower()
+    delivery_option = "door"
     delivery_fee_cents = 0
     delivery_zone_key: Optional[str] = None
     delivery_zone_label: Optional[str] = None
-    if delivery_option == "pickup":
-        delivery_zone_key = "cbd_pickup"
-        delivery_zone_label = dlv.CBD_PICKUP_LABEL
-    elif pay_currency == "KES":
+    if pay_currency == "KES":
         q = await dlv.quote_for_address(addr, charged_price_cents)
         delivery_fee_cents = int(q["fee_due_cents"])
         delivery_zone_key = q["zone_key"]

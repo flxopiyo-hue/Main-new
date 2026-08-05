@@ -473,6 +473,11 @@ async def update_fulfillment(
                 status_code=400,
                 detail=f"Cannot ship from status '{current}'",
             )
+        if order.get("courier_job_id"):
+            raise HTTPException(
+                status_code=400,
+                detail="A rider is handling this delivery — it's marked shipped automatically at pickup",
+            )
         if not body.tracking_number or not body.tracking_number.strip():
             raise HTTPException(
                 status_code=400,
@@ -501,29 +506,29 @@ async def update_fulfillment(
             # accuracy is fine.
             update["estimated_delivery_at"] = now + timedelta(days=days)
     elif body.action == "request_courier":
-        # Opens a job on the rider board (Phase 1 courier system). Only
-        # meaningful for door-delivery orders that have been paid.
-        if current not in ("paid", "in_fulfillment"):
+        # "Package ready — call a rider": opens a job on the rider board.
+        # Riders are only notified at this moment — i.e. AFTER the seller
+        # has accepted the order and packed the parcel, never earlier.
+        if current != "in_fulfillment":
             raise HTTPException(
                 status_code=400,
-                detail=f"Cannot request a courier from status '{current}'",
-            )
-        if (order.get("delivery_option") or "door") != "door":
-            raise HTTPException(
-                status_code=400,
-                detail="Buyer chose CBD pickup — hand the parcel to the pickup point instead",
+                detail="Accept the order first — call a rider once the package is packed and ready",
             )
         if order.get("courier_job_id"):
-            raise HTTPException(status_code=400, detail="Courier already requested")
+            raise HTTPException(status_code=400, detail="A rider has already been requested")
         from core import delivery as dlv
 
         job = await dlv.create_delivery_job(order, seller=user)
         update["courier_requested_at"] = now
-        if current == "paid":
-            update["status"] = "in_fulfillment"
-            update["acknowledged_at"] = now
         logger.info("courier job %s opened for order %s", job["id"], order_id)
     elif body.action == "deliver":
+        # Self-shipped orders only — courier deliveries are confirmed by
+        # the rider entering the buyer's 4-digit handover code.
+        if order.get("courier_job_id"):
+            raise HTTPException(
+                status_code=400,
+                detail="An Oromona rider is delivering this order — delivery is confirmed by the buyer's handover code",
+            )
         if current not in ("shipped", "in_fulfillment"):
             raise HTTPException(
                 status_code=400,

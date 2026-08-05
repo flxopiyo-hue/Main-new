@@ -751,9 +751,9 @@ class CheckoutIn(BaseModel):
     variant_id: Optional[str] = None
     origin_url: str  # frontend base url for redirect targets
     address_id: Optional[str] = None  # required at endpoint level — graceful 400 if missing
-    # "door" = courier delivery to the address (zone fee applies);
-    # "pickup" = buyer collects at the Nairobi CBD point (KSh 0).
-    delivery_option: Literal["door", "pickup"] = "door"
+    # Door delivery only — an Oromona rider delivers to the buyer's address
+    # (zone fee applies; waived above the free-delivery threshold).
+    delivery_option: Literal["door"] = "door"
 
 
 class CheckoutOut(BaseModel):
@@ -801,7 +801,7 @@ class OrderOut(BaseModel):
     notified_seller_at: Optional[datetime] = None  # rate-limit buyer nudges
     # Courier delivery (Phase 1) — surfaced on list rows so sellers and
     # buyers see the chosen method + whether a rider job already exists.
-    delivery_option: Optional[str] = None  # door | pickup
+    delivery_option: Optional[str] = None  # door
     delivery_fee_cents: int = 0
     courier_job_id: Optional[str] = None
     courier_requested_at: Optional[datetime] = None

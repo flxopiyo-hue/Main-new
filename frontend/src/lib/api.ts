@@ -479,7 +479,7 @@ export interface Order {
   payout_id?: string | null;
   notified_seller_at?: string | null;
   // Courier delivery (Phase 1 courier system)
-  delivery_option?: "door" | "pickup" | null;
+  delivery_option?: "door" | null;
   delivery_fee_cents?: number;
   courier_job_id?: string | null;
   courier_requested_at?: string | null;
@@ -1120,7 +1120,7 @@ export const api = {
     variant_id?: string;
     origin_url: string;
     address_id: string;
-    delivery_option?: "door" | "pickup";
+    delivery_option?: "door";
   }) =>
     request<{ session_id: string; url: string }>("/payments/checkout", { method: "POST", body }),
   // Zone-based courier fee preview (Nairobi CBD anchored).

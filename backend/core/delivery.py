@@ -91,7 +91,7 @@ DEFAULT_SETTINGS: Dict[str, int] = {
     "courier_platform_bps": 1000,  # 10% of the courier fee stays with Oromona
 }
 
-CBD_PICKUP_LABEL = "Pick up at Nairobi CBD point"
+CBD_PICKUP_LABEL = "Pick up at Nairobi CBD point"  # legacy label (pickup flow removed)
 
 
 async def ensure_delivery_seed() -> None:

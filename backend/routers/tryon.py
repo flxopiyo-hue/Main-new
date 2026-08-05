@@ -177,17 +177,36 @@ async def _generate_single_angle(
     angle: str,
     persona: str,
     extra_note: str = "",
+    garment_back_b64: Optional[str] = None,
 ) -> Optional[str]:
-    """Generate a single angle for the try-on. Returns base64 image or None on failure."""
+    """Generate a single angle for the try-on. Returns base64 image or None on failure.
+
+    When ``garment_back_b64`` is provided (sellers upload photo 1 = front,
+    photo 2 = back) it is attached as a third reference image so the model
+    renders the correct design on each side — crucial when the garment has
+    different prints front vs back.
+    """
     angle_hint = ANGLE_INSTRUCTIONS.get(angle, ANGLE_INSTRUCTIONS["front"])
     system_msg = (
-        "You are a fashion virtual try-on generator. You will receive two images: "
-        "(1) a person's full-body photo, and (2) a clothing item. Generate a realistic "
-        "photo of the same person wearing the clothing item. Replace only the relevant "
-        "clothing region. The output must be a single photorealistic image with a clean, "
+        "You are a fashion virtual try-on generator. You will receive a person's "
+        "full-body photo followed by garment reference photos: the garment's FRONT "
+        "view and, when provided, its BACK view. Generate a realistic photo of the "
+        "same person wearing the clothing item. Replace only the relevant clothing "
+        "region. The output must be a single photorealistic image with a clean, "
         "neutral studio backdrop. "
         + IDENTITY_LOCK
     )
+    file_contents = [ImageContent(body_b64), ImageContent(garment_b64)]
+    back_note = ""
+    if garment_back_b64:
+        file_contents.append(ImageContent(garment_back_b64))
+        back_note = (
+            "Photo 2 shows the garment's FRONT and photo 3 shows its BACK — the two "
+            "sides may carry different prints or graphics. When the person's back is "
+            "visible, reproduce the back design from photo 3 faithfully; when the "
+            "front is visible, reproduce the front design from photo 2. Never put "
+            "the front print on the back or vice versa. "
+        )
     chat = (
         LlmChat(
             api_key=EMERGENT_LLM_KEY,
@@ -205,11 +224,12 @@ async def _generate_single_angle(
             f"The person is wearing the garment '{item['name']}' "
             f"(category: {item['category']}, audience: {item.get('audience', 'unisex')}). "
             f"{extra_note}"
+            f"{back_note}"
             f"{angle_hint} "
             f"{IDENTITY_LOCK} "
             f"Photorealistic, full body, studio quality, fashion editorial."
         ),
-        file_contents=[ImageContent(body_b64), ImageContent(garment_b64)],
+        file_contents=file_contents,
     )
     try:
         _text, images = await chat.send_message_multimodal_response(msg)
@@ -271,15 +291,39 @@ async def _generate_outfit_angle(
     """
     angle_hint = ANGLE_INSTRUCTIONS.get(angle, ANGLE_INSTRUCTIONS["front"])
 
-    # Build the per-garment description block.
+    # Build the per-garment description block. Sellers upload photo 1 = FRONT
+    # and photo 2 = BACK, so we attach each garment's front shot in layer
+    # order, then append any available back shots (numbered after the fronts)
+    # so the model renders the correct design on each side.
     garment_lines: List[str] = []
+    front_imgs: List[str] = []
+    backs: List[tuple] = []  # (garment_index, garment_name, back_b64)
     for idx, it in enumerate(items, start=1):
         gtype = it.get("garment_type") or infer_garment_type(it)
         gname = it.get("name", "garment")
+        gallery = list(it.get("images") or [])
+        if not gallery and it.get("image_b64"):
+            gallery = [it["image_b64"]]
+        front_imgs.append(gallery[0] if gallery else it["image_b64"])
         # Photos 2..N — keep their order aligned with this list.
         garment_lines.append(
-            f"  · Garment {idx} (photo {idx + 1}): a {garment_type_label(gtype)} called '{gname}'."
+            f"  · Garment {idx} (photo {idx + 1}): a {garment_type_label(gtype)} called '{gname}' — FRONT view."
         )
+        if len(gallery) > 1:
+            backs.append((idx, gname, gallery[1]))
+
+    back_lines: List[str] = []
+    for pos, (gidx, gname, _b64) in enumerate(backs):
+        back_lines.append(
+            f"  · Photo {len(items) + 2 + pos}: BACK view of garment {gidx} ('{gname}') — "
+            "use it as the authoritative reference for that piece's back design."
+        )
+    backs_text = (
+        "\nBack-side references (front and back may carry different prints — never swap them):\n"
+        + "\n".join(back_lines)
+        if back_lines
+        else ""
+    )
 
     rules = _build_outfit_rules(items)
     rules_text = (
@@ -292,7 +336,8 @@ async def _generate_outfit_angle(
     system_msg = (
         "You are a fashion virtual try-on generator that composes multiple garments "
         "onto one person. You will receive a person photo followed by N garment photos "
-        "in INNERMOST-FIRST layer order. Compose them onto the person as a single "
+        "in INNERMOST-FIRST layer order (FRONT views), optionally followed by BACK-view "
+        "reference photos for some garments. Compose them onto the person as a single "
         "coherent outfit, respecting the styling rules provided. Produce ONE "
         "photorealistic image on a clean, neutral studio backdrop. "
         + IDENTITY_LOCK
@@ -313,6 +358,7 @@ async def _generate_outfit_angle(
             f"{persona}\n"
             f"The outfit consists of {len(items)} garment(s), layered from skin outward:\n"
             + "\n".join(garment_lines)
+            + backs_text
             + "\n\n"
             + rules_text
             + "\n\n"
@@ -323,7 +369,8 @@ async def _generate_outfit_angle(
             "Return a single image."
         ),
         file_contents=[ImageContent(body_b64)]
-        + [ImageContent(it["image_b64"]) for it in items],
+        + [ImageContent(b) for b in front_imgs]
+        + [ImageContent(b) for (_gidx, _gname, b) in backs],
     )
     try:
         _text, images = await chat.send_message_multimodal_response(msg)
@@ -390,17 +437,30 @@ async def generate_tryon(
             detail="No body photo. Provide body_photo_b64 or set a profile front photo.",
         )
 
-    garment_b64 = item["image_b64"]
-    # Colour-aware garment reference: when the buyer picked a colour that has
-    # its own photo we swap it in, so the try-on shows the exact shade. Even
-    # without a photo we still tell the model which colour to render.
+    # Garment references: gallery photo 1 = FRONT, photo 2 = BACK (sellers
+    # upload them in that order). Colour-aware: when the buyer picked a colour
+    # that has its own photo group we swap that group in, so the try-on shows
+    # the exact shade. Even without a photo we still tell the model which
+    # colour to render.
+    gallery: List[str] = list(item.get("images") or [])
+    if not gallery and item.get("image_b64"):
+        gallery = [item["image_b64"]]
+    garment_b64 = gallery[0] if gallery else item["image_b64"]
+    garment_back_b64: Optional[str] = gallery[1] if len(gallery) > 1 else None
     color_note = ""
     if body.color_name:
         target = body.color_name.strip().lower()
         for c in item.get("colors", []):
             if (c.get("name") or "").strip().lower() == target:
-                if c.get("image_b64"):
-                    garment_b64 = c["image_b64"]
+                cgallery = list(c.get("images") or [])
+                if not cgallery and c.get("image_b64"):
+                    cgallery = [c["image_b64"]]
+                if cgallery:
+                    garment_b64 = cgallery[0]
+                    # Prefer the colour's own back shot; fall back to the
+                    # item-level back photo for the design reference.
+                    if len(cgallery) > 1:
+                        garment_back_b64 = cgallery[1]
                 color_note = (
                     f"The buyer selected the colour '{c.get('name')}' (hex {c.get('hex')}). "
                     "Render the garment in EXACTLY this colour — match the garment photo's "
@@ -443,6 +503,7 @@ async def generate_tryon(
             angle=a,
             persona=persona,
             extra_note=color_note,
+            garment_back_b64=garment_back_b64,
         )
         for a in angles
     ]

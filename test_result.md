@@ -309,3 +309,21 @@ Frontend `.env` currently points at preview (`https://fit-finder-app-5.preview.e
 - User: "when I click on an item the image becomes too large for the phone."
 - Fix: item/[id].tsx heroWrap (was width 100% + aspectRatio 3/4, could swallow the whole viewport on short screens) now also gets maxHeight = 55% of window height via useWindowDimensions; Image keeps resizeMode cover so it crops gracefully.
 - Verified: 390×700 phone viewport screenshot — hero capped, title/price/fit badge/size row visible on first screen.
+
+## Iteration 38 — Outfit drawer fix, front/back photos, colour-aware try-on reset, courier-only workflow (no pickup)
+### Changes by main agent (to be tested)
+1. **OutfitDrawer.tsx restructure**: flex-based sheet (overlay flex:1 justify-flex-end; sheet maxHeight 88%; list flexShrink 1) + `animationType="none"` (RN-web slide/fade animation left the modal stuck at translateY(100%) → Generate buttons untappable/off-viewport). Verified by main agent in browser: drawer opens, both generate buttons inside 390×800 viewport (y=736).
+2. **Backend try-on front/back garment references** (routers/tryon.py): gallery photo 1 = FRONT, photo 2 = BACK. Single-item try-on passes back photo as third image (colour group's own back preferred). Outfit try-on appends back photos after all fronts with numbered labels. Main agent smoke (tests/smoke_tryon_frontback.py): outfit 3 garments → 200 + image; single item colour+back angle → 200. DO NOT re-run generation endpoints casually (LLM cost).
+3. **Seller wizard front/back labels** (add-item.tsx): slot 0 badge "FRONT · COVER", slot 1 "BACK"; empty-slot labels "Add front"/"Add back"; step-1 validation now requires ≥2 photos ("Add the BACK photo too…"); colour-group thumbs badge FRONT/BACK on first two.
+4. **Colour switch resets AI try-on** (item/[id].tsx): tapping a different colour clears tryOnAngles/tryOnId/fitSummary so the hero shows the new colour photo and next generation uses that colour.
+5. **In-store/CBD pickup REMOVED everywhere**: CheckoutIn.delivery_option now Literal["door"] (pickup → 422); payments.py pickup branch deleted; AddressPickerSheet has a single static "Door delivery by rider" row (no radio, no pickup option); api.ts types.
+6. **Seller fulfillment state machine tightened** (routers/seller.py):
+   - request_courier now REQUIRES status in_fulfillment (seller must "Accept order" first) → riders notified only when package ready.
+   - ship + deliver actions 400 when order has courier_job_id (rider pickup auto-ships; buyer handover code delivers).
+   - deliver remains for SELF-SHIPPED orders only.
+7. **Seller orders UI** (orders.tsx): paid → "Accept order" (primary); in_fulfillment+no courier → "Package ready · Call rider" (primary) + "Ship myself" (ghost); shipped+no courier → "Mark as delivered"; courier hint text varies by status.
+### Testing guidance
+- LIVE Paystack: initialization-only, never complete a charge. No transfers/recipients.
+- Synthetic paid orders for lifecycle tests MUST include session_id (KeyError otherwise) — copy field shape from an existing order doc.
+- Seller login MUST use the "Selling" intent chip (login-intent-seller) or the demo seller's role gets flipped.
+- Avoid AI generation endpoints; at most ONE single-angle outfit generation in the frontend flow.
