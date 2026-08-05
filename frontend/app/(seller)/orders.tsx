@@ -415,28 +415,40 @@ function OrderRow({
         </View>
       ) : null}
 
-      {/* Delivery method hint (Phase 1 courier system) */}
-      {order.delivery_option === "pickup" ? (
-        <View style={styles.deliveryHintRow} testID={`seller-order-${order.id}-pickup-hint`}>
-          <Feather name="map-pin" size={13} color={colors.mutedFg} />
-          <Text style={styles.deliveryHintText}>
-            Buyer collects at the Nairobi CBD pickup point — drop the parcel there.
-          </Text>
-        </View>
-      ) : order.courier_job_id ? (
+      {/* Delivery hint — courier lifecycle */}
+      {order.courier_job_id ? (
         <View style={styles.deliveryHintRow} testID={`seller-order-${order.id}-courier-hint`}>
           <Feather name="truck" size={13} color={colors.mutedFg} />
           <Text style={styles.deliveryHintText}>
-            Rider requested — keep the parcel ready for pickup.
+            {status === "shipped"
+              ? "Rider has the parcel — the buyer's 4-digit code confirms delivery."
+              : status === "delivered"
+                ? "Delivered by an Oromona rider."
+                : "Riders notified — hand the parcel over when the rider arrives."}
           </Text>
         </View>
       ) : null}
 
       {/* Actions row */}
       <View style={styles.actions}>
-        {(status === "paid" || status === "in_fulfillment") &&
-        order.delivery_option !== "pickup" &&
-        !order.courier_job_id ? (
+        {status === "paid" ? (
+          <TouchableOpacity
+            testID={`seller-order-${order.id}-acknowledge`}
+            onPress={onAcknowledge}
+            disabled={busy}
+            style={[styles.actionBtn, styles.actionPrimary]}
+          >
+            {busy ? (
+              <ActivityIndicator size="small" color={colors.primaryFg} />
+            ) : (
+              <>
+                <Feather name="check" size={14} color={colors.primaryFg} />
+                <Text style={styles.actionPrimaryLabel}>Accept order</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        ) : null}
+        {status === "in_fulfillment" && !order.courier_job_id ? (
           <TouchableOpacity
             testID={`seller-order-${order.id}-request-courier`}
             onPress={onRequestCourier}
@@ -448,15 +460,15 @@ function OrderRow({
             ) : (
               <>
                 <Feather name="truck" size={14} color={colors.primaryFg} />
-                <Text style={styles.actionPrimaryLabel}>Request rider pickup</Text>
+                <Text style={styles.actionPrimaryLabel}>Package ready · Call rider</Text>
               </>
             )}
           </TouchableOpacity>
         ) : null}
-        {status === "paid" ? (
+        {status === "in_fulfillment" && !order.courier_job_id ? (
           <TouchableOpacity
-            testID={`seller-order-${order.id}-acknowledge`}
-            onPress={onAcknowledge}
+            testID={`seller-order-${order.id}-ship`}
+            onPress={onShip}
             disabled={busy}
             style={[styles.actionBtn, styles.actionGhost]}
           >
@@ -464,30 +476,13 @@ function OrderRow({
               <ActivityIndicator size="small" color={colors.primary} />
             ) : (
               <>
-                <Feather name="clock" size={14} color={colors.primary} />
-                <Text style={styles.actionGhostLabel}>Acknowledge</Text>
+                <Feather name="send" size={14} color={colors.primary} />
+                <Text style={styles.actionGhostLabel}>Ship myself</Text>
               </>
             )}
           </TouchableOpacity>
         ) : null}
-        {(status === "paid" || status === "in_fulfillment") ? (
-          <TouchableOpacity
-            testID={`seller-order-${order.id}-ship`}
-            onPress={onShip}
-            disabled={busy}
-            style={[styles.actionBtn, styles.actionPrimary]}
-          >
-            {busy ? (
-              <ActivityIndicator size="small" color={colors.primaryFg} />
-            ) : (
-              <>
-                <Feather name="send" size={14} color={colors.primaryFg} />
-                <Text style={styles.actionPrimaryLabel}>Mark as shipped</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        ) : null}
-        {status === "shipped" ? (
+        {status === "shipped" && !order.courier_job_id ? (
           <TouchableOpacity
             testID={`seller-order-${order.id}-deliver`}
             onPress={onDeliver}
