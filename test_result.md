@@ -304,3 +304,8 @@ Frontend `.env` currently points at preview (`https://fit-finder-app-5.preview.e
 ### Live findings (IMPORTANT)
 - ⚠️ **Paystack account is a STARTER BUSINESS** — transfers rejected with "You cannot initiate third party payouts as a starter business". NO live transfer can succeed until the user upgrades to a Registered Business on Paystack. All money-movement paths are therefore safely blocked account-side; error surfaces verbatim in admin toast + batch failure_reason.
 - Full UI E2E verified by main agent: pay attempt → confirm dialog (window.confirm; playwright needs page.on dialog accept) → failed batch with reason in history → pending balance retained → manual mark-paid → settled batch, buttons cleared. Synthetic KSh 10 test earning/batches cleaned after.
+
+## Iteration 37 — Item hero image resize (user bug)
+- User: "when I click on an item the image becomes too large for the phone."
+- Fix: item/[id].tsx heroWrap (was width 100% + aspectRatio 3/4, could swallow the whole viewport on short screens) now also gets maxHeight = 55% of window height via useWindowDimensions; Image keeps resizeMode cover so it crops gracefully.
+- Verified: 390×700 phone viewport screenshot — hero capped, title/price/fit badge/size row visible on first screen.

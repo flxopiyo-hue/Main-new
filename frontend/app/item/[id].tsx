@@ -9,6 +9,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -60,6 +61,10 @@ export default function ItemDetail() {
   const { id, tryon } = useLocalSearchParams<{ id: string; tryon?: string }>();
   const { user } = useAuth();
   const toast = useToast();
+  // Cap the hero image so it never swallows the whole phone screen — at
+  // most ~55% of the window height (the 3:4 aspect wins on small screens).
+  const { height: winHeight } = useWindowDimensions();
+  const heroMaxHeight = Math.round(winHeight * 0.55);
 
   const [item, setItem] = useState<Item | null>(null);
   const [loading, setLoading] = useState(true);
@@ -418,7 +423,7 @@ export default function ItemDetail() {
   return (
     <View style={styles.root}>
       <ScrollView contentContainerStyle={styles.scroll}>
-        <View style={styles.heroWrap}>
+        <View style={[styles.heroWrap, { maxHeight: heroMaxHeight }]}>
           <Image source={{ uri: displayImage }} style={styles.hero} resizeMode="cover" />
           <SafeAreaView style={styles.heroOverlay} edges={["top"]} pointerEvents="box-none">
             <View style={styles.heroBar}>
