@@ -827,12 +827,16 @@ export function isPaywallError(e: unknown): e is PaywallError {
 export interface StylistItemCard {
   id: string;
   name: string;
+  seller_id: string;
   seller_name: string;
   price_cents: number;
   currency: string;
   image_b64: string;
   garment_type: GarmentType;
   category: string;
+  /** Size the stylist put THIS buyer in (best-fit → preferred → any). */
+  suggested_size?: string | null;
+  sizes_in_stock?: string[];
 }
 
 export interface StylistOutfit {
@@ -1009,6 +1013,22 @@ export const api = {
   stylistSessions: () => request<StylistSessionSummary[]>("/stylist/sessions"),
   stylistSession: (id: string) =>
     request<StylistSessionDetail>(`/stylist/sessions/${id}`),
+  // Shop the look — one Paystack charge for a whole stylist outfit.
+  checkoutLook: (body: {
+    lines: { item_id: string; size: string; color?: string | null }[];
+    address_id: string;
+    origin_url?: string;
+  }) =>
+    request<{
+      session_id: string;
+      url: string;
+      look_id: string;
+      items_total_cents: number;
+      delivery_fee_cents: number;
+      total_cents: number;
+      currency: string;
+      parcel_count: number;
+    }>("/payments/checkout-look", { method: "POST", body }),
   shareTryOn: (
     id: string,
     fmt: "square" | "story" = "square",

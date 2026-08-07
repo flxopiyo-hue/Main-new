@@ -33,7 +33,7 @@ from core.config import PLATFORM_FEE_BPS
 from core.db import db
 from core.security import get_current_user, require_role
 from core.seller_verify import maybe_verify_seller
-from models import CheckoutIn, CheckoutOut
+from models import CheckoutIn, CheckoutOut, LookCheckoutIn
 
 logger = logging.getLogger("aurafit.payments")
 router = APIRouter()
@@ -86,6 +86,27 @@ def _amount_for_paystack(price_cents: int, currency: str) -> int:
     just return it verbatim as an int.
     """
     return max(1, int(price_cents))
+
+
+def _shipping_snapshot(addr: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        k: addr.get(k)
+        for k in (
+            "label",
+            "custom_label",
+            "recipient_name",
+            "phone",
+            "alt_phone",
+            "building_estate",
+            "house_number",
+            "street",
+            "area",
+            "city",
+            "postal_code",
+            "country",
+            "delivery_notes",
+        )
+    }
 
 
 @router.post("/payments/checkout", response_model=CheckoutOut)
@@ -194,24 +215,7 @@ async def create_checkout(
     now = datetime.now(timezone.utc)
     platform_fee_cents = (charged_price_cents * PLATFORM_FEE_BPS) // 10000
     seller_net_cents = charged_price_cents - platform_fee_cents
-    shipping_snapshot = {
-        k: addr.get(k)
-        for k in (
-            "label",
-            "custom_label",
-            "recipient_name",
-            "phone",
-            "alt_phone",
-            "building_estate",
-            "house_number",
-            "street",
-            "area",
-            "city",
-            "postal_code",
-            "country",
-            "delivery_notes",
-        )
-    }
+    shipping_snapshot = _shipping_snapshot(addr)
     await db.orders.insert_one(
         {
             "id": order_id,
@@ -245,6 +249,168 @@ async def create_checkout(
         }
     )
     return CheckoutOut(session_id=reference, url=data["authorization_url"])
+
+
+@router.post("/payments/checkout-look")
+async def create_look_checkout(
+    body: LookCheckoutIn,
+    request: Request,
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """AI-Stylist "Shop the look" — ONE Paystack charge for a whole outfit.
+
+    Creates one pending order per piece, all sharing the same Paystack
+    ``reference`` (session_id). Reconciliation (status poll / return
+    bridge / webhook) flips every order together; from then on each order
+    flows through the normal seller → rider → escrow lifecycle.
+
+    Delivery: one parcel per seller. Each parcel's zone fee is computed
+    from the buyer's address (waived per parcel above the free-delivery
+    threshold) and the buyer is shown ONE summed delivery amount.
+    """
+    await require_role("buyer", user)
+    if not body.address_id:
+        raise HTTPException(status_code=400, detail="Delivery address is required")
+    addr = await db.addresses.find_one(
+        {"id": body.address_id, "user_id": user["id"]}, {"_id": 0}
+    )
+    if not addr:
+        raise HTTPException(status_code=404, detail="Address not found")
+
+    from core import delivery as dlv
+    from core.variants import find_variant_by_size_color
+
+    lines: list[Dict[str, Any]] = []
+    pay_currency: Optional[str] = None
+    for ln in body.lines:
+        item = await db.items.find_one({"id": ln.item_id}, {"_id": 0})
+        if not item:
+            raise HTTPException(status_code=404, detail=f"Item not found: {ln.item_id}")
+        listing_currency = (item.get("currency") or "KES").upper()
+        pcur = listing_currency if listing_currency in _PAYSTACK_CURRENCIES else "KES"
+        if pay_currency is None:
+            pay_currency = pcur
+        elif pay_currency != pcur:
+            raise HTTPException(
+                status_code=400,
+                detail="All pieces in a look must be priced in the same currency",
+            )
+        variant = find_variant_by_size_color(item, ln.size, ln.color)
+        if variant and variant.get("disabled"):
+            raise HTTPException(
+                status_code=409, detail=f"'{item['name']}' is unavailable in size {ln.size}"
+            )
+        if variant and int(variant.get("quantity") or 0) <= 0:
+            raise HTTPException(
+                status_code=409, detail=f"'{item['name']}' is out of stock in size {ln.size}"
+            )
+        lines.append(
+            {
+                "item": item,
+                "size": ln.size,
+                "color": ln.color,
+                "variant": variant,
+                "listing_currency": listing_currency,
+                "price": int((variant or {}).get("price_cents_override") or item["price_cents"]),
+            }
+        )
+
+    # One parcel per seller → per-parcel zone fee, shown to the buyer as
+    # a single summed delivery line.
+    groups: Dict[str, list] = {}
+    for l in lines:
+        groups.setdefault(l["item"]["seller_id"], []).append(l)
+    group_fee: Dict[str, int] = {}
+    delivery_fee_total = 0
+    zone_key: Optional[str] = None
+    zone_label: Optional[str] = None
+    if pay_currency == "KES":
+        for sid, gls in groups.items():
+            q = await dlv.quote_for_address(addr, sum(g["price"] for g in gls))
+            group_fee[sid] = int(q["fee_due_cents"])
+            delivery_fee_total += group_fee[sid]
+            zone_key, zone_label = q["zone_key"], q["zone_label"]
+
+    items_total = sum(l["price"] for l in lines)
+    amount_minor = _amount_for_paystack(items_total + delivery_fee_total, pay_currency)
+
+    look_id = str(uuid.uuid4())
+    # Prefix keeps the "oromona_order_" convention so every existing
+    # reconciliation path (return bridge, webhooks, status poll) fires.
+    reference = f"oromona_order_look_{look_id[:8]}_{uuid.uuid4().hex[:8]}"
+    metadata = {
+        "buyer_id": user["id"],
+        "purpose": "look_purchase",
+        "look_id": look_id,
+        "item_ids": [l["item"]["id"] for l in lines],
+        "address_id": body.address_id,
+    }
+    try:
+        data = await _initialize_oneoff_transaction(
+            email=user["email"],
+            amount=amount_minor,
+            currency=pay_currency,
+            reference=reference,
+            callback_url=_paystack_return_url(request),
+            metadata=metadata,
+        )
+    except paystack.PaystackError as e:
+        logger.exception("paystack look checkout error")
+        raise HTTPException(status_code=502, detail=f"Paystack error: {e}") from e
+
+    now = datetime.now(timezone.utc)
+    shipping_snapshot = _shipping_snapshot(addr)
+    fee_assigned: set = set()
+    docs = []
+    for l in lines:
+        item = l["item"]
+        sid = item["seller_id"]
+        fee = 0
+        if sid not in fee_assigned:
+            fee = group_fee.get(sid, 0)
+            fee_assigned.add(sid)
+        platform_fee_cents = (l["price"] * PLATFORM_FEE_BPS) // 10000
+        docs.append(
+            {
+                "id": str(uuid.uuid4()),
+                "look_id": look_id,
+                "buyer_id": user["id"],
+                "seller_id": sid,
+                "item_id": item["id"],
+                "item_name": item["name"],
+                "size": l["size"],
+                "color": l["color"],
+                "variant_id": (l["variant"] or {}).get("id"),
+                "amount_cents": l["price"],
+                "currency": l["listing_currency"],
+                "paystack_currency": pay_currency,
+                "cents_normalized": True,
+                "platform_fee_cents": platform_fee_cents,
+                "seller_net_cents": l["price"] - platform_fee_cents,
+                "status": "pending",
+                "session_id": reference,
+                "paystack_reference": reference,
+                "address_id": body.address_id,
+                "shipping_address": shipping_snapshot,
+                "delivery_option": "door",
+                "delivery_fee_cents": fee,
+                "delivery_zone_key": zone_key,
+                "delivery_zone_label": zone_label,
+                "total_charged_cents": l["price"] + fee,
+                "created_at": now,
+            }
+        )
+    await db.orders.insert_many(docs)
+    return {
+        "session_id": reference,
+        "url": data["authorization_url"],
+        "look_id": look_id,
+        "items_total_cents": items_total,
+        "delivery_fee_cents": delivery_fee_total,
+        "total_cents": items_total + delivery_fee_total,
+        "currency": pay_currency,
+        "parcel_count": len(groups),
+    }
 
 
 async def _initialize_oneoff_transaction(
@@ -286,39 +452,50 @@ async def payment_status(
     """Polled by the ``/checkout/result`` screen after the WebBrowser
     session closes. If we still show ``pending`` locally we ask
     Paystack for the authoritative state and update the order.
+
+    Look purchases share one reference across several orders — the poll
+    flips ALL of them together and reports combined totals.
     """
-    order = await db.orders.find_one(
+    orders = await db.orders.find(
         {"session_id": session_id, "buyer_id": user["id"]}, {"_id": 0}
-    )
-    if not order:
+    ).to_list(20)
+    if not orders:
         raise HTTPException(status_code=404, detail="Order not found")
 
-    if order["status"] == "pending":
+    if any(o["status"] == "pending" for o in orders):
         try:
             data = await paystack.verify_transaction(session_id)
-            new_status = order["status"]
             pstatus = data.get("status")
+            new_status: Optional[str] = None
             if pstatus == "success":
                 new_status = "paid"
             elif pstatus in {"failed", "abandoned", "reversed"}:
                 new_status = "cancelled" if pstatus == "abandoned" else "failed"
-            if new_status != order["status"]:
-                await db.orders.update_one(
-                    {"session_id": session_id},
-                    {"$set": {"status": new_status, "paystack_status": pstatus}},
-                )
-                order["status"] = new_status
-                if new_status == "paid":
-                    await maybe_verify_seller(order["seller_id"])
+            if new_status:
+                for o in orders:
+                    if o["status"] != new_status:
+                        await db.orders.update_one(
+                            {"id": o["id"]},
+                            {"$set": {"status": new_status, "paystack_status": pstatus}},
+                        )
+                        o["status"] = new_status
+                        if new_status == "paid":
+                            await maybe_verify_seller(o["seller_id"])
         except paystack.PaystackError as e:
             logger.warning("Paystack status fetch failed: %s", e)
 
+    first = orders[0]
+    name = first["item_name"]
+    if len(orders) > 1:
+        name = f"{name} + {len(orders) - 1} more"
     return {
         "session_id": session_id,
-        "status": order["status"],
-        "item_name": order["item_name"],
-        "amount_cents": order["amount_cents"],
-        "currency": order.get("currency", "KES"),
+        "status": first["status"],
+        "item_name": name,
+        "amount_cents": sum(
+            int(o.get("total_charged_cents") or o["amount_cents"]) for o in orders
+        ),
+        "currency": first.get("currency", "KES"),
     }
 
 
@@ -343,8 +520,10 @@ async def paystack_return(reference: str = "") -> HTMLResponse:
     ok = pstatus == "success"
     order_status = "paid" if ok else ("cancelled" if pstatus == "abandoned" else "failed")
 
-    order = await db.orders.find_one({"session_id": reference}, {"_id": 0})
-    if order:
+    # A look purchase shares one reference across several orders — flip
+    # them all together.
+    orders = await db.orders.find({"session_id": reference}, {"_id": 0}).to_list(20)
+    for order in orders:
         was_paid_already = order.get("status") == "paid"
         await db.orders.update_one(
             {"id": order["id"]},
@@ -391,15 +570,16 @@ async def payments_webhook(request: Request) -> Dict[str, Any]:
         return {"received": True, "skipped": "no reference"}
 
     if event == "charge.success":
-        order = await db.orders.find_one({"session_id": reference}, {"_id": 0})
-        if order and order.get("status") != "paid":
-            await db.orders.update_one(
-                {"id": order["id"]}, {"$set": {"status": "paid", "paystack_status": "success"}}
-            )
-            order["status"] = "paid"
-            await _on_order_paid(order)
+        orders = await db.orders.find({"session_id": reference}, {"_id": 0}).to_list(20)
+        for order in orders:
+            if order.get("status") != "paid":
+                await db.orders.update_one(
+                    {"id": order["id"]}, {"$set": {"status": "paid", "paystack_status": "success"}}
+                )
+                order["status"] = "paid"
+                await _on_order_paid(order)
     elif event in {"charge.failed"}:
-        await db.orders.update_one(
+        await db.orders.update_many(
             {"session_id": reference}, {"$set": {"status": "failed", "paystack_status": event}}
         )
 

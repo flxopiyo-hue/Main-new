@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 
 from core.config import EMERGENT_LLM_KEY, STYLIST_MODEL
 from core.db import db
+from core.fit_match import compute_fit
 from core.gating import assert_can_start_stylist_session, is_premium, stylist_sessions_remaining
 from core.security import get_current_user
 
@@ -88,21 +89,72 @@ class StylistChatIn(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _item_card(doc: Dict[str, Any]) -> Dict[str, Any]:
+def _item_card(doc: Dict[str, Any], suggested_size: Optional[str] = None) -> Dict[str, Any]:
     return {
         "id": doc["id"],
         "name": doc.get("name", ""),
+        "seller_id": doc.get("seller_id", ""),
         "seller_name": doc.get("seller_name", ""),
         "price_cents": int(doc.get("price_cents") or 0),
         "currency": doc.get("currency", "KES"),
         "image_b64": doc.get("image_b64", ""),
         "garment_type": doc.get("garment_type", "other"),
         "category": doc.get("category", ""),
+        "suggested_size": suggested_size,
+        "sizes_in_stock": [
+            s["label"] for s in doc.get("sizes", []) if int(s.get("available_qty") or 0) > 0
+        ],
     }
 
 
-async def _catalog_lines() -> tuple[str, Dict[str, Dict[str, Any]]]:
-    """Compact text catalog for the prompt + id → item doc lookup."""
+# Garment types where S/M/L body-fit sizing doesn't apply — any stocked
+# size qualifies (shoes use their own numeric scale, accessories are
+# one-size-ish).
+_NON_APPAREL = {"shoes", "bag", "jewelry", "hat", "belt", "scarf", "socks", "tie", "other"}
+
+
+def _size_for_buyer(
+    item: Dict[str, Any],
+    measurements: Dict[str, Any],
+    preferred_size: Optional[str],
+) -> Optional[str]:
+    """The size we'd put THIS buyer in, or None when the item shouldn't be
+    suggested (no stock in a size that fits them).
+
+    Priority: best-fit from measurements (fit engine) → preferred size →
+    any stocked size for non-apparel / when we know nothing about the buyer.
+    """
+    in_stock = [
+        s.get("label")
+        for s in item.get("sizes", []) or []
+        if int(s.get("available_qty") or 0) > 0
+    ]
+    if not in_stock:
+        return None
+    if measurements:
+        fit = compute_fit(item, measurements)
+        if fit.get("scorable"):
+            rec = fit.get("recommended_size")
+            # The engine always names SOME size — only trust it when the
+            # fit is at least "amber" (score ≥ 50); a 0-score best size
+            # means nothing in this item genuinely fits the buyer.
+            if rec in in_stock and float(fit.get("score") or 0) >= 50:
+                return rec
+            return None
+    if preferred_size:
+        if preferred_size in in_stock:
+            return preferred_size
+        if (item.get("garment_type") or "other") in _NON_APPAREL:
+            return in_stock[0]
+        return None
+    return in_stock[0]
+
+
+async def _catalog_lines(
+    measurements: Dict[str, Any], preferred_size: Optional[str]
+) -> tuple[str, Dict[str, Dict[str, Any]], Dict[str, str]]:
+    """Compact text catalog for the prompt (pre-filtered to pieces in
+    stock in the buyer's size) + id → item doc lookup + id → size map."""
     docs = (
         await db.items.find({}, {"_id": 0})
         .sort("created_at", -1)
@@ -110,18 +162,22 @@ async def _catalog_lines() -> tuple[str, Dict[str, Dict[str, Any]]]:
     )
     lines: List[str] = []
     lookup: Dict[str, Dict[str, Any]] = {}
+    size_map: Dict[str, str] = {}
     for d in docs:
+        buyer_size = _size_for_buyer(d, measurements, preferred_size)
+        if not buyer_size:
+            continue  # nothing in stock that fits this buyer
         lookup[d["id"]] = d
-        in_stock = [s["label"] for s in d.get("sizes", []) if int(s.get("available_qty") or 0) > 0]
+        size_map[d["id"]] = buyer_size
         colours = ", ".join(c.get("name", "") for c in d.get("colors", [])) or "—"
         price = int(d.get("price_cents") or 0) // 100
         lines.append(
             f"- id={d['id']} | {d.get('garment_type', 'other')} | \"{d.get('name', '')}\" "
             f"by {d.get('seller_name', '')} | audience: {d.get('audience', 'unisex')} | "
             f"colours: {colours} | {d.get('currency', 'KES')} {price:,} | "
-            f"sizes in stock: {', '.join(in_stock) or 'none'}"
+            f"buyer's size: {buyer_size} (in stock)"
         )
-    return "\n".join(lines), lookup
+    return "\n".join(lines), lookup, size_map
 
 
 def _buyer_context(user: Dict[str, Any], profile: Optional[Dict[str, Any]]) -> str:
@@ -164,7 +220,7 @@ def _parse_model_json(raw: str) -> Dict[str, Any]:
 
 
 def _resolve_outfits(
-    raw_outfits: Any, lookup: Dict[str, Dict[str, Any]]
+    raw_outfits: Any, lookup: Dict[str, Dict[str, Any]], size_map: Dict[str, str]
 ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """→ (stored_outfits [ids only], response_outfits [with item cards])."""
     stored: List[Dict[str, Any]] = []
@@ -181,15 +237,27 @@ def _resolve_outfits(
         why = str(o.get("why") or "")[:400]
         stored.append({"title": title, "why": why, "item_ids": ids})
         resolved.append(
-            {"title": title, "why": why, "items": [_item_card(lookup[i]) for i in ids]}
+            {
+                "title": title,
+                "why": why,
+                "items": [_item_card(lookup[i], size_map.get(i)) for i in ids],
+            }
         )
     return stored, resolved
 
 
-async def _cards_for_ids(item_ids: List[str]) -> List[Dict[str, Any]]:
+async def _cards_for_ids(
+    item_ids: List[str],
+    measurements: Dict[str, Any],
+    preferred_size: Optional[str],
+) -> List[Dict[str, Any]]:
     docs = await db.items.find({"id": {"$in": item_ids}}, {"_id": 0}).to_list(len(item_ids))
     by_id = {d["id"]: d for d in docs}
-    return [_item_card(by_id[i]) for i in item_ids if i in by_id]
+    return [
+        _item_card(by_id[i], _size_for_buyer(by_id[i], measurements, preferred_size))
+        for i in item_ids
+        if i in by_id
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -246,8 +314,11 @@ async def stylist_chat(
     # ------------------------------------------------------------------
     # Build the prompt
     # ------------------------------------------------------------------
-    catalog_text, lookup = await _catalog_lines()
     profile = await db.profiles.find_one({"user_id": user["id"]}, {"_id": 0})
+    measurements = (profile or {}).get("measurements") or {}
+    catalog_text, lookup, size_map = await _catalog_lines(
+        measurements, user.get("preferred_size")
+    )
 
     attach_photo = not session.get("appearance_profile") and bool(
         (profile or {}).get("front_photo_b64")
@@ -273,9 +344,11 @@ async def stylist_chat(
             )
         ),
         f"Occasion focus: {OCCASION_LABELS.get(occ, 'not specified yet')}.",
-        "CATALOG of live marketplace pieces (recommend ONLY these, by exact id):\n"
-        + (catalog_text or "(catalog is empty — no items listed yet; tell the buyer "
-           "the boutique is being restocked and give general colour/cut advice)"),
+        "CATALOG of live marketplace pieces — every piece below is ALREADY "
+        "confirmed in stock in this buyer's size (shown per line). Recommend "
+        "ONLY these, by exact id:\n"
+        + (catalog_text or "(catalog is empty — no piece is in stock in this buyer's "
+           "size right now; tell the buyer honestly and give general colour/cut advice)"),
     ]
     if transcript:
         context_bits.append("Conversation so far:\n" + transcript)
@@ -303,7 +376,7 @@ async def stylist_chat(
 
     data = _parse_model_json(str(raw))
     reply = str(data.get("reply") or "").strip() or "Let's find you a great look — tell me the occasion!"
-    stored_outfits, resolved_outfits = _resolve_outfits(data.get("outfits"), lookup)
+    stored_outfits, resolved_outfits = _resolve_outfits(data.get("outfits"), lookup, size_map)
 
     updates: Dict[str, Any] = {"updated_at": now, "occasion": session.get("occasion")}
     appearance = data.get("appearance_profile")
@@ -373,6 +446,9 @@ async def stylist_session_detail(
     )
     if not d:
         raise HTTPException(status_code=404, detail="Stylist session not found")
+    profile = await db.profiles.find_one({"user_id": user["id"]}, {"_id": 0})
+    measurements = (profile or {}).get("measurements") or {}
+    preferred = user.get("preferred_size")
     messages = []
     for m in d.get("messages") or []:
         entry: Dict[str, Any] = {"role": m["role"], "text": m["text"]}
@@ -381,7 +457,9 @@ async def stylist_session_detail(
                 {
                     "title": o["title"],
                     "why": o.get("why", ""),
-                    "items": await _cards_for_ids(o.get("item_ids") or []),
+                    "items": await _cards_for_ids(
+                        o.get("item_ids") or [], measurements, preferred
+                    ),
                 }
                 for o in m["outfits"]
             ]

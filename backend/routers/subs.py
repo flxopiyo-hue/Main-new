@@ -487,25 +487,30 @@ async def webhook(
     # redirect bridge but essential on mobile where the buyer may kill
     # the app before returning to it).
     if reference and reference.startswith("oromona_order_"):
-        order = await db.users.database["orders"].find_one({"session_id": reference}, {"_id": 0})
-        if order:
-            new_status: Optional[str] = None
-            if event == "charge.success":
-                new_status = "paid"
-            elif event == "charge.failed":
-                new_status = "failed"
-            if new_status and order.get("status") != new_status:
-                await db.users.database["orders"].update_one(
-                    {"id": order["id"]},
-                    {"$set": {"status": new_status, "paystack_status": event}},
-                )
-                if new_status == "paid":
-                    try:
-                        from routers.payments import _on_order_paid
-                        order["status"] = "paid"
-                        await _on_order_paid(order)
-                    except Exception as _e:  # pragma: no cover
-                        logger.warning("on_order_paid skipped for %s: %s", order["id"], _e)
+        # Look purchases share one reference across several orders — flip
+        # them all together.
+        orders = await db.users.database["orders"].find(
+            {"session_id": reference}, {"_id": 0}
+        ).to_list(20)
+        new_status: Optional[str] = None
+        if event == "charge.success":
+            new_status = "paid"
+        elif event == "charge.failed":
+            new_status = "failed"
+        if new_status:
+            for order in orders:
+                if order.get("status") != new_status:
+                    await db.users.database["orders"].update_one(
+                        {"id": order["id"]},
+                        {"$set": {"status": new_status, "paystack_status": event}},
+                    )
+                    if new_status == "paid":
+                        try:
+                            from routers.payments import _on_order_paid
+                            order["status"] = "paid"
+                            await _on_order_paid(order)
+                        except Exception as _e:  # pragma: no cover
+                            logger.warning("on_order_paid skipped for %s: %s", order["id"], _e)
         # An item purchase does not touch the subscription document, so
         # we short-circuit here.
         return {"status": "ok", "kind": "item_purchase"}

@@ -761,6 +761,24 @@ class CheckoutOut(BaseModel):
     url: str
 
 
+class LookLineIn(BaseModel):
+    """One piece inside a "Shop the look" multi-item checkout."""
+
+    item_id: str
+    size: str
+    color: Optional[str] = None
+
+
+class LookCheckoutIn(BaseModel):
+    """AI-Stylist "Shop the look" — ONE Paystack charge covering every
+    piece of a suggested outfit. The backend fans it out into one order
+    per item on payment success so sellers/riders fulfil normally."""
+
+    lines: List[LookLineIn] = Field(min_length=1, max_length=8)
+    address_id: Optional[str] = None
+    origin_url: Optional[str] = None
+
+
 class OrderOut(BaseModel):
     id: str
     buyer_id: str

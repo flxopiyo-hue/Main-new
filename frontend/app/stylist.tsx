@@ -23,6 +23,7 @@ import {
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { LookCheckoutSheet } from "@/src/components/LookCheckoutSheet";
 import { OutfitDrawer } from "@/src/components/OutfitDrawer";
 import { PaywallModal } from "@/src/components/PaywallModal";
 import { useToast } from "@/src/components/Toast";
@@ -61,6 +62,7 @@ export default function StylistScreen() {
   const [hasFrontPhoto, setHasFrontPhoto] = useState(true);
   const [paywallInfo, setPaywallInfo] = useState<{ feature?: string; message?: string } | null>(null);
   const [outfitOpen, setOutfitOpen] = useState(false);
+  const [shopOutfit, setShopOutfit] = useState<StylistOutfit | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
   // Resume the most recent session (keeps the 2/week free quota honest);
@@ -283,15 +285,26 @@ export default function StylistScreen() {
                         ))}
                       </View>
                     </ScrollView>
-                    <TouchableOpacity
-                      testID={`stylist-try-look-${idx}-${oi}`}
-                      style={styles.tryLookBtn}
-                      onPress={() => tryLook(o)}
-                      activeOpacity={0.85}
-                    >
-                      <Feather name="layers" size={14} color={colors.primaryFg} />
-                      <Text style={styles.tryLookLabel}>Try this look on</Text>
-                    </TouchableOpacity>
+                    <View style={styles.lookActions}>
+                      <TouchableOpacity
+                        testID={`stylist-try-look-${idx}-${oi}`}
+                        style={[styles.tryLookBtn, styles.tryLookGhost]}
+                        onPress={() => tryLook(o)}
+                        activeOpacity={0.85}
+                      >
+                        <Feather name="layers" size={14} color={colors.primary} />
+                        <Text style={[styles.tryLookLabel, { color: colors.primary }]}>Try it on</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        testID={`stylist-shop-look-${idx}-${oi}`}
+                        style={styles.tryLookBtn}
+                        onPress={() => setShopOutfit(o)}
+                        activeOpacity={0.85}
+                      >
+                        <Feather name="shopping-bag" size={14} color={colors.primaryFg} />
+                        <Text style={styles.tryLookLabel}>Shop the look</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 ))}
               </View>
@@ -330,6 +343,11 @@ export default function StylistScreen() {
       </KeyboardAvoidingView>
 
       <OutfitDrawer visible={outfitOpen} onClose={() => setOutfitOpen(false)} />
+      <LookCheckoutSheet
+        visible={!!shopOutfit}
+        outfit={shopOutfit}
+        onClose={() => setShopOutfit(null)}
+      />
       <PaywallModal
         visible={!!paywallInfo}
         feature={paywallInfo?.feature}
@@ -426,13 +444,20 @@ const styles = StyleSheet.create({
   outfitThumb: { width: 96, height: 120, backgroundColor: colors.muted },
   outfitItemName: { fontFamily: fonts.bodyMedium, fontSize: 11, color: colors.primary, marginTop: 6 },
   outfitItemPrice: { fontFamily: fonts.bodySemi, fontSize: 11, color: colors.mutedFg, marginTop: 2 },
+  lookActions: { flexDirection: "row", gap: spacing.sm },
   tryLookBtn: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
     backgroundColor: colors.primary,
     height: 44,
+  },
+  tryLookGhost: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.primary,
   },
   tryLookLabel: {
     fontFamily: fonts.bodySemi,

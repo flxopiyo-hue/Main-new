@@ -333,3 +333,10 @@ Frontend `.env` currently points at preview (`https://fit-finder-app-5.preview.e
 - Frontend: app/stylist.tsx chat screen (occasion chips, outfit suggestion cards, "Try this look on" → stages items + opens OutfitDrawer, PaywallModal on 402, keyboard-controller translate-with-padding); CTA card on (tabs)/tryon.tsx.
 - Main-agent verified with REAL LLM calls: tests/smoke_stylist.py (chat 200 + real-catalog outfits + follow-up + history + 402 gate) and browser E2E incl. paywall + drawer staging. Smoke data (stylist_seller/stylist_buyer/4 items/sessions) cleaned afterwards.
 - NOTE for future testing: stylist chat calls Gemini 3.1 Pro — avoid repeated sends in tests (LLM cost). DB post-reset holds ONLY admin@oromona.com.
+
+## Iteration 40 — Stylist size filter + Shop-the-look one-tap checkout
+- routers/stylist.py: catalog pre-filtered to buyer's size (fit engine best-fit ≥50 score → preferred → non-apparel any stock); cards carry suggested_size + sizes_in_stock (+ seller_id).
+- routers/payments.py: POST /api/payments/checkout-look (one live Paystack init, N pending orders, per-seller-parcel fee summed as one line, fee on first order per group); payment_status/paystack-return/webhooks (+subs webhook) now flip ALL orders sharing a reference.
+- frontend: src/components/LookCheckoutSheet.tsx + Shop-the-look button on stylist outfit cards.
+- Main-agent verified: tests/smoke_look.py all-pass + browser E2E (sheet totals KSh 11,997 + 300 = 12,297; Pay button NOT tapped — LIVE keys). All smoke users/items/orders cleaned.
+- WARNING for future agents: two same-file parallel edit races occurred (payments.py tail duplication + payment_status revert) — NEVER batch multiple search_replace calls to the same file.
