@@ -47,26 +47,97 @@ async def seller_analytics(
     items = (
         await db.items.find({"seller_id": user["id"]}, {"_id": 0}).to_list(500)
     )
+    item_ids = [it["id"] for it in items]
+
+    # Bulk aggregation (avoids N+1 per-item queries): wishlist counts and
+    # paid-order money figures grouped by item_id in two round-trips.
+    wish_by_item: Dict[str, int] = {
+        row["_id"]: int(row["n"])
+        async for row in db.wishlists.aggregate(
+            [
+                {"$match": {"item_id": {"$in": item_ids}}},
+                {"$group": {"_id": "$item_id", "n": {"$sum": 1}}},
+            ]
+        )
+    } if item_ids else {}
+    orders_by_item: Dict[str, Dict[str, int]] = {}
+    if item_ids:
+        async for row in db.orders.aggregate(
+            [
+                {"$match": {"item_id": {"$in": item_ids}, "status": "paid"}},
+                {
+                    "$group": {
+                        "_id": "$item_id",
+                        "paid": {"$sum": 1},
+                        "revenue": {"$sum": {"$ifNull": ["$amount_cents", 0]}},
+                        "fee": {
+                            "$sum": {
+                                "$ifNull": [
+                                    "$platform_fee_cents",
+                                    {
+                                        "$floor": {
+                                            "$divide": [
+                                                {
+                                                    "$multiply": [
+                                                        {"$ifNull": ["$amount_cents", 0]},
+                                                        PLATFORM_FEE_BPS,
+                                                    ]
+                                                },
+                                                10000,
+                                            ]
+                                        }
+                                    },
+                                ]
+                            }
+                        },
+                        "net": {
+                            "$sum": {
+                                "$ifNull": [
+                                    "$seller_net_cents",
+                                    {
+                                        "$max": [
+                                            {
+                                                "$subtract": [
+                                                    {"$ifNull": ["$amount_cents", 0]},
+                                                    {
+                                                        "$floor": {
+                                                            "$divide": [
+                                                                {
+                                                                    "$multiply": [
+                                                                        {"$ifNull": ["$amount_cents", 0]},
+                                                                        PLATFORM_FEE_BPS,
+                                                                    ]
+                                                                },
+                                                                10000,
+                                                            ]
+                                                        }
+                                                    },
+                                                ]
+                                            },
+                                            0,
+                                        ]
+                                    },
+                                ]
+                            }
+                        },
+                    }
+                },
+            ]
+        ):
+            orders_by_item[row["_id"]] = row
+
     out_items: List[ItemAnalytics] = []
     total_views = total_try_ons = total_wishlists = total_orders_paid = 0
     total_revenue = total_fee = total_net = 0
     for it in items:
         views = int(it.get("views", 0))
         tos = int(it.get("try_ons", 0))
-        wishes = await db.wishlists.count_documents({"item_id": it["id"]})
-        paid = 0
-        revenue = fee = net = 0
-        async for o in db.orders.find(
-            {"item_id": it["id"], "status": "paid"},
-            {"_id": 0, "amount_cents": 1, "platform_fee_cents": 1, "seller_net_cents": 1},
-        ):
-            paid += 1
-            amt = int(o.get("amount_cents", 0))
-            f = int(o.get("platform_fee_cents") or (amt * PLATFORM_FEE_BPS) // 10000)
-            n = int(o.get("seller_net_cents") or max(amt - f, 0))
-            revenue += amt
-            fee += f
-            net += n
+        wishes = wish_by_item.get(it["id"], 0)
+        agg = orders_by_item.get(it["id"], {})
+        paid = int(agg.get("paid", 0))
+        revenue = int(agg.get("revenue", 0))
+        fee = int(agg.get("fee", 0))
+        net = int(agg.get("net", 0))
         conversion = (paid / views) if views > 0 else 0.0
         out_items.append(
             ItemAnalytics(
