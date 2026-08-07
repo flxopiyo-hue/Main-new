@@ -55,6 +55,23 @@ export default function TryOnHub() {
           <ActiveProfileChip testIDPrefix="tryon-profile-chip" />
         </View>
         <TouchableOpacity
+          testID="tryon-stylist-cta"
+          style={[styles.byoCta, styles.stylistCta]}
+          onPress={() => router.push("/stylist")}
+          activeOpacity={0.85}
+        >
+          <View style={[styles.byoIconWrap, { backgroundColor: colors.primary }]}>
+            <Feather name="feather" size={20} color={colors.primaryFg} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.byoTitle}>AI Stylist</Text>
+            <Text style={styles.byoSub} numberOfLines={2}>
+              Looks picked for your skin tone &amp; shape — casual, office, events, dates.
+            </Text>
+          </View>
+          <Feather name="chevron-right" size={20} color={colors.primary} />
+        </TouchableOpacity>
+        <TouchableOpacity
           testID="tryon-byo-cta"
           style={styles.byoCta}
           onPress={() => router.push("/tryon/byo")}
@@ -214,4 +231,5 @@ const styles = StyleSheet.create({
   },
   byoTitle: { fontFamily: fonts.bodySemi, fontSize: 14, color: colors.primary },
   byoSub: { fontFamily: fonts.body, fontSize: 12, color: colors.mutedFg, marginTop: 2 },
+  stylistCta: { borderColor: colors.primary, marginTop: spacing.lg },
 });

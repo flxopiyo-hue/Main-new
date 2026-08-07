@@ -327,3 +327,9 @@ Frontend `.env` currently points at preview (`https://fit-finder-app-5.preview.e
 - Synthetic paid orders for lifecycle tests MUST include session_id (KeyError otherwise) — copy field shape from an existing order doc.
 - Seller login MUST use the "Selling" intent chip (login-intent-seller) or the demo seller's role gets flipped.
 - Avoid AI generation endpoints; at most ONE single-angle outfit generation in the frontend flow.
+
+## Iteration 39 — AI Stylist (Gemini 3.1 Pro chat, catalog-grounded outfit suggestions)
+- Backend: routers/stylist.py — POST /api/stylist/chat (session create/resume, photo attached only on first turn, appearance_profile cached on session, catalog whitelist enforced), GET /api/stylist/sessions[/{id}]. Gating: 2 new sessions/week free (assert_can_start_stylist_session), Premium unlimited.
+- Frontend: app/stylist.tsx chat screen (occasion chips, outfit suggestion cards, "Try this look on" → stages items + opens OutfitDrawer, PaywallModal on 402, keyboard-controller translate-with-padding); CTA card on (tabs)/tryon.tsx.
+- Main-agent verified with REAL LLM calls: tests/smoke_stylist.py (chat 200 + real-catalog outfits + follow-up + history + 402 gate) and browser E2E incl. paywall + drawer staging. Smoke data (stylist_seller/stylist_buyer/4 items/sessions) cleaned afterwards.
+- NOTE for future testing: stylist chat calls Gemini 3.1 Pro — avoid repeated sends in tests (LLM cost). DB post-reset holds ONLY admin@oromona.com.

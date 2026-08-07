@@ -22,7 +22,12 @@ from typing import Any, Dict
 
 from fastapi import HTTPException
 
-from core.config import FREE_MAX_PROFILES, FREE_TRYONS_PER_WEEK, PREMIUM_MAX_PROFILES
+from core.config import (
+    FREE_MAX_PROFILES,
+    FREE_STYLIST_SESSIONS_PER_WEEK,
+    FREE_TRYONS_PER_WEEK,
+    PREMIUM_MAX_PROFILES,
+)
 from core.db import db
 
 
@@ -125,5 +130,32 @@ async def assert_can_add_profile(user_doc: Dict[str, Any]) -> None:
                 f"Premium supports up to {PREMIUM_MAX_PROFILES} profiles."
                 if premium
                 else f"Free supports {FREE_MAX_PROFILES} profiles. Upgrade to Premium for {PREMIUM_MAX_PROFILES}."
+            ),
+        )
+
+
+async def _stylist_sessions_this_week(user_id: str) -> int:
+    since = datetime.now(timezone.utc) - timedelta(days=7)
+    return await db.stylist_sessions.count_documents(
+        {"user_id": user_id, "created_at": {"$gte": since}}
+    )
+
+
+async def stylist_sessions_remaining(user_id: str) -> int:
+    used = await _stylist_sessions_this_week(user_id)
+    return max(0, FREE_STYLIST_SESSIONS_PER_WEEK - used)
+
+
+async def assert_can_start_stylist_session(user_doc: Dict[str, Any]) -> None:
+    """Gate NEW AI-Stylist chat sessions (2/week Free, unlimited Premium)."""
+    if is_premium(user_doc):
+        return
+    used = await _stylist_sessions_this_week(user_doc["id"])
+    if used >= FREE_STYLIST_SESSIONS_PER_WEEK:
+        raise PaywallError(
+            feature="stylist_weekly_limit",
+            message=(
+                f"You've used your {FREE_STYLIST_SESSIONS_PER_WEEK} free stylist "
+                "sessions this week. Upgrade to Premium for unlimited styling."
             ),
         )

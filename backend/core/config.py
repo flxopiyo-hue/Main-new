@@ -39,6 +39,8 @@ FRONTEND_PUBLIC_URL: str = os.environ.get(
 
 # ---- Domain constants ----------------------------------------------------
 NANO_BANANA_MODEL: str = "gemini-3.1-flash-image-preview"
+# AI Stylist chat/vision model (user-selected: Gemini 3.1 Pro).
+STYLIST_MODEL: str = "gemini-3.1-pro-preview"
 VISION_MODEL: str = "gemini-2.5-flash"
 PLATFORM_FEE_BPS: int = 1500  # 15% take rate (Paystack escrow model — released after buyer confirmation or 48h auto-release)
 MAX_TRYON_ANGLES: int = 4
@@ -48,5 +50,8 @@ DEFAULT_CURRENCY: str = "KES"  # Kenyan Shilling — product originates in Kenya
 # Premium sell is "unlimited + multi-profile + AI multi-angle outfits"
 # rather than "starving you until you pay".
 FREE_TRYONS_PER_WEEK: int = 7
+# AI Stylist chat — Free buyers may START this many sessions per rolling
+# week (messages inside a session are uncapped by tier); Premium unlimited.
+FREE_STYLIST_SESSIONS_PER_WEEK: int = 2
 FREE_MAX_PROFILES: int = 2
 PREMIUM_MAX_PROFILES: int = 10

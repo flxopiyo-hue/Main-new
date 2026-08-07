@@ -40,6 +40,7 @@ from routers import (
     profile,
     restock,
     seller,
+    stylist,
     subs,
     tryon,
     users,
@@ -72,6 +73,7 @@ api_router.include_router(addresses.router)
 api_router.include_router(items.router)
 api_router.include_router(wishlist.router)
 api_router.include_router(tryon.router)
+api_router.include_router(stylist.router)
 api_router.include_router(orders.router)
 api_router.include_router(payments.router)
 api_router.include_router(seller.router)

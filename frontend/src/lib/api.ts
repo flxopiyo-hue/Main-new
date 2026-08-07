@@ -820,6 +820,52 @@ export function isPaywallError(e: unknown): e is PaywallError {
   return !!(e && typeof e === "object" && (e as any).paywall === true);
 }
 
+// ---------------------------------------------------------------------------
+// AI Stylist types
+// ---------------------------------------------------------------------------
+
+export interface StylistItemCard {
+  id: string;
+  name: string;
+  seller_name: string;
+  price_cents: number;
+  currency: string;
+  image_b64: string;
+  garment_type: GarmentType;
+  category: string;
+}
+
+export interface StylistOutfit {
+  title: string;
+  why: string;
+  items: StylistItemCard[];
+}
+
+export interface StylistChatResponse {
+  session_id: string;
+  occasion?: string | null;
+  reply: string;
+  outfits: StylistOutfit[];
+  /** -1 = unlimited (Premium) */
+  sessions_remaining: number;
+}
+
+export interface StylistSessionSummary {
+  id: string;
+  occasion?: string | null;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+  preview: string;
+}
+
+export interface StylistSessionDetail {
+  id: string;
+  occasion?: string | null;
+  created_at: string;
+  messages: { role: "user" | "stylist"; text: string; outfits?: StylistOutfit[] }[];
+}
+
 export const api = {
   // Auth
   register: (body: {
@@ -953,6 +999,16 @@ export const api = {
     angles?: TryOnAngle[];
   }) => request<TryOnResult>("/tryon/garment", { method: "POST", body }),
   tryOnHistory: () => request<TryOnResult[]>("/tryon/history"),
+
+  // AI Stylist (Gemini 3.1 Pro) — chat suggestions from live catalog items
+  stylistChat: (body: {
+    session_id?: string | null;
+    message: string;
+    occasion?: string | null;
+  }) => request<StylistChatResponse>("/stylist/chat", { method: "POST", body }),
+  stylistSessions: () => request<StylistSessionSummary[]>("/stylist/sessions"),
+  stylistSession: (id: string) =>
+    request<StylistSessionDetail>(`/stylist/sessions/${id}`),
   shareTryOn: (
     id: string,
     fmt: "square" | "story" = "square",
