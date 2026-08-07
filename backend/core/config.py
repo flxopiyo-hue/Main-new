@@ -33,9 +33,10 @@ PAYSTACK_SECRET_KEY: str = os.environ.get("PAYSTACK_SECRET_KEY", "")
 PREMIUM_PLAN_NAME: str = os.environ.get("PREMIUM_PLAN_NAME", "Oromona Premium")
 PREMIUM_PLAN_AMOUNT_KOBO: int = int(os.environ.get("PREMIUM_PLAN_AMOUNT_KOBO", "19900"))
 PREMIUM_PLAN_TRIAL_DAYS: int = int(os.environ.get("PREMIUM_PLAN_TRIAL_DAYS", "7"))
-FRONTEND_PUBLIC_URL: str = os.environ.get(
-    "FRONTEND_PUBLIC_URL", "https://fit-finder-app-5.preview.emergentagent.com"
-)
+# Public app URL used in payment callback/deep links and emails. MUST come
+# from the environment (set in backend/.env; rewritten at deploy time) — no
+# source fallback so deploy config stays the single source of truth.
+FRONTEND_PUBLIC_URL: str = os.environ.get("FRONTEND_PUBLIC_URL", "")
 
 # ---- Domain constants ----------------------------------------------------
 NANO_BANANA_MODEL: str = "gemini-3.1-flash-image-preview"
