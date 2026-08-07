@@ -39,9 +39,9 @@ router = APIRouter()
 _RESET_TOKEN_TTL_MIN = 30  # 30 minutes; tokens self-invalidate via `exp`.
 _RESET_TOKEN_AUD = "oromona.password-reset"
 
-_APP_WEB_URL = os.environ.get(
-    "APP_WEB_URL", "https://fit-finder-app-5.preview.emergentagent.com"
-).rstrip("/")
+# Public web URL for reset links — env-only (backend/.env, rewritten at
+# deploy time); no source fallback so deploy config stays authoritative.
+_APP_WEB_URL = os.environ.get("APP_WEB_URL", "").rstrip("/")
 _APP_DEEPLINK_SCHEME = os.environ.get("APP_DEEPLINK_SCHEME", "oromona").strip() or "oromona"
 
 
@@ -379,4 +379,34 @@ async def reset_password(body: ResetPasswordIn) -> AuthOut:
         token=jwt_token,
         user=user_to_out(fresh),
     )
+
+
+@router.delete("/auth/me")
+async def delete_account(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    """Self-service account deletion (App Store / Play review requirement).
+
+    Permanently removes the account and all personal data (profile photos,
+    measurements, addresses, try-ons, stylist chats, wishlists). Order and
+    payout records are retained for bookkeeping/legal reasons but the login
+    is destroyed and can never be reused. A seller's listings come off the
+    marketplace immediately.
+    """
+    uid = user["id"]
+    if user.get("role") == "admin":
+        raise HTTPException(status_code=400, detail="Admin accounts cannot self-delete")
+    for coll, field in (
+        ("profiles", "user_id"),
+        ("body_profiles", "user_id"),
+        ("addresses", "user_id"),
+        ("tryons", "user_id"),
+        ("stylist_sessions", "user_id"),
+        ("wishlists", "user_id"),
+        ("collections", "user_id"),
+        ("stock_notifications", "user_id"),
+    ):
+        await db[coll].delete_many({field: uid})
+    await db.items.delete_many({"seller_id": uid})
+    await db.users.delete_one({"id": uid})
+    logger.info("account self-deleted: %s", uid)
+    return {"status": "deleted"}
 

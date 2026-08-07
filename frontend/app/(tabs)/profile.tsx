@@ -24,6 +24,7 @@ import {
   WishlistEntry,
 } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
+import { confirmDialog } from "@/src/lib/confirm";
 import { CURRENCIES, formatPriceIn } from "@/src/lib/currency";
 import { dataUriFromBase64 } from "@/src/lib/images";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
@@ -87,6 +88,27 @@ export default function Profile() {
   const handleLogout = async () => {
     await logout();
     router.replace("/(auth)/welcome");
+  };
+
+  // App/Play review requirement: self-service, irreversible account
+  // deletion with explicit confirmation.
+  const handleDeleteAccount = () => {
+    confirmDialog({
+      title: "Delete account?",
+      message:
+        "This permanently deletes your account, profile photos, measurements, addresses, try-ons and stylist chats. This cannot be undone.",
+      confirmLabel: "Delete forever",
+      destructive: true,
+      onConfirm: async () => {
+        try {
+          await api.deleteAccount();
+          await logout();
+          router.replace("/(auth)/welcome");
+        } catch (e: any) {
+          toast.show(e?.message ?? "Could not delete account", "error");
+        }
+      },
+    });
   };
 
   const submitFeedback = async (orderId: string, fit: FitFeedback) => {
@@ -576,6 +598,15 @@ export default function Profile() {
           onPress={handleLogout}
           style={{ marginHorizontal: spacing.lg, marginTop: spacing.lg }}
         />
+        <TouchableOpacity
+          testID="profile-delete-account-btn"
+          onPress={handleDeleteAccount}
+          style={styles.deleteAccountBtn}
+          accessibilityLabel="Delete account permanently"
+        >
+          <Feather name="trash-2" size={13} color={colors.error} />
+          <Text style={styles.deleteAccountLabel}>Delete Account</Text>
+        </TouchableOpacity>
         <View style={{ height: spacing.xxl }} />
       </ScrollView>
     </SafeAreaView>
@@ -602,6 +633,21 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
+  deleteAccountBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    alignSelf: "center",
+    minHeight: 44,
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.md,
+  },
+  deleteAccountLabel: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 12,
+    color: colors.error,
+  },
   center: { alignItems: "center", justifyContent: "center" },
   scroll: { paddingBottom: spacing.xxl },
   header: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.lg },

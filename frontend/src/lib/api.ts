@@ -895,6 +895,8 @@ export const api = {
     as_role?: "buyer" | "seller";
   }) => request<AuthEnvelope>("/auth/login", { method: "POST", body, auth: false }),
   me: () => request<User>("/auth/me"),
+  // Self-service account deletion (App/Play review requirement).
+  deleteAccount: () => request<{ status: string }>("/auth/me", { method: "DELETE" }),
   updatePreferences: (body: { preferred_currency?: CurrencyCode }) =>
     request<User>("/auth/preferences", { method: "PATCH", body }),
 
