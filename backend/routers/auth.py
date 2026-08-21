@@ -191,7 +191,19 @@ async def register(body: RegisterIn) -> AuthOut:
 @router.post("/auth/login", response_model=AuthOut)
 async def login(body: LoginIn) -> AuthOut:
     doc = await db.users.find_one({"email": body.email.lower()})
-    if not doc or not verify_password(body.password, doc["hashed_password"]):
+    if not doc:
+        raise HTTPException(status_code=400, detail="Invalid email or password")
+    # SSO-native accounts have no password hash. Guide the user to sign in
+    # with the provider they originally used instead of the generic error.
+    if not doc.get("hashed_password"):
+        providers = list((doc.get("providers") or {}).keys())
+        provider_label = providers[0].title() if providers else "your social account"
+        raise HTTPException(
+            status_code=400,
+            detail=f"This account signs in with {provider_label}. Tap "
+            f"'Continue with {provider_label}' above.",
+        )
+    if not verify_password(body.password, doc["hashed_password"]):
         raise HTTPException(status_code=400, detail="Invalid email or password")
 
     # Optional buyer↔seller flip at the login moment. Admins and couriers

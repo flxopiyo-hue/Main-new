@@ -43,6 +43,7 @@ from routers import (
     profile,
     restock,
     seller,
+    sso,
     stylist,
     subs,
     tryon,
@@ -68,6 +69,7 @@ async def root() -> dict:
 # Order doesn't matter for routing (paths are disjoint) but the order below
 # determines OpenAPI tag ordering and is grouped by concern.
 api_router.include_router(auth.router)
+api_router.include_router(sso.router)
 api_router.include_router(users.router)
 api_router.include_router(profile.router)
 api_router.include_router(categories.router)

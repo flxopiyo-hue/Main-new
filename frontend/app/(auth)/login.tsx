@@ -23,6 +23,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppButton } from "@/src/components/AppButton";
 import { AppInput } from "@/src/components/AppInput";
+import { SsoButtons } from "@/src/components/SsoButtons";
 import { useToast } from "@/src/components/Toast";
 import { useAuth } from "@/src/lib/auth";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
@@ -37,6 +38,24 @@ export default function Login() {
   const [intent, setIntent] = useState<Intent>("buyer");
   const [loading, setLoading] = useState(false);
 
+  const routeForUser = (u: { role: string }, needsSellerOnboarding = false) => {
+    if (u.role === "admin") {
+      router.replace("/admin");
+      return;
+    }
+    if (needsSellerOnboarding) {
+      router.replace("/seller-onboarding");
+      return;
+    }
+    if (u.role === "seller") {
+      router.replace("/(seller)");
+    } else if (u.role === "courier") {
+      router.replace("/(courier)");
+    } else {
+      router.replace("/(tabs)");
+    }
+  };
+
   const submit = async () => {
     if (!email.trim() || !password) {
       toast.show("Enter email and password", "error");
@@ -49,25 +68,7 @@ export default function Login() {
         password,
         intent,
       );
-      // Admins always go to /admin regardless of chip choice (server already
-      // ignored the `as_role` parameter for admin accounts).
-      if (u.role === "admin") {
-        router.replace("/admin");
-        return;
-      }
-      if (needsSellerOnboarding) {
-        router.replace("/seller-onboarding");
-        return;
-      }
-      // Trust the *resolved* role on the user object — that's what survived
-      // the server-side toggle (if any).
-      if (u.role === "seller") {
-        router.replace("/(seller)");
-      } else if (u.role === "courier") {
-        router.replace("/(courier)");
-      } else {
-        router.replace("/(tabs)");
-      }
+      routeForUser(u, needsSellerOnboarding);
     } catch (e: any) {
       toast.show(e?.message ?? "Login failed", "error");
     } finally {
@@ -126,6 +127,13 @@ export default function Login() {
             ? "Land in the Seller Portal — inventory, analytics, and orders to fulfill."
             : "Land in the marketplace — browse pieces and try them on."}
         </Text>
+
+        <View style={{ height: spacing.lg }} />
+        <SsoButtons
+          mode="login"
+          disabled={loading}
+          onSuccess={(u) => routeForUser(u, false)}
+        />
 
         <View style={{ height: spacing.lg }} />
         <AppInput

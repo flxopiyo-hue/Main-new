@@ -17,6 +17,7 @@ import {
   setToken as setTokenStorage,
   User,
 } from "@/src/lib/api";
+import { signInWithApple, signInWithGoogle, consumeGoogleColdStart } from "@/src/lib/sso";
 import { storage } from "@/src/utils/storage";
 
 const TOKEN_KEY = "aurafit.token";
@@ -87,6 +88,11 @@ interface AuthValue {
   // flow that mints a JWT server-side and needs to sign the user in
   // immediately on the client).
   adoptSession: (envelope: { token: string; user: User }) => Promise<void>;
+  // SSO — returns null when the user cancels the provider sheet.
+  // Callers should NOT show a toast on `null`. Any thrown error is a
+  // real failure worth surfacing.
+  loginWithGoogle: () => Promise<User | null>;
+  loginWithApple: () => Promise<User | null>;
 }
 
 const AuthContext = createContext<AuthValue | undefined>(undefined);
@@ -107,6 +113,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     (async () => {
+      // Cold-start Google Auth (Emergent): the browser dropped us back
+      // with `session_id=...` in the URL. Consume it BEFORE checking the
+      // stored token so an existing/expired session doesn't blow past the
+      // fresh sign-in the user just completed.
+      try {
+        const envelope = await consumeGoogleColdStart();
+        if (envelope) {
+          await setTokenStorage(envelope.token);
+          setUser(envelope.user);
+          setLoading(false);
+          return;
+        }
+      } catch {
+        // Fall through — user still has other ways to sign in.
+      }
       const token = await storage.secureGet<string>(TOKEN_KEY, "");
       if (token) {
         await refresh();
@@ -231,6 +252,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  const loginWithGoogle = useCallback(async (): Promise<User | null> => {
+    const envelope = await signInWithGoogle();
+    if (!envelope) return null;
+    await setTokenStorage(envelope.token);
+    setUser(envelope.user);
+    return envelope.user;
+  }, []);
+
+  const loginWithApple = useCallback(async (): Promise<User | null> => {
+    const envelope = await signInWithApple();
+    if (!envelope) return null;
+    await setTokenStorage(envelope.token);
+    setUser(envelope.user);
+    return envelope.user;
+  }, []);
+
   const value = useMemo(
     () => ({
       user,
@@ -243,8 +280,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       logout,
       refresh,
       adoptSession,
+      loginWithGoogle,
+      loginWithApple,
     }),
-    [user, loading, login, registerBuyer, registerSeller, registerCourier, toggleRole, logout, refresh, adoptSession],
+    [user, loading, login, registerBuyer, registerSeller, registerCourier, toggleRole, logout, refresh, adoptSession, loginWithGoogle, loginWithApple],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

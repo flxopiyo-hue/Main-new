@@ -10,6 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
+      "usesAppleSignIn": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Capture body and clothing photos for try-on.",
         "NSPhotoLibraryUsageDescription": "Pick photos for try-on and listings."
@@ -45,6 +46,7 @@
       ],
       "expo-font",
       "expo-web-browser",
+      "expo-apple-authentication",
       [
         "expo-image-picker",
         {

@@ -9,6 +9,7 @@ import { AppButton } from "@/src/components/AppButton";
 import { AppInput } from "@/src/components/AppInput";
 import { DobPicker } from "@/src/components/DobPicker";
 import { PickerField, PickerOption } from "@/src/components/PickerField";
+import { SsoButtons } from "@/src/components/SsoButtons";
 import { useToast } from "@/src/components/Toast";
 import { api, Gender, Role } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
@@ -198,6 +199,17 @@ export default function Register() {
           Shop curated pieces or list your own atelier.
         </Text>
         <View style={{ height: spacing.xl }} />
+
+        {role === "buyer" ? (
+          <>
+            <SsoButtons
+              mode="register"
+              disabled={loading}
+              onSuccess={() => router.replace("/onboarding/measurements")}
+            />
+            <View style={{ height: spacing.lg }} />
+          </>
+        ) : null}
 
         {role === "buyer" ? null : (
           <View style={styles.riderBanner} testID="register-rider-banner">
