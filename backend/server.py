@@ -21,8 +21,10 @@ ROUTE LAYOUT (all under ``/api`` prefix)
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, FastAPI
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
 
 from core.db import close_db
@@ -34,6 +36,7 @@ from routers import (
     collections,
     delivery,
     items,
+    legal,
     loved_ones,
     orders,
     payments,
@@ -79,7 +82,14 @@ api_router.include_router(payments.router)
 api_router.include_router(seller.router)
 api_router.include_router(delivery.router)
 api_router.include_router(collections.router)
+api_router.include_router(legal.router)
 api_router.include_router(admin.router)
+
+# Store/marketing assets (App Store screenshots etc.) — read-only static
+# files under /api so the ingress forwards them to this service.
+_appstore_dir = Path("/app/appstore_screenshots")
+if _appstore_dir.is_dir():
+    app.mount("/api/appstore", StaticFiles(directory=str(_appstore_dir)), name="appstore")
 
 # Restock notifications carry their own /api prefix (like subs.router
 # below) so they can compose /api/items/{id}/notify without stepping

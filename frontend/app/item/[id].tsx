@@ -16,6 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppButton } from "@/src/components/AppButton";
 import { GarmentMeasureGuide } from "@/src/components/GarmentMeasureGuide";
+import { ImageZoomModal } from "@/src/components/ImageZoomModal";
 import { HeartButton } from "@/src/components/HeartButton";
 import { OutfitDrawer } from "@/src/components/OutfitDrawer";
 import { PaywallModal } from "@/src/components/PaywallModal";
@@ -75,6 +76,7 @@ export default function ItemDetail() {
   const [galleryOverride, setGalleryOverride] = useState<string | null>(null);
   const [tryOnId, setTryOnId] = useState<string | null>(null);
   const [tryOnAngles, setTryOnAngles] = useState<TryOnImageOut[]>([]);
+  const [heroZoomOpen, setHeroZoomOpen] = useState(false);
   const [activeAngle, setActiveAngle] = useState<TryOnAngle>("front");
   const [fitSummary, setFitSummary] = useState<string | null>(null);
   const [wished, setWished] = useState(false);
@@ -435,6 +437,14 @@ export default function ItemDetail() {
                 <Feather name="arrow-left" size={20} color={colors.primaryFg} />
               </TouchableOpacity>
               <View style={{ flex: 1 }} />
+              <TouchableOpacity
+                testID="item-hero-zoom"
+                onPress={() => setHeroZoomOpen(true)}
+                style={styles.heroIcon}
+                accessibilityLabel="Zoom image"
+              >
+                <Feather name="maximize-2" size={18} color={colors.primaryFg} />
+              </TouchableOpacity>
               {hasTryOn ? (
                 <TouchableOpacity
                   testID="item-reset-tryon"
@@ -1003,6 +1013,11 @@ export default function ItemDetail() {
         feature={paywallInfo?.feature}
         message={paywallInfo?.message}
         onClose={() => setPaywallInfo(null)}
+      />
+      <ImageZoomModal
+        visible={heroZoomOpen}
+        uri={displayImage}
+        onClose={() => setHeroZoomOpen(false)}
       />
       <AddressPickerSheet
         visible={addressSheetOpen}

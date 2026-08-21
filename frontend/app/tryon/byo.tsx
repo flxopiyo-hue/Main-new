@@ -7,10 +7,12 @@ import {
   ActivityIndicator,
   Image,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -18,6 +20,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { AppButton } from "@/src/components/AppButton";
 import { AppInput } from "@/src/components/AppInput";
 import { ActiveProfileChip } from "@/src/components/ActiveProfileChip";
+import { ImageZoomModal } from "@/src/components/ImageZoomModal";
 import { useToast } from "@/src/components/Toast";
 import { TryOnResult, api } from "@/src/lib/api";
 import { dataUriFromBase64, pickImageFromCamera, pickImageFromLibrary } from "@/src/lib/images";
@@ -40,6 +43,8 @@ export default function BYOTryOnScreen() {
   const [label, setLabel] = useState("");
   const [garmentType, setGarmentType] = useState<string>("top");
   const [result, setResult] = useState<TryOnResult | null>(null);
+  const [zoomOpen, setZoomOpen] = useState(false);
+  const { height: winH } = useWindowDimensions();
   const [generating, setGenerating] = useState(false);
 
   const pickFromLibrary = async () => {
@@ -186,14 +191,31 @@ export default function BYOTryOnScreen() {
           maxLength={60}
         />
 
-        {/* Result */}
+        {/* Result — capped to ~55% of the screen; tap to open the
+            full-screen pinch-zoom viewer. */}
         {result ? (
           <View style={styles.resultWrap} testID="byo-result">
-            <Text style={[tp.caption, styles.label]}>Result</Text>
-            <Image
-              source={{ uri: dataUriFromBase64(result.result_image_b64) }}
-              style={styles.resultImage}
-              resizeMode="cover"
+            <View style={styles.resultHead}>
+              <Text style={[tp.caption, styles.label]}>Result</Text>
+              <TouchableOpacity
+                testID="byo-zoom-btn"
+                onPress={() => setZoomOpen(true)}
+                accessibilityLabel="Zoom image"
+              >
+                <Feather name="maximize-2" size={16} color={colors.primary} />
+              </TouchableOpacity>
+            </View>
+            <Pressable onPress={() => setZoomOpen(true)}>
+              <Image
+                source={{ uri: dataUriFromBase64(result.result_image_b64) }}
+                style={[styles.resultImage, { height: Math.round(winH * 0.55) }]}
+                resizeMode="contain"
+              />
+            </Pressable>
+            <ImageZoomModal
+              visible={zoomOpen}
+              uri={dataUriFromBase64(result.result_image_b64)}
+              onClose={() => setZoomOpen(false)}
             />
           </View>
         ) : null}
@@ -287,7 +309,12 @@ const styles = StyleSheet.create({
   },
   chipLabelActive: { color: colors.primaryFg },
   resultWrap: { marginTop: spacing.lg },
-  resultImage: { width: "100%", aspectRatio: 3 / 4, backgroundColor: colors.muted },
+  resultHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  resultImage: { width: "100%", backgroundColor: colors.muted },
   footer: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,

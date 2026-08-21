@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#14110E">
+  <title>Oromona — The boutique that fits you.</title>
+  <meta name="description" content="Kenya-crafted fashion, sized to your body. AI try-on, AI stylist and secure delivery — from designer atelier to your door.">
+  <meta property="og:title" content="Oromona — The boutique that fits you.">
+  <meta property="og:description" content="Kenya-crafted fashion, sized to your body. AI try-on, AI stylist and secure delivery.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://oromona.com/">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%2314110E'/><text x='50%25' y='58%25' text-anchor='middle' font-family='Georgia,serif' font-size='18' fill='%23C86B4A' font-weight='700'>O</text></svg>">
+
+  <style>
+    :root {
+      --bg: #F5F1EA;        /* warm cream */
+      --ink: #14110E;       /* near-black */
+      --muted: #6B6157;
+      --accent: #C86B4A;    /* terracotta */
+      --card: #FFFFFF;
+      --border: #E4DCD0;
+      --dark: #1D1915;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink);
+                 -webkit-font-smoothing: antialiased; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                        "Helvetica Neue", Arial, sans-serif; line-height: 1.55; }
+
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+
+    /* --- Header --- */
+    header {
+      padding: 22px 0; border-bottom: 1px solid var(--border); background: var(--bg);
+      position: sticky; top: 0; z-index: 20; backdrop-filter: saturate(1.2) blur(6px);
+    }
+    .brand { display: flex; align-items: center; justify-content: space-between; }
+    .logo {
+      display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink);
+    }
+    .logo-mark {
+      width: 34px; height: 34px; background: var(--ink); color: var(--accent);
+      display: grid; place-items: center; font-family: Georgia, serif;
+      font-weight: 700; font-size: 18px; border-radius: 4px;
+    }
+    .logo-word {
+      font-family: Georgia, serif; font-weight: 700; letter-spacing: 4px;
+      font-size: 18px; text-transform: uppercase;
+    }
+    nav a {
+      color: var(--muted); text-decoration: none; margin-left: 18px; font-size: 14px;
+      letter-spacing: 1px; text-transform: uppercase;
+    }
+    nav a:hover { color: var(--ink); }
+    @media (max-width: 640px) { nav a { display: none; } .nav-cta { display: inline-block !important; } }
+    .nav-cta {
+      background: var(--ink); color: #fff !important; padding: 10px 14px;
+      font-size: 12px; letter-spacing: 1.3px; margin-left: 12px;
+    }
+
+    /* --- Hero --- */
+    .hero {
+      display: grid; grid-template-columns: 1.15fr 1fr; gap: 48px;
+      align-items: center; padding: 72px 0 56px;
+    }
+    @media (max-width: 860px) {
+      .hero { grid-template-columns: 1fr; gap: 32px; padding: 40px 0; text-align: center; }
+    }
+    .kicker {
+      color: var(--accent); font-size: 12px; letter-spacing: 4px;
+      text-transform: uppercase; margin-bottom: 12px;
+    }
+    h1 {
+      font-family: Georgia, "Cormorant Garamond", serif;
+      font-size: clamp(38px, 6vw, 72px); line-height: 1.02;
+      margin: 0 0 18px; font-weight: 700; letter-spacing: -0.5px;
+    }
+    .lede { font-size: clamp(16px, 1.6vw, 20px); color: var(--muted); margin: 0 0 32px; max-width: 520px; }
+    @media (max-width: 860px) { .lede { margin-left: auto; margin-right: auto; } }
+
+    .stores { display: flex; gap: 14px; flex-wrap: wrap; }
+    @media (max-width: 860px) { .stores { justify-content: center; } }
+    .store {
+      display: inline-flex; align-items: center; gap: 12px;
+      background: var(--ink); color: #fff; text-decoration: none;
+      padding: 12px 20px; min-width: 200px; border-radius: 10px;
+      transition: transform .15s ease, box-shadow .15s ease;
+    }
+    .store:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(20,17,14,0.18); }
+    .store .badge-icon { width: 26px; height: 26px; flex: 0 0 auto; }
+    .store .lbl { display: flex; flex-direction: column; line-height: 1.15; }
+    .store .lbl small { font-size: 10px; letter-spacing: 1.2px; opacity: .75; text-transform: uppercase; }
+    .store .lbl b { font-size: 16px; font-weight: 700; letter-spacing: .3px; }
+    .store.coming { background: #4A4038; }
+    .store.coming .lbl small::after { content: " · coming soon"; opacity: .7; }
+
+    /* --- Hero visual (SVG phone) --- */
+    .visual { display: flex; justify-content: center; }
+    .phone {
+      width: min(320px, 80vw); aspect-ratio: 9 / 19.5;
+      background: var(--dark); border-radius: 40px; padding: 12px;
+      box-shadow: 0 30px 60px rgba(20,17,14,0.22), 0 4px 12px rgba(20,17,14,0.15);
+      position: relative;
+    }
+    .phone::after {
+      content: ""; position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+      width: 100px; height: 22px; background: #000; border-radius: 14px;
+    }
+    .phone-screen {
+      width: 100%; height: 100%; border-radius: 30px; overflow: hidden;
+      background: linear-gradient(155deg, #14110E 0%, #4A2E1E 55%, #C86B4A 100%);
+      display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff;
+      padding: 24px; text-align: center;
+    }
+    .phone .p-logo { font-family: Georgia, serif; font-weight: 700; letter-spacing: 8px;
+      font-size: 20px; color: #F5D9BF; margin-bottom: 8px; }
+    .phone .p-line {
+      font-family: Georgia, "Cormorant Garamond", serif; font-size: 34px;
+      line-height: 1.05; color: #FFFFFF; margin: 12px 0;
+    }
+    .phone .p-line em { font-style: italic; color: #F5D9BF; }
+    .phone .p-sub { font-size: 12px; color: rgba(255,255,255,0.85); }
+
+    /* --- Feature strip --- */
+    .features {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px;
+      padding: 56px 0 24px;
+    }
+    @media (max-width: 900px) { .features { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 520px) { .features { grid-template-columns: 1fr; } }
+    .f {
+      background: var(--card); border: 1px solid var(--border); padding: 24px 20px;
+      border-radius: 12px;
+    }
+    .f h3 { margin: 12px 0 6px; font-family: Georgia, serif; font-size: 20px; }
+    .f p { margin: 0; color: var(--muted); font-size: 14px; }
+    .f .icn {
+      width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center;
+      background: rgba(200,107,74,0.12); color: var(--accent); font-weight: 700; font-size: 18px;
+    }
+
+    /* --- How it works --- */
+    .how { padding: 56px 0; }
+    .how h2 { font-family: Georgia, serif; font-size: clamp(28px, 3vw, 40px); margin: 0 0 32px; }
+    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+    @media (max-width: 780px) { .steps { grid-template-columns: 1fr; } }
+    .step { background: var(--card); border: 1px solid var(--border); padding: 24px; border-radius: 12px; }
+    .step .num {
+      font-family: Georgia, serif; font-size: 34px; color: var(--accent); font-weight: 700;
+      display: block; margin-bottom: 8px;
+    }
+    .step h4 { margin: 0 0 6px; font-size: 17px; }
+    .step p { margin: 0; color: var(--muted); font-size: 14px; }
+
+    /* --- CTA banner --- */
+    .cta {
+      background: var(--ink); color: #fff; padding: 48px 32px; border-radius: 14px;
+      display: grid; grid-template-columns: 1.4fr 1fr; gap: 24px; align-items: center;
+      margin: 24px 0 56px;
+    }
+    @media (max-width: 780px) { .cta { grid-template-columns: 1fr; text-align: center; } }
+    .cta h2 {
+      font-family: Georgia, serif; font-size: clamp(24px, 3vw, 34px); margin: 0 0 8px; color: #fff;
+    }
+    .cta p { color: rgba(255,255,255,0.75); margin: 0; }
+    .cta .stores { align-self: end; justify-content: flex-end; }
+    @media (max-width: 780px) { .cta .stores { justify-content: center; } }
+    .cta .store { background: #F5F1EA; color: var(--ink); }
+
+    /* --- Footer --- */
+    footer {
+      border-top: 1px solid var(--border); padding: 32px 0 48px; color: var(--muted);
+      font-size: 13px;
+    }
+    .foot-grid {
+      display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 24px;
+      padding-bottom: 24px;
+    }
+    @media (max-width: 720px) { .foot-grid { grid-template-columns: 1fr; } }
+    .foot-grid h5 { text-transform: uppercase; letter-spacing: 2px; font-size: 11px; color: var(--ink);
+      margin: 0 0 12px; }
+    .foot-grid a { display: block; color: var(--muted); text-decoration: none; padding: 4px 0; }
+    .foot-grid a:hover { color: var(--ink); }
+    .copy { display: flex; justify-content: space-between; padding-top: 20px; border-top: 1px solid var(--border); }
+    @media (max-width: 520px) { .copy { flex-direction: column; gap: 8px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap brand">
+      <a class="logo" href="/">
+        <div class="logo-mark">O</div>
+        <div class="logo-word">Oromona</div>
+      </a>
+      <nav>
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="/api/legal/privacy">Privacy</a>
+        <a class="nav-cta" href="#get">Get the app</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- Hero -->
+    <section class="hero" id="get">
+      <div>
+        <div class="kicker">Made in Nairobi · Sized to you</div>
+        <h1>The boutique that fits you.</h1>
+        <p class="lede">Kenya-crafted fashion, sized to your body. Try it on with AI,
+          get styled by AI, and have it delivered — with escrow protection until you say
+          it fits.</p>
+        <div class="stores">
+          <a class="store" href="__APPSTORE_URL__" aria-label="Download on the App Store">
+            <svg class="badge-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M16.365 1.43c0 1.14-.427 2.222-1.145 3.017-.76.84-2.005 1.49-3.031 1.41-.11-1.11.43-2.253 1.132-2.997.786-.83 2.13-1.475 3.044-1.43zM20.02 17.19c-.55 1.263-.809 1.83-1.52 2.94-.986 1.548-2.377 3.478-4.104 3.491-1.53.014-1.923-.996-3.998-.985-2.076.012-2.51 1.003-4.04.989-1.728-.013-3.05-1.756-4.037-3.304C.017 15.994-.462 10.42 1.63 7.505c1.492-2.088 3.828-3.316 6.02-3.316 2.23 0 3.634 1.226 5.478 1.226 1.79 0 2.881-1.229 5.46-1.229 1.953 0 4.02 1.062 5.492 2.898-4.83 2.65-4.045 9.556-3.06 10.106z"/>
+            </svg>
+            <span class="lbl"><small>Download on the</small><b>App Store</b></span>
+          </a>
+          <a class="store" href="__PLAY_URL__" aria-label="Get it on Google Play">
+            <svg class="badge-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M3.6 1.6c-.3.2-.5.6-.5 1.1v18.6c0 .5.2.9.5 1.1l10.9-10.4L3.6 1.6zm12.1 11.4l2.9 2.8-13.8 7.9 10.9-10.7zM4.8.9L18.6 8.8l-2.9 2.8L4.8.9zm15.8 8.7l-3.4 1.9-2.9 2.8 2.9 2.8 3.4 2c1.1.6 1.1 2.3 0 3l-3.4 1.9 5.5-4.7c1.1-.6 1.1-2.3 0-3L20.6 9.6z"/>
+            </svg>
+            <span class="lbl"><small>Get it on</small><b>Google Play</b></span>
+          </a>
+        </div>
+        <p style="font-size:12px;color:var(--muted);margin-top:12px;">
+          Store links go live at launch — check back soon.
+        </p>
+      </div>
+      <div class="visual" aria-hidden="true">
+        <div class="phone">
+          <div class="phone-screen">
+            <div class="p-logo">OROMONA</div>
+            <div class="p-line">Fits on<br><em>1st Try.</em></div>
+            <div class="p-sub">Try on. See the fit. Buy with confidence.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section class="features" id="features">
+      <div class="f">
+        <div class="icn">✨</div>
+        <h3>AI Try-On</h3>
+        <p>Photorealistic try-on on your body — front, side and back.</p>
+      </div>
+      <div class="f">
+        <div class="icn">📏</div>
+        <h3>Real Fit</h3>
+        <p>Match every listing to your measurements with a live fit score.</p>
+      </div>
+      <div class="f">
+        <div class="icn">🧵</div>
+        <h3>Kenyan Ateliers</h3>
+        <p>Local designers and small labels, verified and paid securely.</p>
+      </div>
+      <div class="f">
+        <div class="icn">🛵</div>
+        <h3>Escrow Delivery</h3>
+        <p>Boda-tracked to your door. Money moves only when it fits.</p>
+      </div>
+    </section>
+
+    <!-- How it works -->
+    <section class="how" id="how">
+      <h2>How it works</h2>
+      <div class="steps">
+        <div class="step">
+          <span class="num">01</span>
+          <h4>Set your size</h4>
+          <p>Add a few measurements once — or let AI estimate from a photo.</p>
+        </div>
+        <div class="step">
+          <span class="num">02</span>
+          <h4>Try it on</h4>
+          <p>Tap any piece to see it rendered on you, in your exact size.</p>
+        </div>
+        <div class="step">
+          <span class="num">03</span>
+          <h4>Delivered to your door</h4>
+          <p>Pay in-app. A rider brings it. Confirm the fit, and the seller gets paid.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="cta">
+      <div>
+        <h2>Ready to see it on you first?</h2>
+        <p>Free to install. Free to try on. Escrow-protected checkout.</p>
+      </div>
+      <div class="stores">
+        <a class="store" href="__APPSTORE_URL__">
+          <svg class="badge-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M16.365 1.43c0 1.14-.427 2.222-1.145 3.017-.76.84-2.005 1.49-3.031 1.41-.11-1.11.43-2.253 1.132-2.997.786-.83 2.13-1.475 3.044-1.43zM20.02 17.19c-.55 1.263-.809 1.83-1.52 2.94-.986 1.548-2.377 3.478-4.104 3.491-1.53.014-1.923-.996-3.998-.985-2.076.012-2.51 1.003-4.04.989-1.728-.013-3.05-1.756-4.037-3.304C.017 15.994-.462 10.42 1.63 7.505c1.492-2.088 3.828-3.316 6.02-3.316 2.23 0 3.634 1.226 5.478 1.226 1.79 0 2.881-1.229 5.46-1.229 1.953 0 4.02 1.062 5.492 2.898-4.83 2.65-4.045 9.556-3.06 10.106z"/>
+          </svg>
+          <span class="lbl"><small>Download on the</small><b>App Store</b></span>
+        </a>
+        <a class="store" href="__PLAY_URL__">
+          <svg class="badge-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M3.6 1.6c-.3.2-.5.6-.5 1.1v18.6c0 .5.2.9.5 1.1l10.9-10.4L3.6 1.6zm12.1 11.4l2.9 2.8-13.8 7.9 10.9-10.7zM4.8.9L18.6 8.8l-2.9 2.8L4.8.9zm15.8 8.7l-3.4 1.9-2.9 2.8 2.9 2.8 3.4 2c1.1.6 1.1 2.3 0 3l-3.4 1.9 5.5-4.7c1.1-.6 1.1-2.3 0-3L20.6 9.6z"/>
+          </svg>
+          <span class="lbl"><small>Get it on</small><b>Google Play</b></span>
+        </a>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <div class="foot-grid">
+        <div>
+          <div class="logo" style="margin-bottom:12px;">
+            <div class="logo-mark">O</div>
+            <div class="logo-word">Oromona</div>
+          </div>
+          <p style="max-width:360px;margin:0;">
+            The boutique that fits you. Kenya-crafted fashion, sized to your body.
+          </p>
+        </div>
+        <div>
+          <h5>Product</h5>
+          <a href="#features">Features</a>
+          <a href="#how">How it works</a>
+          <a href="#get">Get the app</a>
+        </div>
+        <div>
+          <h5>Support &amp; Legal</h5>
+          <a href="mailto:support@oromona.com">support@oromona.com</a>
+          <a href="/api/legal/privacy">Privacy Policy</a>
+          <a href="/api/legal/delete-account">Delete Account &amp; Data</a>
+        </div>
+      </div>
+      <div class="copy">
+        <div>© 2026 Oromona. Made in Nairobi.</div>
+        <div>Version 1.0</div>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

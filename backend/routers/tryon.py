@@ -241,14 +241,19 @@ async def _generate_single_angle(
     return images[0]["data"]
 
 
-def _build_outfit_rules(items: List[Dict[str, Any]]) -> List[str]:
+def _build_outfit_rules(items: List[Dict[str, Any]], tuck_style: str = "auto") -> List[str]:
     """Generate human-readable styling rules to feed to Gemini based on the
     composition of an outfit.
+
+    ``tuck_style``: "tucked" | "untucked" force the top's fit over bottoms;
+    "auto" keeps the old behaviour (a belt in the outfit implies tucked,
+    otherwise the model decides).
     """
     types = {it.get("garment_type") or infer_garment_type(it) for it in items}
     rules: List[str] = []
     has_belt = "belt" in types
     has_top = bool(types & {"shirt", "blouse"})
+    has_bottom = bool(types & {"trousers", "shorts", "skirt"})
     has_shorts = "shorts" in types
     has_socks = "socks" in types
     has_vest_under = "vest_under" in types
@@ -256,8 +261,21 @@ def _build_outfit_rules(items: List[Dict[str, Any]]) -> List[str]:
     has_outerwear = "outerwear" in types
     has_waistcoat = "waistcoat" in types
 
-    if has_belt and has_top:
-        rules.append("The shirt is fully tucked into the trousers/shorts, with the belt visible around the waist.")
+    if has_top and has_bottom:
+        if tuck_style == "tucked":
+            rules.append(
+                "The shirt/top is FULLY TUCKED into the trousers/shorts/skirt with a clean waistline"
+                + (", the belt visible around the waist." if has_belt else ".")
+            )
+        elif tuck_style == "untucked":
+            rules.append(
+                "The shirt/top is worn UNTUCKED — its hem hangs naturally OVER the waistband of the "
+                "trousers/shorts/skirt. Do NOT tuck it in."
+            )
+        elif has_belt:
+            rules.append(
+                "The shirt is fully tucked into the trousers/shorts, with the belt visible around the waist."
+            )
     if has_vest_under and has_top:
         rules.append("The undershirt (vest) sits next to the skin, completely hidden beneath the shirt.")
     if has_waistcoat and has_top:
@@ -284,6 +302,7 @@ async def _generate_outfit_angle(
     user: Dict[str, Any],
     angle: str,
     persona: str,
+    tuck_style: str = "auto",
 ) -> Optional[str]:
     """Render the person wearing a composed outfit (multiple garments) at one angle.
 
@@ -325,7 +344,7 @@ async def _generate_outfit_angle(
         else ""
     )
 
-    rules = _build_outfit_rules(items)
+    rules = _build_outfit_rules(items, tuck_style)
     rules_text = (
         "Layering & styling rules to obey strictly:\n"
         + "\n".join(f"  - {r}" for r in rules)
@@ -654,6 +673,7 @@ async def generate_outfit_tryon(
             user=user,
             angle=a,
             persona=persona,
+            tuck_style=body.tuck_style,
         )
         for a in angles
     ]

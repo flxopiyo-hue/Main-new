@@ -700,6 +700,9 @@ class OutfitTryOnIn(BaseModel):
     body_photo_b64: Optional[str] = None
     profile_id: Optional[str] = None
     angles: List[TryOnAngle] = Field(default_factory=lambda: ["front"])
+    # "auto" keeps stylist defaults (a belt implies tucked); buyers can force
+    # tucked/untucked when combining a top with trousers/shorts/skirt.
+    tuck_style: Literal["auto", "tucked", "untucked"] = "auto"
 
 
 class GarmentTryOnIn(BaseModel):

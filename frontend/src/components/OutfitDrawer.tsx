@@ -45,12 +45,17 @@ export function OutfitDrawer({ visible, onClose }: DrawerProps) {
   const remove = useOutfit((s) => s.remove);
   const clear = useOutfit((s) => s.clear);
   const [generating, setGenerating] = useState(false);
+  // "Auto" keeps stylist defaults; buyers can force the top tucked into or
+  // hanging over the bottoms when the outfit mixes a top + trousers/skirt.
+  const [tuckStyle, setTuckStyle] = useState<"auto" | "tucked" | "untucked">("auto");
   // Paywall modal state — fires when the backend returns 402 for a Free
   // user requesting multi-angle output.
   const [paywallInfo, setPaywallInfo] = useState<{ feature?: string; message?: string } | null>(null);
 
   const sorted = useMemo(() => sortByLayer(items), [items]);
   const rules = useMemo(() => deriveOutfitRules(sorted), [sorted]);
+  const hasTop = sorted.some((i) => ["shirt", "blouse"].includes(i.garment_type));
+  const hasBottom = sorted.some((i) => ["trousers", "shorts", "skirt"].includes(i.garment_type));
 
   const tryOnOutfit = async (multi: boolean) => {
     if (items.length === 0) return;
@@ -60,6 +65,7 @@ export function OutfitDrawer({ visible, onClose }: DrawerProps) {
         item_ids: sorted.map((i) => i.id),
         use_profile_photo: true,
         angles: multi ? ["front", "side", "back"] : ["front"],
+        tuck_style: tuckStyle,
       });
       onClose();
       router.push({
@@ -180,6 +186,28 @@ export function OutfitDrawer({ visible, onClose }: DrawerProps) {
 
           {items.length > 0 ? (
             <View style={styles.actions}>
+              {hasTop && hasBottom ? (
+                <View style={styles.tuckRow} testID="outfit-tuck-row">
+                  <Text style={styles.tuckLabel}>TOP FIT</Text>
+                  {(["auto", "tucked", "untucked"] as const).map((t) => (
+                    <TouchableOpacity
+                      key={t}
+                      testID={`outfit-tuck-${t}`}
+                      onPress={() => setTuckStyle(t)}
+                      style={[styles.tuckChip, tuckStyle === t && styles.tuckChipActive]}
+                    >
+                      <Text
+                        style={[
+                          styles.tuckChipLabel,
+                          tuckStyle === t && styles.tuckChipLabelActive,
+                        ]}
+                      >
+                        {t === "auto" ? "Auto" : t === "tucked" ? "Tucked" : "Untucked"}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : null}
               <AppButton
                 testID="outfit-tryon-front-btn"
                 label={generating ? "Generating…" : "Try Outfit On · Front"}
@@ -266,6 +294,29 @@ const styles = StyleSheet.create({
   emptyText: { textAlign: "center", maxWidth: 320 },
   emptyAccent: { fontFamily: fonts.bodySemi, color: colors.primary },
   list: { flexGrow: 0, flexShrink: 1 },
+  tuckRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: spacing.md,
+  },
+  tuckLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 10,
+    letterSpacing: 1.4,
+    color: colors.mutedFg,
+    marginRight: 2,
+  },
+  tuckChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  tuckChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  tuckChipLabel: { fontFamily: fonts.bodyMedium, fontSize: 12, color: colors.primary },
+  tuckChipLabelActive: { color: colors.primaryFg },
   listContent: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   subhead: {
     fontFamily: fonts.bodyMedium,

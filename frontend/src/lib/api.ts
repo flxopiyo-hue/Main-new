@@ -994,6 +994,7 @@ export const api = {
     body_photo_b64?: string;
     profile_id?: string;
     angles?: TryOnAngle[];
+    tuck_style?: "auto" | "tucked" | "untucked";
   }) => request<TryOnResult>("/tryon/outfit", { method: "POST", body }),
   tryOnGarment: (body: {
     garment_b64: string;

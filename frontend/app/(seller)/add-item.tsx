@@ -168,6 +168,14 @@ const parsePositive = (s: string): number | undefined => {
 /* Wizard root                                                                */
 /* -------------------------------------------------------------------------- */
 
+// Platform take rate — keep in sync with backend PLATFORM_FEE_BPS (1500).
+const PLATFORM_FEE_RATE = 0.15;
+// Sellers type their TAKE-HOME price; buyers see the gross with Oromona's
+// fee added on top, rounded UP to a clean major unit so the seller never
+// receives less than they asked for.
+const grossFromNet = (netCents: number) =>
+  Math.ceil(netCents / (1 - PLATFORM_FEE_RATE) / 100) * 100;
+
 export default function AddItem() {
   const toast = useToast();
   const { user } = useAuth();
@@ -256,11 +264,11 @@ export default function AddItem() {
         setName(item.name);
         setBrandName(item.brand_name || "");
         setCurrency(item.currency);
-        // Price is stored as 1/100 of major units. For the input field we
-        // show the major-unit value (no decimals for KES/etc.).
+        // Price is stored as the buyer-facing GROSS (1/100 of major units);
+        // the input shows the seller's TAKE-HOME (net of Oromona's fee).
         const meta = CURRENCIES.find((c) => c.code === item.currency);
         const decimals = meta?.decimals ?? 2;
-        const major = item.price_cents / 100;
+        const major = (item.price_cents * (1 - PLATFORM_FEE_RATE)) / 100;
         setPriceInput(decimals === 0 ? String(Math.round(major)) : major.toFixed(2));
         setDescription(item.description || "");
         setAudience(item.audience as Audience);
@@ -321,16 +329,27 @@ export default function AddItem() {
   }, [editId, toast]);
 
   // -----------------------------------------------------------------------
-  // Live price preview — shown right under the price input.
+  // Live price preview — seller types their TAKE-HOME; we show the
+  // buyer-facing gross (rounded up so KES has clean whole numbers) and
+  // the seller's actual net (which lands slightly higher than what the
+  // seller typed because of the rounding). Matches the backend fee
+  // math in `core/escrow.py` (fee = gross * 15% via integer division).
   // -----------------------------------------------------------------------
   const livePriceCents = useMemo(
     () => parseAmountToCents(priceInput, currency),
     [priceInput, currency],
   );
-  const livePricePreview = useMemo(
-    () => (livePriceCents != null ? formatPrice(livePriceCents, currency) : null),
-    [livePriceCents, currency],
-  );
+  const livePricePreview = useMemo(() => {
+    if (livePriceCents == null || livePriceCents <= 0) return null;
+    const gross = grossFromNet(livePriceCents);
+    // Backend fee math: fee = (gross * 1500) / 10000 with integer floor.
+    const feeCents = Math.floor((gross * 1500) / 10000);
+    const netCents = gross - feeCents;
+    return `${formatPrice(gross, currency)} · Oromona fee ${formatPrice(
+      feeCents,
+      currency,
+    )}. You receive ${formatPrice(netCents, currency)}`;
+  }, [livePriceCents, currency]);
 
   // -----------------------------------------------------------------------
   // Per-step validation rules
@@ -1089,7 +1108,7 @@ function StepBasics({
       />
       <AppInput
         testID="wizard-price-input"
-        label={`Price (${currency})`}
+        label={`Your price (${currency}) · what you receive`}
         value={priceInput}
         onChangeText={onChangePrice}
         keyboardType="decimal-pad"
