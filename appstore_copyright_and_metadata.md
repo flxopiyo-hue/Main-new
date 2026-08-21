@@ -12,7 +12,7 @@ everywhere below in one pass.
 ### Apple App Store Connect
 Field: **App Information → General Information → Copyright**
 Character limit: 100
-Format expected by Apple: `YYYY <Legal Entity Name>`
+Format expected by Appl
 
 Recommended value (short — fits every store):
 ```

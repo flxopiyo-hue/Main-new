@@ -1,13 +1,11 @@
 {
-  "$comment": "Oromona — Routing App Coverage File. Apple App Store Connect only accepts this upload when the app's primary or secondary category is 'Navigation'. Oromona is 'Shopping', so this file is provided as an optional reference describing our current delivery / rider-tracking coverage region: Kenya (with a rough bounding polygon around the main service radius). Format: RFC 7946 GeoJSON FeatureCollection. To use later: rename to routing_app_coverage.geojson and upload from App Store Connect > App Information > Routing App Coverage File.",
   "type": "FeatureCollection",
   "features": [
     {
       "type": "Feature",
       "properties": {
         "name": "Kenya — Oromona delivery coverage",
-        "country_code": "KE",
-        "notes": "Rider-based fashion delivery. Active service radius currently centered on Nairobi metro; wider polygon reserves room for Mombasa, Kisumu, Nakuru, Eldoret expansion."
+        "country_code": "KE"
       },
       "geometry": {
         "type": "Polygon",
