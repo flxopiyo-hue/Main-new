@@ -15,7 +15,7 @@
         "NSCameraUsageDescription": "Capture body and clothing photos for try-on.",
         "NSPhotoLibraryUsageDescription": "Pick photos for try-on and listings."
       },
-      "bundleIdentifier": "com.emergent.fitfinderapp.leor5k"
+      "bundleIdentifier": "com.oromona.myapp"
     },
     "android": {
       "adaptiveIcon": {
@@ -26,7 +26,7 @@
       "permissions": [
         "android.permission.CAMERA"
       ],
-      "package": "com.emergent.fitfinderapp.leor5k"
+      "package": "com.oromona.myapp"
     },
     "web": {
       "bundler": "metro",
