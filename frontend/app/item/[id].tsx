@@ -76,6 +76,8 @@ export default function ItemDetail() {
   const [galleryOverride, setGalleryOverride] = useState<string | null>(null);
   const [tryOnId, setTryOnId] = useState<string | null>(null);
   const [tryOnAngles, setTryOnAngles] = useState<TryOnImageOut[]>([]);
+  const [tryOnPinned, setTryOnPinned] = useState(false);
+  const [pinBusy, setPinBusy] = useState(false);
   const [heroZoomOpen, setHeroZoomOpen] = useState(false);
   const [activeAngle, setActiveAngle] = useState<TryOnAngle>("front");
   const [fitSummary, setFitSummary] = useState<string | null>(null);
@@ -265,6 +267,7 @@ export default function ItemDetail() {
         setTryOnAngles(imgs);
         setActiveAngle(imgs[0]?.angle ?? "front");
         setTryOnId(result.id);
+        setTryOnPinned(!!result.pinned);
         setFitSummary(result.fit_summary ?? null);
       } catch (e: any) {
         if (isPaywallError(e)) {
@@ -343,6 +346,25 @@ export default function ItemDetail() {
       toast.show(e?.message ?? "Could not share", "error");
     } finally {
       setSharing(false);
+    }
+  };
+
+  const onTogglePin = async () => {
+    if (!tryOnId || pinBusy) return;
+    setPinBusy(true);
+    const nextPinned = !tryOnPinned;
+    setTryOnPinned(nextPinned); // optimistic
+    try {
+      await api.tryOnPin(tryOnId, nextPinned);
+      toast.show(
+        nextPinned ? "Saved to your board" : "Removed from your board",
+        "success",
+      );
+    } catch (e: any) {
+      setTryOnPinned(!nextPinned);
+      toast.show(e?.message ?? "Could not update saved board", "error");
+    } finally {
+      setPinBusy(false);
     }
   };
 
@@ -969,6 +991,28 @@ export default function ItemDetail() {
           {hasTryOn ? (
             <>
               <View style={{ height: spacing.sm }} />
+              <TouchableOpacity
+                testID="item-tryon-pin-btn"
+                onPress={onTogglePin}
+                disabled={pinBusy}
+                style={[styles.pinBtn, tryOnPinned && styles.pinBtnActive]}
+                activeOpacity={0.85}
+              >
+                <Feather
+                  name="bookmark"
+                  size={16}
+                  color={tryOnPinned ? colors.primaryFg : colors.primary}
+                />
+                <Text
+                  style={[
+                    styles.pinBtnLabel,
+                    tryOnPinned && styles.pinBtnLabelActive,
+                  ]}
+                >
+                  {tryOnPinned ? "SAVED TO YOUR BOARD" : "SAVE TO MY BOARD"}
+                </Text>
+              </TouchableOpacity>
+              <View style={{ height: spacing.sm }} />
               <Text style={[tp.bodyMuted, styles.shareHint]}>
                 Sharing the {ANGLE_LABEL[activeAngle]} angle
               </Text>
@@ -1365,4 +1409,23 @@ const styles = StyleSheet.create({
     color: colors.primary,
     textTransform: "uppercase",
   },
+  pinBtn: {
+    minHeight: 48,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.surface,
+  },
+  pinBtnActive: { backgroundColor: colors.primary },
+  pinBtnLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 12,
+    letterSpacing: 1.4,
+    color: colors.primary,
+  },
+  pinBtnLabelActive: { color: colors.primaryFg },
 });

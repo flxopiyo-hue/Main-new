@@ -44,6 +44,7 @@ export default function BYOTryOnScreen() {
   const [result, setResult] = useState<TryOnResult | null>(null);
   const [zoomOpen, setZoomOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [pinBusy, setPinBusy] = useState(false);
 
   const pickFromLibrary = async () => {
     try {
@@ -89,6 +90,25 @@ export default function BYOTryOnScreen() {
       toast.show(e?.message ?? "Try-on failed", "error");
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const onTogglePin = async () => {
+    if (!result || pinBusy) return;
+    setPinBusy(true);
+    const nextPinned = !result.pinned;
+    setResult({ ...result, pinned: nextPinned });
+    try {
+      await api.tryOnPin(result.id, nextPinned);
+      toast.show(
+        nextPinned ? "Saved to your board" : "Removed from your board",
+        "success",
+      );
+    } catch (e: any) {
+      setResult({ ...result, pinned: !nextPinned });
+      toast.show(e?.message ?? "Could not update saved board", "error");
+    } finally {
+      setPinBusy(false);
     }
   };
 
@@ -209,6 +229,14 @@ export default function BYOTryOnScreen() {
               uri={dataUriFromBase64(result.result_image_b64)}
               onPress={() => setZoomOpen(true)}
               maxScreenHeightPct={0.7}
+            />
+            <View style={{ height: spacing.sm }} />
+            <AppButton
+              testID="byo-pin-btn"
+              label={result.pinned ? "★ Saved to your board" : "☆ Save to my board"}
+              variant={result.pinned ? "primary" : "secondary"}
+              onPress={onTogglePin}
+              loading={pinBusy}
             />
             <ImageZoomModal
               visible={zoomOpen}

@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from emergentintegrations.llm.chat import ImageContent, LlmChat, UserMessage
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from core.config import EMERGENT_LLM_KEY, MAX_TRYON_ANGLES, NANO_BANANA_MODEL
 from core.db import db
@@ -22,6 +22,8 @@ from models import (
     TryOnImage,
     TryOnIn,
     TryOnOut,
+    TryOnPinIn,
+    TryOnPinOut,
     TryOnShareOut,
     garment_type_label,
     infer_garment_type,
@@ -855,10 +857,23 @@ async def generate_byo_garment_tryon(
 @router.get("/tryon/history", response_model=List[TryOnOut])
 async def tryon_history(
     user: Dict[str, Any] = Depends(get_current_user),
+    pinned: Optional[bool] = Query(
+        default=None,
+        description="Filter to just the user's Saved board (true) or the "
+        "recent history (false / omitted).",
+    ),
 ) -> List[TryOnOut]:
+    # Pinned view: only saved try-ons, ordered by pin time so the most
+    # recently saved sit at the top of the board.
+    if pinned is True:
+        query: Dict[str, Any] = {"user_id": user["id"], "pinned": True}
+        sort_field = "pinned_at"
+    else:
+        query = {"user_id": user["id"]}
+        sort_field = "created_at"
     docs = (
-        await db.tryons.find({"user_id": user["id"]}, {"_id": 0})
-        .sort("created_at", -1)
+        await db.tryons.find(query, {"_id": 0})
+        .sort(sort_field, -1)
         .to_list(50)
     )
     out: List[TryOnOut] = []
@@ -875,10 +890,43 @@ async def tryon_history(
                 result_image_b64=d.get("result_image_b64", imgs[0].image_b64 if imgs else ""),
                 images=imgs,
                 fit_summary=d.get("fit_summary"),
+                pinned=bool(d.get("pinned")),
+                pinned_at=d.get("pinned_at"),
                 created_at=d["created_at"],
             )
         )
     return out
+
+
+@router.patch("/tryon/{tryon_id}/pin", response_model=TryOnPinOut)
+async def toggle_tryon_pin(
+    tryon_id: str,
+    body: TryOnPinIn,
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> TryOnPinOut:
+    """Toggle (or explicitly set) whether this try-on is on the user's
+    private Saved board. Idempotent — sending the same value twice
+    returns the current state."""
+    tryon = await db.tryons.find_one(
+        {"id": tryon_id, "user_id": user["id"]}, {"_id": 0}
+    )
+    if not tryon:
+        raise HTTPException(status_code=404, detail="Try-on not found")
+    current = bool(tryon.get("pinned"))
+    # Body optionally specifies the target state; None = toggle.
+    target = (not current) if body.pinned is None else bool(body.pinned)
+    now = datetime.now(timezone.utc)
+    update: Dict[str, Any] = {"pinned": target}
+    if target:
+        update["pinned_at"] = now
+    else:
+        update["pinned_at"] = None
+    await db.tryons.update_one({"id": tryon_id}, {"$set": update})
+    return TryOnPinOut(
+        id=tryon_id,
+        pinned=target,
+        pinned_at=now if target else None,
+    )
 
 
 @router.get("/tryon/{tryon_id}/share", response_model=TryOnShareOut)

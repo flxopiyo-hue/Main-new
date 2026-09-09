@@ -734,7 +734,23 @@ class TryOnOut(BaseModel):
     # New: every generated angle.
     images: List[TryOnImage] = Field(default_factory=list)
     fit_summary: Optional[str] = None
+    # Try-On Save — private "Saved" board. `pinned_at` orders the board;
+    # `pinned` is convenience for the frontend (falsy → not on the board).
+    pinned: bool = False
+    pinned_at: Optional[datetime] = None
     created_at: datetime
+
+
+class TryOnPinIn(BaseModel):
+    """Body for PATCH /tryon/{id}/pin. If omitted the server toggles."""
+
+    pinned: Optional[bool] = None
+
+
+class TryOnPinOut(BaseModel):
+    id: str
+    pinned: bool
+    pinned_at: Optional[datetime] = None
 
 
 class TryOnShareOut(BaseModel):

@@ -38,6 +38,7 @@ export default function OutfitResult() {
   const [active, setActive] = useState<TryOnAngle>("front");
   const [sharing, setSharing] = useState(false);
   const [zoomOpen, setZoomOpen] = useState(false);
+  const [pinBusy, setPinBusy] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -75,6 +76,26 @@ export default function OutfitResult() {
       toast.show(e?.message ?? "Could not share", "error");
     } finally {
       setSharing(false);
+    }
+  };
+
+  const onTogglePin = async () => {
+    if (!tryon || pinBusy) return;
+    setPinBusy(true);
+    const nextPinned = !tryon.pinned;
+    // Optimistic — flip immediately so the bookmark fills.
+    setTryon({ ...tryon, pinned: nextPinned });
+    try {
+      await api.tryOnPin(tryon.id, nextPinned);
+      toast.show(
+        nextPinned ? "Saved to your board" : "Removed from your board",
+        "success",
+      );
+    } catch (e: any) {
+      setTryon({ ...tryon, pinned: !nextPinned });
+      toast.show(e?.message ?? "Could not update saved board", "error");
+    } finally {
+      setPinBusy(false);
     }
   };
 
@@ -160,6 +181,14 @@ export default function OutfitResult() {
             </Text>
           ) : null}
 
+          <View style={{ height: spacing.lg }} />
+          <AppButton
+            testID="outfit-pin-btn"
+            label={tryon.pinned ? "★ Saved to your board" : "☆ Save to my board"}
+            variant={tryon.pinned ? "primary" : "secondary"}
+            onPress={onTogglePin}
+            loading={pinBusy}
+          />
           <View style={{ height: spacing.lg }} />
           <Text style={tp.caption}>Sharing the {ANGLE_LABEL[active]} angle</Text>
           <View style={{ height: spacing.sm }} />

@@ -436,7 +436,16 @@ export interface TryOnResult {
   result_image_b64: string;
   images?: TryOnImageOut[];
   fit_summary?: string | null;
+  // Try-On Save — Saved board membership. `pinned_at` orders the board.
+  pinned?: boolean;
+  pinned_at?: string | null;
   created_at: string;
+}
+
+export interface TryOnPinOut {
+  id: string;
+  pinned: boolean;
+  pinned_at?: string | null;
 }
 
 export type OrderStatus =
@@ -1005,7 +1014,17 @@ export const api = {
     profile_id?: string;
     angles?: TryOnAngle[];
   }) => request<TryOnResult>("/tryon/garment", { method: "POST", body }),
-  tryOnHistory: () => request<TryOnResult[]>("/tryon/history"),
+  tryOnHistory: (opts: { pinned?: boolean } = {}) =>
+    request<TryOnResult[]>(
+      opts.pinned ? "/tryon/history?pinned=true" : "/tryon/history",
+    ),
+  // Try-On Save — toggle a render onto the user's private Saved board.
+  // Omit `pinned` to flip the current state; pass a boolean to force it.
+  tryOnPin: (id: string, pinned?: boolean) =>
+    request<TryOnPinOut>(`/tryon/${id}/pin`, {
+      method: "PATCH",
+      body: { pinned: pinned ?? null },
+    }),
 
   // AI Stylist (Gemini 3.1 Pro) — chat suggestions from live catalog items
   stylistChat: (body: {
