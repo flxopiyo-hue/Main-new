@@ -7,12 +7,10 @@ import {
   ActivityIndicator,
   Image,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -21,6 +19,7 @@ import { AppButton } from "@/src/components/AppButton";
 import { AppInput } from "@/src/components/AppInput";
 import { ActiveProfileChip } from "@/src/components/ActiveProfileChip";
 import { ImageZoomModal } from "@/src/components/ImageZoomModal";
+import { TryOnResultImage } from "@/src/components/TryOnResultImage";
 import { useToast } from "@/src/components/Toast";
 import { TryOnResult, api } from "@/src/lib/api";
 import { dataUriFromBase64, pickImageFromCamera, pickImageFromLibrary } from "@/src/lib/images";
@@ -44,7 +43,6 @@ export default function BYOTryOnScreen() {
   const [garmentType, setGarmentType] = useState<string>("top");
   const [result, setResult] = useState<TryOnResult | null>(null);
   const [zoomOpen, setZoomOpen] = useState(false);
-  const { height: winH } = useWindowDimensions();
   const [generating, setGenerating] = useState(false);
 
   const pickFromLibrary = async () => {
@@ -191,8 +189,9 @@ export default function BYOTryOnScreen() {
           maxLength={60}
         />
 
-        {/* Result — capped to ~55% of the screen; tap to open the
-            full-screen pinch-zoom viewer. */}
+        {/* Result — auto-sized to the AI image's real aspect ratio
+            (no letterbox bars). Tap the image or the maximise icon to
+            open the full-screen pinch-zoom viewer. */}
         {result ? (
           <View style={styles.resultWrap} testID="byo-result">
             <View style={styles.resultHead}>
@@ -205,13 +204,12 @@ export default function BYOTryOnScreen() {
                 <Feather name="maximize-2" size={16} color={colors.primary} />
               </TouchableOpacity>
             </View>
-            <Pressable onPress={() => setZoomOpen(true)}>
-              <Image
-                source={{ uri: dataUriFromBase64(result.result_image_b64) }}
-                style={[styles.resultImage, { height: Math.round(winH * 0.55) }]}
-                resizeMode="contain"
-              />
-            </Pressable>
+            <TryOnResultImage
+              testID="byo-result-image"
+              uri={dataUriFromBase64(result.result_image_b64)}
+              onPress={() => setZoomOpen(true)}
+              maxScreenHeightPct={0.7}
+            />
             <ImageZoomModal
               visible={zoomOpen}
               uri={dataUriFromBase64(result.result_image_b64)}

@@ -6,19 +6,17 @@ import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Image,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppButton } from "@/src/components/AppButton";
 import { ImageZoomModal } from "@/src/components/ImageZoomModal";
+import { TryOnResultImage } from "@/src/components/TryOnResultImage";
 import { useToast } from "@/src/components/Toast";
 import { api, TryOnAngle, TryOnImageOut, TryOnResult } from "@/src/lib/api";
 import { dataUriFromBase64 } from "@/src/lib/images";
@@ -40,7 +38,6 @@ export default function OutfitResult() {
   const [active, setActive] = useState<TryOnAngle>("front");
   const [sharing, setSharing] = useState(false);
   const [zoomOpen, setZoomOpen] = useState(false);
-  const { height: winH } = useWindowDimensions();
 
   useEffect(() => {
     (async () => {
@@ -94,16 +91,17 @@ export default function OutfitResult() {
   return (
     <View style={styles.root}>
       <ScrollView contentContainerStyle={styles.scroll}>
-        {/* Hero capped to ~60% of the screen so controls stay visible;
-            tap (or the zoom icon) opens the full-screen pinch-zoom viewer. */}
-        <View style={[styles.heroWrap, { height: Math.round(winH * 0.6) }]}>
-          <Pressable style={styles.heroPress} onPress={() => setZoomOpen(true)}>
-            <Image
-              source={{ uri: dataUriFromBase64(activeImg.image_b64) }}
-              style={styles.hero}
-              resizeMode="contain"
-            />
-          </Pressable>
+        {/* Hero — auto-sized to the actual image aspect ratio (no
+            grey letterbox bars around portrait renders). Tap or the
+            zoom icon opens the full-screen pinch-zoom viewer with
+            swipe navigation between every angle. */}
+        <View style={styles.heroWrap}>
+          <TryOnResultImage
+            testID="outfit-result-hero"
+            uri={dataUriFromBase64(activeImg.image_b64)}
+            onPress={() => setZoomOpen(true)}
+            maxScreenHeightPct={0.7}
+          />
           <SafeAreaView style={styles.heroOverlay} edges={["top"]} pointerEvents="box-none">
             <View style={styles.heroBar}>
               <TouchableOpacity
@@ -183,7 +181,12 @@ export default function OutfitResult() {
       </ScrollView>
       <ImageZoomModal
         visible={zoomOpen}
-        uri={dataUriFromBase64(activeImg.image_b64)}
+        images={angles.map((a) => dataUriFromBase64(a.image_b64))}
+        labels={angles.map((a) => ANGLE_LABEL[a.angle])}
+        initialIndex={Math.max(
+          angles.findIndex((a) => a.angle === active),
+          0,
+        )}
         onClose={() => setZoomOpen(false)}
       />
     </View>
@@ -195,8 +198,6 @@ const styles = StyleSheet.create({
   center: { alignItems: "center", justifyContent: "center" },
   scroll: { paddingBottom: spacing.xxl },
   heroWrap: { width: "100%", backgroundColor: colors.muted },
-  heroPress: { width: "100%", height: "100%" },
-  hero: { width: "100%", height: "100%" },
   heroOverlay: { ...StyleSheet.absoluteFillObject, padding: spacing.md },
   heroBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   heroIcon: {
