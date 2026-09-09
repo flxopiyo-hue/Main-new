@@ -47,8 +47,10 @@ def _lo_doc_to_out(doc: Dict[str, Any]) -> LovedOneOut:
         relation=doc.get("relation"),
         measurements=Measurements(**(doc.get("measurements") or {})),
         preferred_size=doc.get("preferred_size"),
+        preferred_shoe_size=doc.get("preferred_shoe_size"),
         has_front_photo=bool(doc.get("front_photo_b64")),
         has_side_photo=bool(doc.get("side_photo_b64")),
+        has_three_quarter_photo=bool(doc.get("three_quarter_photo_b64")),
         created_at=doc["created_at"],
         updated_at=doc["updated_at"],
     )
@@ -136,6 +138,7 @@ async def create_loved_one(
         "relation": (body.relation or "").strip() or None,
         "measurements": (body.measurements.model_dump() if body.measurements else {}),
         "preferred_size": body.preferred_size,
+        "preferred_shoe_size": body.preferred_shoe_size,
         "created_at": now,
         "updated_at": now,
     }
@@ -143,6 +146,8 @@ async def create_loved_one(
         doc["front_photo_b64"] = strip_data_prefix(body.front_photo_b64)
     if body.side_photo_b64:
         doc["side_photo_b64"] = strip_data_prefix(body.side_photo_b64)
+    if body.three_quarter_photo_b64:
+        doc["three_quarter_photo_b64"] = strip_data_prefix(body.three_quarter_photo_b64)
     await db.body_profiles.insert_one(doc)
     fresh = await db.body_profiles.find_one({"id": doc_id}, {"_id": 0})
     return _lo_doc_to_out(fresh)
@@ -180,10 +185,14 @@ async def update_loved_one(
         update["measurements"] = merged
     if "preferred_size" in data:
         update["preferred_size"] = data["preferred_size"]
+    if "preferred_shoe_size" in data:
+        update["preferred_shoe_size"] = data["preferred_shoe_size"]
     if "front_photo_b64" in data and data["front_photo_b64"]:
         update["front_photo_b64"] = strip_data_prefix(data["front_photo_b64"])
     if "side_photo_b64" in data and data["side_photo_b64"]:
         update["side_photo_b64"] = strip_data_prefix(data["side_photo_b64"])
+    if "three_quarter_photo_b64" in data and data["three_quarter_photo_b64"]:
+        update["three_quarter_photo_b64"] = strip_data_prefix(data["three_quarter_photo_b64"])
     if not update:
         raise HTTPException(status_code=400, detail="No fields to update")
     update["updated_at"] = datetime.now(timezone.utc)

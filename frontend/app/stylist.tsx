@@ -65,7 +65,7 @@ export default function StylistScreen() {
   const [shopOutfit, setShopOutfit] = useState<StylistOutfit | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
-  // Resume the most recent session (keeps the 2/week free quota honest);
+  // Resume the most recent session (keeps the free weekly quota honest);
   // also learn whether the buyer has a front photo for the hint banner.
   useEffect(() => {
     let cancelled = false;

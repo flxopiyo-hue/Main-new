@@ -1,10 +1,18 @@
-// Add a loved-one body profile so the buyer can shop on behalf of someone else.
+// New loved-one body profile — full parity with the self-user onboarding
+// flow. Shoppers register a wife / husband / child / friend the same way
+// they onboarded themselves: three-angle photos, six body measurements
+// (with AI-powered estimation from the photos), preferred clothing size
+// and preferred shoe size.
+//
+// Layout mirrors app/onboarding/measurements.tsx as closely as possible
+// so the two flows feel like one product. The only bits that differ are
+// the header block (audience picker + name + relation + gender + age),
+// because those don't apply when a user is onboarding themselves.
 
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   Image,
   Platform,
   StyleSheet,
@@ -17,11 +25,38 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppButton } from "@/src/components/AppButton";
 import { AppInput } from "@/src/components/AppInput";
+import {
+  BodyMeasureGuide,
+  BodyMeasureKey,
+  GuideGender,
+} from "@/src/components/BodyMeasureGuide";
 import { useToast } from "@/src/components/Toast";
-import { Gender, ProfileAudience, api } from "@/src/lib/api";
+import { Gender, Measurements, ProfileAudience, api } from "@/src/lib/api";
 import { dataUriFromBase64, pickImageFromCamera, pickImageFromLibrary } from "@/src/lib/images";
 import { useProfiles } from "@/src/lib/profiles";
+import { ADULT_SHOE_SIZES } from "@/src/lib/shoe-sizes";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
+import {
+  cmToDisplay,
+  displayToCm,
+  LengthUnit,
+  placeholderFor,
+} from "@/src/lib/units";
+
+interface PickState {
+  uri: string;
+  base64: string;
+}
+
+type Slot = "front" | "side" | "three_quarter";
+
+const SLOT_LABEL: Record<Slot, string> = {
+  front: "Front view",
+  side: "Side profile",
+  three_quarter: "Three-quarter",
+};
+
+const SLOTS: Slot[] = ["front", "side", "three_quarter"];
 
 type AdultGender = "male" | "female" | "other";
 
@@ -36,20 +71,56 @@ const ADULT_GENDERS: { key: AdultGender; label: string }[] = [
   { key: "other", label: "Other" },
 ];
 
+// Same input rows as the self-user flow so both screens feel identical.
+type MeasureRow = { key: BodyMeasureKey; label: string };
+const MEASURE_ROWS: MeasureRow[] = [
+  { key: "shoulders_cm", label: "Shoulders" },
+  { key: "chest_cm", label: "Chest / Bust" },
+  { key: "waist_cm", label: "Waist" },
+  { key: "hips_cm", label: "Hips" },
+  { key: "inseam_cm", label: "Inseam" },
+];
+
+const CLOTHING_SIZES = ["XS", "S", "M", "L", "XL", "XXL"] as const;
+
 export default function NewLovedOneScreen() {
   const toast = useToast();
   const { refresh, setActive } = useProfiles();
 
+  // --- Loved-one identity (unique to this screen) -------------------------
   const [audience, setAudience] = useState<ProfileAudience | null>(null);
   const [gender, setGender] = useState<Gender | null>(null);
   const [name, setName] = useState("");
+  const [relation, setRelation] = useState("");
   const [age, setAge] = useState<string>("");
-  const [heightCm, setHeightCm] = useState<string>("");
-  const [chestCm, setChestCm] = useState<string>("");
-  const [waistCm, setWaistCm] = useState<string>("");
-  const [frontB64, setFrontB64] = useState<string | null>(null);
-  const [sideB64, setSideB64] = useState<string | null>(null);
+
+  // --- Same shape as self-user onboarding ---------------------------------
+  const [m, setM] = useState<Measurements>({});
+  const [preferredSize, setPreferredSize] = useState<string | null>(null);
+  const [preferredShoeSize, setPreferredShoeSize] = useState<string | null>(null);
+  const [unit, setUnit] = useState<LengthUnit>("cm");
+  const [front, setFront] = useState<PickState | null>(null);
+  const [side, setSide] = useState<PickState | null>(null);
+  const [threeQuarter, setThreeQuarter] = useState<PickState | null>(null);
+  const [estimating, setEstimating] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Body-guide silhouette highlight — matches self-user onboarding.
+  const [guideKey, setGuideKey] = useState<BodyMeasureKey | null>(null);
+  const focusGuide = (k: BodyMeasureKey) => setGuideKey(k);
+  const blurGuide = (k: BodyMeasureKey) => {
+    if (guideKey === k) setGuideKey(null);
+  };
+
+  // Height (optional reference) is separate from the 5 body measurements
+  // that drive the fit score. Same pattern as self-user onboarding.
+  const heightCm = m.height_cm ?? null;
+
+  const guideGender: GuideGender = useMemo(() => {
+    if (audience === "kid") return "kid";
+    if (gender === "male") return "male";
+    return "female";
+  }, [audience, gender]);
 
   const ageNum = useMemo(() => {
     const n = parseInt(age, 10);
@@ -58,34 +129,64 @@ export default function NewLovedOneScreen() {
 
   const ageInvalid = audience === "kid" && (ageNum === null || ageNum < 0 || ageNum > 17);
 
-  const pickPhoto = async (slot: "front" | "side") => {
+  const slotStateFor = (s: Slot) =>
+    s === "front" ? front : s === "side" ? side : threeQuarter;
+  const setSlot = (s: Slot, v: PickState | null) => {
+    if (s === "front") setFront(v);
+    else if (s === "side") setSide(v);
+    else setThreeQuarter(v);
+  };
+
+  const pickFor = async (slot: Slot, source: "library" | "camera") => {
     try {
-      const choice =
-        Platform.OS === "web"
-          ? await pickImageFromLibrary()
-          : await new Promise<typeof undefined | Awaited<ReturnType<typeof pickImageFromLibrary>>>(
-              (resolve) => {
-                // Native modal: prefer library on first tap; users can retake.
-                pickImageFromLibrary().then(resolve);
-              },
-            );
-      const picked = await choice;
+      const picked =
+        source === "camera" ? await pickImageFromCamera() : await pickImageFromLibrary();
       if (!picked) return;
-      if (slot === "front") setFrontB64(picked.base64);
-      else setSideB64(picked.base64);
+      setSlot(slot, { uri: dataUriFromBase64(picked.base64), base64: picked.base64 });
     } catch (e: any) {
       toast.show(e?.message ?? "Photo selection failed", "error");
     }
   };
 
-  const takePhoto = async (slot: "front" | "side") => {
+  const estimateFromPhotos = async () => {
+    if (!front && !side && !threeQuarter) {
+      toast.show("Add at least one photo to estimate measurements", "error");
+      return;
+    }
+    setEstimating(true);
     try {
-      const picked = await pickImageFromCamera();
-      if (!picked) return;
-      if (slot === "front") setFrontB64(picked.base64);
-      else setSideB64(picked.base64);
+      const est = await api.estimateMeasurements({
+        front_photo_b64: front?.base64,
+        side_photo_b64: side?.base64,
+        three_quarter_photo_b64: threeQuarter?.base64,
+        height_cm: heightCm ?? undefined,
+      });
+      // Walk the silhouette through the estimated values one by one for delight.
+      const applied: BodyMeasureKey[] = [];
+      const next: Measurements = { ...m };
+      for (const key of ["shoulders_cm", "chest_cm", "waist_cm", "hips_cm", "inseam_cm"] as BodyMeasureKey[]) {
+        const v = (est as any)[key];
+        if (typeof v === "number" && Number.isFinite(v)) {
+          (next as any)[key] = v;
+          applied.push(key);
+        }
+      }
+      setM(next);
+      if (applied.length === 0) {
+        toast.show("AI couldn't infer measurements — please enter manually", "error");
+      } else {
+        toast.show(`Applied ${applied.length} measurements`, "success");
+        // Sweep the highlight for a beat so the user can see them land.
+        for (const k of applied) {
+          setGuideKey(k);
+          await new Promise((r) => setTimeout(r, 350));
+        }
+        setGuideKey(null);
+      }
     } catch (e: any) {
-      toast.show(e?.message ?? "Camera failed", "error");
+      toast.show(e?.message ?? "Could not estimate", "error");
+    } finally {
+      setEstimating(false);
     }
   };
 
@@ -108,24 +209,27 @@ export default function NewLovedOneScreen() {
     }
     setSaving(true);
     try {
-      const measurements: Record<string, number | undefined> = {};
-      const h = parseFloat(heightCm);
-      const c = parseFloat(chestCm);
-      const w = parseFloat(waistCm);
-      if (Number.isFinite(h)) measurements.height_cm = h;
-      if (Number.isFinite(c)) measurements.chest_cm = c;
-      if (Number.isFinite(w)) measurements.waist_cm = w;
+      // Only include measurements that were actually set; empty object
+      // reads cleanly on the backend as "no measurements yet".
+      const measurements: Measurements = {};
+      for (const key of ["height_cm", "shoulders_cm", "chest_cm", "waist_cm", "hips_cm", "inseam_cm"] as (keyof Measurements)[]) {
+        const v = m[key];
+        if (typeof v === "number" && Number.isFinite(v)) (measurements as any)[key] = v;
+      }
       const created = await api.createLovedOne({
         name: name.trim(),
         audience,
         gender,
         age: audience === "kid" ? ageNum : ageNum ?? null,
+        relation: relation.trim() || undefined,
         measurements: Object.keys(measurements).length ? measurements : undefined,
-        front_photo_b64: frontB64 ?? undefined,
-        side_photo_b64: sideB64 ?? undefined,
+        preferred_size: preferredSize ?? undefined,
+        preferred_shoe_size: preferredShoeSize ?? undefined,
+        front_photo_b64: front?.base64,
+        side_photo_b64: side?.base64,
+        three_quarter_photo_b64: threeQuarter?.base64,
       });
       toast.show(`${created.name} added`, "success");
-      // Activate the new profile immediately for a delightful UX.
       await setActive(created.id);
       await refresh();
       router.back();
@@ -149,18 +253,18 @@ export default function NewLovedOneScreen() {
         >
           <Feather name="arrow-left" size={22} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={tp.caption}>NEW LOVED ONE</Text>
+        <Text style={tp.caption}>NEW BODY PROFILE</Text>
         <View style={styles.iconBtn} />
       </View>
 
       <KeyboardAwareScrollView contentContainerStyle={styles.scroll} bottomOffset={24}>
         <Text style={[tp.h1, { marginTop: spacing.sm }]}>Who are you{"\n"}shopping for?</Text>
         <Text style={[tp.bodyMuted, { marginTop: spacing.sm }]}>
-          Add a body profile for someone else — a child, partner, or gift recipient. Each profile
-          has its own photos, dimensions, and Discover filter.
+          Same photos, measurements, and shoe size as your own profile — so AI Try-On dresses
+          them just as accurately.
         </Text>
 
-        {/* Audience picker */}
+        {/* ---------- Loved-one identity block ---------- */}
         <Text style={[tp.caption, styles.label]}>Adult or child</Text>
         <View style={styles.row}>
           {(["adult", "kid"] as ProfileAudience[]).map((a) => {
@@ -181,9 +285,7 @@ export default function NewLovedOneScreen() {
                   size={20}
                   color={active ? colors.primaryFg : colors.primary}
                 />
-                <Text
-                  style={[styles.bigChipLabel, active && { color: colors.primaryFg }]}
-                >
+                <Text style={[styles.bigChipLabel, active && { color: colors.primaryFg }]}>
                   {a === "kid" ? "Child" : "Adult"}
                 </Text>
               </TouchableOpacity>
@@ -191,7 +293,6 @@ export default function NewLovedOneScreen() {
           })}
         </View>
 
-        {/* Gender */}
         {audience ? (
           <>
             <Text style={[tp.caption, styles.label]}>Gender</Text>
@@ -226,6 +327,15 @@ export default function NewLovedOneScreen() {
         />
 
         <AppInput
+          testID="loved-one-relation-input"
+          label="Relation (optional)"
+          value={relation}
+          onChangeText={setRelation}
+          autoCapitalize="words"
+          placeholder={audience === "kid" ? "Son" : "Wife"}
+        />
+
+        <AppInput
           testID="loved-one-age-input"
           label={audience === "kid" ? "Age (years)" : "Age (optional)"}
           value={age}
@@ -235,60 +345,186 @@ export default function NewLovedOneScreen() {
           errorText={ageInvalid && age ? "0–17 for children" : undefined}
         />
 
-        <Text style={[tp.caption, styles.label]}>Quick dimensions (optional)</Text>
-        <View style={styles.row}>
-          <View style={styles.flex1}>
-            <AppInput
-              testID="loved-one-height-input"
-              label="Height (cm)"
-              value={heightCm}
-              onChangeText={setHeightCm}
-              keyboardType="decimal-pad"
-              placeholder="130"
-            />
+        {/* ---------- Photos: 3 angles, matches self-user ---------- */}
+        <Text style={[tp.caption, styles.sectionHeader]}>Photos</Text>
+        <Text style={[tp.bodyMuted, { marginBottom: spacing.md }]}>
+          Add all three angles for the best AI Try-On results. You can add more later.
+        </Text>
+        <View style={styles.photosRow}>
+          {SLOTS.map((slot) => {
+            const state = slotStateFor(slot);
+            return (
+              <View key={slot} style={styles.photoSlot} testID={`loved-one-photo-${slot}`}>
+                {state ? (
+                  <Image source={{ uri: state.uri }} style={styles.photoImg} resizeMode="cover" />
+                ) : (
+                  <View style={styles.photoPlaceholder}>
+                    <Feather name="camera" size={22} color={colors.mutedFg} />
+                    <Text style={styles.photoLabel}>{SLOT_LABEL[slot]}</Text>
+                  </View>
+                )}
+                <View style={styles.photoBtns}>
+                  <TouchableOpacity
+                    testID={`loved-one-photo-${slot}-library`}
+                    onPress={() => pickFor(slot, "library")}
+                    style={styles.smallBtn}
+                    activeOpacity={0.85}
+                  >
+                    <Feather name="image" size={14} color={colors.primary} />
+                    <Text style={styles.smallBtnLabel}>Library</Text>
+                  </TouchableOpacity>
+                  {Platform.OS !== "web" ? (
+                    <TouchableOpacity
+                      testID={`loved-one-photo-${slot}-camera`}
+                      onPress={() => pickFor(slot, "camera")}
+                      style={styles.smallBtn}
+                      activeOpacity={0.85}
+                    >
+                      <Feather name="camera" size={14} color={colors.primary} />
+                      <Text style={styles.smallBtnLabel}>Camera</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                  {state ? (
+                    <TouchableOpacity
+                      testID={`loved-one-photo-${slot}-clear`}
+                      onPress={() => setSlot(slot, null)}
+                      style={styles.smallBtn}
+                      activeOpacity={0.85}
+                    >
+                      <Feather name="x" size={14} color={colors.primary} />
+                      <Text style={styles.smallBtnLabel}>Clear</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              </View>
+            );
+          })}
+        </View>
+
+        {/* ---------- Measurements (identical to self-user) ---------- */}
+        <View style={styles.measureHeader}>
+          <View>
+            <Text style={tp.caption}>MEASUREMENTS</Text>
+            <Text style={[tp.bodyMuted, { marginTop: 4, fontSize: 12 }]}>
+              Tap a field to see where to measure on the silhouette.
+            </Text>
           </View>
-          <View style={styles.flex1}>
-            <AppInput
-              testID="loved-one-chest-input"
-              label="Chest (cm)"
-              value={chestCm}
-              onChangeText={setChestCm}
-              keyboardType="decimal-pad"
-              placeholder="65"
-            />
-          </View>
-          <View style={styles.flex1}>
-            <AppInput
-              testID="loved-one-waist-input"
-              label="Waist (cm)"
-              value={waistCm}
-              onChangeText={setWaistCm}
-              keyboardType="decimal-pad"
-              placeholder="58"
-            />
+          <View style={styles.unitPills}>
+            {(["cm", "in"] as LengthUnit[]).map((u) => (
+              <TouchableOpacity
+                key={u}
+                testID={`loved-one-unit-${u}`}
+                onPress={() => setUnit(u)}
+                style={[styles.unitPill, unit === u && styles.unitPillActive]}
+                activeOpacity={0.85}
+              >
+                <Text
+                  style={[styles.unitPillLabel, unit === u && styles.unitPillLabelActive]}
+                >
+                  {u.toUpperCase()}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
 
-        <Text style={[tp.caption, styles.label]}>Photos (optional but recommended)</Text>
-        <Text style={[tp.bodyMuted, { marginBottom: spacing.md }]}>
-          Add a front and a side photo so the AI Try-On can dress them realistically. You can add
-          these later from this profile.
-        </Text>
+        <BodyMeasureGuide
+          gender={guideGender}
+          activeKey={guideKey ?? undefined}
+          values={m}
+          unit={unit}
+        />
+
+        {(front || side || threeQuarter) && (
+          <>
+            <View style={{ height: spacing.md }} />
+            <AppButton
+              testID="loved-one-estimate-btn"
+              label={estimating ? "Estimating…" : "Estimate from photos with AI"}
+              variant="secondary"
+              onPress={estimateFromPhotos}
+              loading={estimating}
+            />
+          </>
+        )}
+
+        {/* Height (optional reference, same as self-user) */}
+        <View style={{ height: spacing.md }} />
+        <AppInput
+          testID="loved-one-height-input"
+          label={`Height (${unit}) — optional, improves AI estimate`}
+          value={
+            heightCm !== null && heightCm !== undefined ? cmToDisplay(heightCm, unit) : ""
+          }
+          onChangeText={(v) => {
+            const cm = displayToCm(v, unit);
+            setM({ ...m, height_cm: cm ?? undefined });
+          }}
+          keyboardType="decimal-pad"
+          placeholder={placeholderFor("height_cm", unit)}
+          onFocus={() => focusGuide("shoulders_cm")}
+          onBlur={() => blurGuide("shoulders_cm")}
+        />
+
+        {/* Five body measurements — same grid as self-user */}
+        {MEASURE_ROWS.map((r) => {
+          const cm = (m as any)[r.key] as number | undefined;
+          return (
+            <AppInput
+              key={r.key}
+              testID={`loved-one-${r.key}-input`}
+              label={`${r.label} (${unit})`}
+              value={cm !== undefined && cm !== null ? cmToDisplay(cm, unit) : ""}
+              onChangeText={(v) => {
+                const val = displayToCm(v, unit);
+                setM({ ...m, [r.key]: val ?? undefined });
+              }}
+              keyboardType="decimal-pad"
+              placeholder={placeholderFor(r.key, unit)}
+              onFocus={() => focusGuide(r.key)}
+              onBlur={() => blurGuide(r.key)}
+            />
+          );
+        })}
+
+        {/* Preferred clothing size */}
+        <Text style={[tp.caption, styles.label]}>Preferred size (optional)</Text>
         <View style={styles.row}>
-          <PhotoSlot
-            testID="loved-one-photo-front"
-            label="FRONT"
-            b64={frontB64}
-            onPick={() => pickPhoto("front")}
-            onCamera={() => takePhoto("front")}
-          />
-          <PhotoSlot
-            testID="loved-one-photo-side"
-            label="SIDE"
-            b64={sideB64}
-            onPick={() => pickPhoto("side")}
-            onCamera={() => takePhoto("side")}
-          />
+          {CLOTHING_SIZES.map((s) => {
+            const active = preferredSize === s;
+            return (
+              <TouchableOpacity
+                key={s}
+                testID={`loved-one-size-${s}`}
+                onPress={() => setPreferredSize(active ? null : s)}
+                style={[styles.chip, active && styles.chipActive]}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.chipLabel, active && styles.chipLabelActive]}>{s}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Preferred shoe size */}
+        <Text style={[tp.caption, styles.label]}>Preferred shoe size (EU)</Text>
+        <View style={styles.row}>
+          {ADULT_SHOE_SIZES.map((s) => {
+            const active = preferredShoeSize === s.value;
+            return (
+              <TouchableOpacity
+                key={s.value}
+                testID={`loved-one-shoe-${s.value}`}
+                onPress={() => setPreferredShoeSize(active ? null : s.value)}
+                style={[styles.smallChip, active && styles.chipActive]}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.smallChipLabel, active && styles.chipLabelActive]}>
+                  {s.value}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         <View style={{ height: spacing.xl }} />
@@ -297,61 +533,12 @@ export default function NewLovedOneScreen() {
       <View style={styles.footer}>
         <AppButton
           testID="loved-one-submit"
-          label={saving ? "Saving…" : "Save loved one"}
+          label={saving ? "Saving…" : "Save profile"}
           onPress={submit}
           loading={saving}
         />
       </View>
     </SafeAreaView>
-  );
-}
-
-function PhotoSlot({
-  testID,
-  label,
-  b64,
-  onPick,
-  onCamera,
-}: {
-  testID: string;
-  label: string;
-  b64: string | null;
-  onPick: () => void;
-  onCamera: () => void;
-}) {
-  return (
-    <View style={styles.photoSlot} testID={testID}>
-      {b64 ? (
-        <Image source={{ uri: dataUriFromBase64(b64) }} style={styles.photoImg} resizeMode="cover" />
-      ) : (
-        <View style={styles.photoPlaceholder}>
-          <Feather name="camera" size={22} color={colors.mutedFg} />
-          <Text style={styles.photoLabel}>{label}</Text>
-        </View>
-      )}
-      <View style={styles.photoBtns}>
-        <TouchableOpacity
-          testID={`${testID}-library`}
-          onPress={onPick}
-          style={styles.smallBtn}
-          activeOpacity={0.85}
-        >
-          <Feather name="image" size={14} color={colors.primary} />
-          <Text style={styles.smallBtnLabel}>Library</Text>
-        </TouchableOpacity>
-        {Platform.OS !== "web" ? (
-          <TouchableOpacity
-            testID={`${testID}-camera`}
-            onPress={onCamera}
-            style={styles.smallBtn}
-            activeOpacity={0.85}
-          >
-            <Feather name="camera" size={14} color={colors.primary} />
-            <Text style={styles.smallBtnLabel}>Camera</Text>
-          </TouchableOpacity>
-        ) : null}
-      </View>
-    </View>
   );
 }
 
@@ -369,8 +556,8 @@ const styles = StyleSheet.create({
   iconBtn: { width: 32, height: 32, alignItems: "flex-start", justifyContent: "center" },
   scroll: { paddingHorizontal: spacing.lg, paddingTop: spacing.xl, paddingBottom: spacing.xl },
   label: { marginTop: spacing.lg, marginBottom: spacing.sm },
-  row: { flexDirection: "row", gap: spacing.md, flexWrap: "wrap" },
-  flex1: { flex: 1, minWidth: 100 },
+  sectionHeader: { marginTop: spacing.xl, marginBottom: 4 },
+  row: { flexDirection: "row", gap: spacing.sm, flexWrap: "wrap" },
   bigChip: {
     flex: 1,
     minWidth: 130,
@@ -403,11 +590,23 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   chipLabelActive: { color: colors.primaryFg },
-  photoSlot: {
-    flex: 1,
-    minWidth: 140,
-    gap: 6,
+  smallChip: {
+    paddingHorizontal: 10,
+    height: 34,
+    minWidth: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
+  smallChipLabel: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 12,
+    color: colors.primary,
+  },
+  photosRow: { flexDirection: "row", gap: spacing.sm, flexWrap: "wrap" },
+  photoSlot: { flex: 1, minWidth: 100, gap: 6 },
   photoPlaceholder: {
     aspectRatio: 3 / 4,
     backgroundColor: colors.muted,
@@ -422,10 +621,12 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
     color: colors.mutedFg,
     textTransform: "uppercase",
+    textAlign: "center",
   },
-  photoBtns: { flexDirection: "row", gap: 6 },
+  photoBtns: { flexDirection: "row", gap: 4, flexWrap: "wrap" },
   smallBtn: {
     flex: 1,
+    minWidth: 46,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -436,6 +637,34 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   smallBtnLabel: { fontFamily: fonts.bodySemi, fontSize: 11, color: colors.primary },
+  measureHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-end",
+    marginTop: spacing.xl,
+    marginBottom: spacing.sm,
+    gap: spacing.md,
+  },
+  unitPills: {
+    flexDirection: "row",
+    gap: 4,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 3,
+  },
+  unitPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: colors.surface,
+  },
+  unitPillActive: { backgroundColor: colors.primary },
+  unitPillLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 11,
+    letterSpacing: 1.2,
+    color: colors.primary,
+  },
+  unitPillLabelActive: { color: colors.primaryFg },
   footer: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,

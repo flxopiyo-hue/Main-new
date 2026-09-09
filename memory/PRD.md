@@ -176,3 +176,25 @@ Editorial Swiss / High-Contrast: Cormorant Garamond display + Manrope body text,
   - `frontend/app/(tabs)/tryon.tsx` — new Recent / Saved segmented tabs above the history list. Each history card now has a bookmark button + share button (both amber when active) with optimistic UI toggling and toast confirmation. Distinct empty state when Saved is empty.
   - `frontend/app/outfit/result.tsx` + `frontend/app/tryon/byo.tsx` + `frontend/app/item/[id].tsx` — Save-to-board button rendered on the AI-result view. Copy flips between "☆ Save to my board" and "★ Saved to your board" (item detail uses a bordered mini-button with a bookmark icon).
 - **Verified end-to-end**: registered a QA buyer, seeded a try-on doc, listed history (`pinned=false`), toggled via PATCH (server-side flip), saved-board filter returned the pinned row, explicit unpin returned the row to unpinned state, saved-board became empty. Cleaned up the QA user afterwards. Lint clean on every touched file.
+
+## Update — June 2026 (SDK 57 + Doubled trials + Loved-one parity)
+
+### Expo SDK 54 → 57 upgrade
+- Unblocks the Expo Go 57.0.0 mismatch users saw on production. `expo` bumped to `~57`, `react-native` to `0.86.3`, `react` to `19.2.3`, `expo-router` to `~57.0.20`, `expo-file-system` to `~57.0.6`, `expo-apple-authentication` to `~57.0.1`, `react-native-reanimated` to `4.5.1`. Ran `yarn expo install --fix` — all peer packages realigned. Metro bundles, welcome + login (with Google SSO button) + try-on tab all boot cleanly on the new SDK. Full frontend ESLint pass.
+- Trigger note: after the upgrade Metro needs the OLD long-running `expo start` process killed before restart (stale `metro-config` reference cached). Restart via `sudo supervisorctl restart expo` handles this on production redeploys.
+
+### Doubled free-tier trials (ahead of Google Play 14-day closed test)
+- `backend/core/config.py`: `FREE_TRYONS_PER_WEEK: 7 → 14` and `FREE_STYLIST_SESSIONS_PER_WEEK: 2 → 4`. Comment explicitly notes the reason and that they can be dialled back post-launch. `FREE_MAX_PROFILES` intentionally unchanged.
+- Frontend copy is dynamic ("weekly try-on limit" without a hard number) so no follow-up UI change needed; stale numeric comments in `stylist.tsx` + `PaywallModal.tsx` tidied.
+
+### Loved-one profile — full parity with self-user onboarding
+- Backend: `LovedOneIn` / `LovedOnePatch` / `LovedOneOut` all gained `three_quarter_photo_b64` + `preferred_shoe_size`; router `create_loved_one` + `update_loved_one` persist them and `_lo_doc_to_out` returns `has_three_quarter_photo`. End-to-end curl test: create with all 6 measurements + shoe size + 3 photos returned `has_front_photo`, `has_side_photo`, `has_three_quarter_photo`, `preferred_shoe_size: "39"` all present.
+- Frontend: `app/profiles/new.tsx` rewritten to mirror `app/onboarding/measurements.tsx` exactly:
+  - Same 3-photo grid (Front / Side / Three-quarter, library + camera + clear buttons per slot).
+  - Same `BodyMeasureGuide` silhouette with active-key highlight sweep after AI estimation.
+  - Same 6-measurement grid (Height + Shoulders + Chest/Bust + Waist + Hips + Inseam).
+  - Same CM ↔ IN unit toggle via `cmToDisplay` / `displayToCm`.
+  - Same "Estimate from photos with AI" via `api.estimateMeasurements` when any photo is present.
+  - Same preferred clothing size chips (XS–XXL) + preferred shoe size chips (EU 35–47).
+  - Retains the loved-one-only header block: audience picker, gender, name, relation, age (with 0–17 validation for kids).
+- Verified in preview: navigate to `/profiles/new`, all steps render, "Save profile" pinned at the bottom.

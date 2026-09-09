@@ -656,8 +656,11 @@ export interface LovedOne {
   relation?: string | null;
   measurements: Measurements;
   preferred_size?: string | null;
+  preferred_shoe_size?: string | null;
   has_front_photo: boolean;
   has_side_photo: boolean;
+  // Full parity with the self-user profile — same three angles feed AI Try-On.
+  has_three_quarter_photo?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -1349,8 +1352,10 @@ export const api = {
     relation?: string;
     measurements?: Measurements;
     preferred_size?: string | null;
+    preferred_shoe_size?: string | null;
     front_photo_b64?: string;
     side_photo_b64?: string;
+    three_quarter_photo_b64?: string;
   }) => request<LovedOne>("/loved-ones", { method: "POST", body }),
   updateLovedOne: (
     id: string,
@@ -1362,8 +1367,10 @@ export const api = {
       relation: string;
       measurements: Measurements;
       preferred_size: string | null;
+      preferred_shoe_size: string | null;
       front_photo_b64: string;
       side_photo_b64: string;
+      three_quarter_photo_b64: string;
     }>,
   ) => request<LovedOne>(`/loved-ones/${id}`, { method: "PATCH", body }),
   deleteLovedOne: (id: string) =>

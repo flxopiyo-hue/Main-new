@@ -50,9 +50,15 @@ DEFAULT_CURRENCY: str = "KES"  # Kenyan Shilling — product originates in Kenya
 # Subscription gating — Free tier caps kept intentionally generous so the
 # Premium sell is "unlimited + multi-profile + AI multi-angle outfits"
 # rather than "starving you until you pay".
-FREE_TRYONS_PER_WEEK: int = 7
+#
+# Caps were doubled ahead of the Google Play 14-day closed test so testers
+# and early users have plenty of headroom to evaluate the AI features
+# without immediately hitting a paywall. Flip these two constants down
+# later if the free tier proves too generous once the app is on
+# Production Play + App Store.
+FREE_TRYONS_PER_WEEK: int = 14
 # AI Stylist chat — Free buyers may START this many sessions per rolling
 # week (messages inside a session are uncapped by tier); Premium unlimited.
-FREE_STYLIST_SESSIONS_PER_WEEK: int = 2
+FREE_STYLIST_SESSIONS_PER_WEEK: int = 4
 FREE_MAX_PROFILES: int = 2
 PREMIUM_MAX_PROFILES: int = 10

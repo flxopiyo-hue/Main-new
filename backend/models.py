@@ -377,6 +377,9 @@ class LovedOneIn(BaseModel):
     preferred_shoe_size: Optional[str] = None
     front_photo_b64: Optional[str] = None
     side_photo_b64: Optional[str] = None
+    # Matches the self-profile flow so loved-ones can be photographed at
+    # the same three canonical angles the AI Try-On uses.
+    three_quarter_photo_b64: Optional[str] = None
 
 
 class LovedOnePatch(BaseModel):
@@ -390,6 +393,7 @@ class LovedOnePatch(BaseModel):
     preferred_shoe_size: Optional[str] = None
     front_photo_b64: Optional[str] = None
     side_photo_b64: Optional[str] = None
+    three_quarter_photo_b64: Optional[str] = None
 
 
 class LovedOneOut(BaseModel):
@@ -405,6 +409,7 @@ class LovedOneOut(BaseModel):
     preferred_shoe_size: Optional[str] = None
     has_front_photo: bool = False
     has_side_photo: bool = False
+    has_three_quarter_photo: bool = False
     created_at: datetime
     updated_at: datetime
 

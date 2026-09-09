@@ -1,6 +1,6 @@
 // Modal shown when the backend returns HTTP 402 (paywall). The Free
 // tier hits this when:
-//   • The buyer has already used all 7 try-ons in the last 7 days.
+//   • The buyer has already used all their free try-ons in the last 7 days.
 //   • The buyer tries to add a 3rd body profile.
 //   • The buyer requests multi-angle output on the try-on flow.
 //
