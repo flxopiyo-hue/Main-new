@@ -56,6 +56,19 @@ logger = logging.getLogger("aurafit")
 
 app = FastAPI(title="AuraFit API")
 
+
+@app.get("/health", include_in_schema=False)
+async def health() -> dict:
+    """Kubernetes / platform liveness probe.
+
+    Mounted at the root (not under `/api`) because the platform's HTTP
+    health prober hits `/health` directly on the service, not through
+    the ingress that rewrites `/api/*` → this pod. Keep the body trivial
+    so the probe stays sub-millisecond.
+    """
+    return {"status": "ok"}
+
+
 # All AuraFit endpoints sit under /api — Kubernetes ingress matches /api/*
 # and forwards to this service on port 8001.
 api_router = APIRouter(prefix="/api")
