@@ -226,3 +226,21 @@ Editorial Swiss / High-Contrast: Cormorant Garamond display + Manrope body text,
 ### Verified via testing_agent iteration_34
 - Backend: 14/14 pytest passed. Apple no-op behaviour when creds absent verified; refresh_token seeded → delete flow revokes-then-deletes the user row.
 - Frontend: Web/Android path still shows price + Paystack CTAs on `/subscription`; new `profile-contact-support-btn` renders in the expected position; ErrorBoundary invisible during normal use.
+
+## Hotfix — June 2026 (Blank welcome screen on tester devices)
+
+### Root cause
+Testers on Android + Expo Go reported an entirely blank amber gradient with no logo, headline, or buttons. Two contributing factors:
+1. `@expo-google-fonts/{cormorant-garamond,manrope}` at 0.4.x is not fully compatible with Expo SDK 57 and can silently fail on some Android + Expo Go builds. Our own system guidelines explicitly warn against these packages.
+2. Icon fonts were being pulled from a jsDelivr CDN inside Expo Go; on slow/filtered networks (common in Kenya on mobile data) the CDN request hangs forever, keeping `iconsLoaded=false` and the whole app on a null render.
+
+### Fix
+- **Local .ttf bundling** — Copied all 7 Cormorant Garamond + Manrope .ttf files from `node_modules/@expo-google-fonts/*` into `frontend/assets/fonts/` and load them via `expo-font`'s `useFonts` in `_layout.tsx`. Metro now embeds them into the JS bundle, so there is no network dependency at startup.
+- **Removed dependencies** — `@expo-google-fonts/cormorant-garamond` and `@expo-google-fonts/manrope` deleted from `package.json`.
+- **Icon fonts locally bundled too** — `src/hooks/use-icon-fonts.ts` now `require()`s Feather / Ionicons / MaterialIcons / MaterialCommunityIcons / AntDesign directly from `@expo/vector-icons`, replacing the CDN URL fallback that only kicked in under Expo Go. This works in dev, Expo Go, native builds and web.
+- **4-second timeout safety net** — `_layout.tsx` now unblocks the app after 4 seconds even if fonts never resolve. Better a working UI with system fallback typography than a permanently blank welcome page.
+- **SplashScreen error swallowing** — `preventAutoHideAsync()` and `hideAsync()` are wrapped in `.catch(() => {})` so a splash-related exception can never dead-end the app on web/older Android.
+
+### Tester note
+Existing builds still have the old font stack — testers must open the latest deployed version (or reinstall from a fresh QR code) to pick up the hotfix.
+

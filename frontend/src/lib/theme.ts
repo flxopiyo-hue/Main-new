@@ -32,7 +32,9 @@ export const radius = {
   sheet: 24,
 };
 
-// Font families loaded via @expo-google-fonts/{cormorant-garamond,manrope}
+// Custom fonts bundled locally via `assets/fonts/*.ttf`, loaded in
+// `app/_layout.tsx`. The family names below MUST match the keys given
+// to `useFonts` in the layout — no more `@expo-google-fonts/*` deps.
 export const fonts = {
   heading: "CormorantGaramond_500Medium",
   headingItalic: "CormorantGaramond_500Medium_Italic",

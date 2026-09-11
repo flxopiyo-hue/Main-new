@@ -1,52 +1,33 @@
-// Icon font loader for Expo apps. Fonts are loaded from a CDN only under
-// Expo Go (StoreClient) — that's where @expo/vector-icons' .ttf files come
-// back as 0 bytes from Metro's asset resolver on Android. Native dev/prod
-// builds and web pass an empty map, so useFonts resolves to [true, null]
-// immediately via react-native-vector-icons autolinking / web stubs.
-// ICON_VECTOR_VERSION must match @expo/vector-icons in package.json.
-// Usage: const [loaded, error] = useIconFonts();
+// Icon font loader — Expo apps need @expo/vector-icons' bundled .ttf
+// files registered with `expo-font` so that in dev + web + Expo Go
+// (where native autolinking doesn't apply) icons render correctly.
+//
+// Historically we fetched these from a jsDelivr CDN when running under
+// Expo Go (`ExecutionEnvironment.StoreClient`). That worked on fast
+// networks but hung on some corporate/mobile networks in Kenya, leaving
+// the app on a blank screen for testers.
+//
+// New strategy: bundle the .ttf files directly from
+// `@expo/vector-icons/.../Fonts/*.ttf` via `require`. Metro embeds them
+// into the JS bundle at build time, so there's no network dependency at
+// startup. The layout also has a 4-second safety timeout in case any of
+// these `require`s ever fails on a device.
 
-import Constants, { ExecutionEnvironment } from "expo-constants";
 import { useFonts } from "expo-font";
 
-const ICON_VECTOR_VERSION = "15.0.3";
-
-// short internal fontName (what the library queries) -> CDN .ttf file name
-const ICON_FAMILIES: Record<string, string> = {
-  anticon: "AntDesign",
-  entypo: "Entypo",
-  evilicons: "EvilIcons",
-  feather: "Feather",
-  FontAwesome: "FontAwesome",
-  Fontisto: "Fontisto",
-  foundation: "Foundation",
-  ionicons: "Ionicons",
-  "material-community": "MaterialCommunityIcons",
-  material: "MaterialIcons",
-  octicons: "Octicons",
-  "simple-line-icons": "SimpleLineIcons",
-  zocial: "Zocial",
-  // FontAwesome5 style variants (key = `FontAwesome5Free-<style>`)
-  "FontAwesome5Free-Regular": "FontAwesome5_Regular",
-  "FontAwesome5Free-Solid": "FontAwesome5_Solid",
-  "FontAwesome5Free-Brand": "FontAwesome5_Brands",
-  // FontAwesome6 style variants (key = `FontAwesome6Free-<style>`)
-  "FontAwesome6Free-Regular": "FontAwesome6_Regular",
-  "FontAwesome6Free-Solid": "FontAwesome6_Solid",
-  "FontAwesome6Free-Brand": "FontAwesome6_Brands",
-};
-
-const cdnUrl = (file: string): string =>
-  `https://cdn.jsdelivr.net/npm/@expo/vector-icons@${ICON_VECTOR_VERSION}/build/vendor/react-native-vector-icons/Fonts/${file}.ttf`;
-
-const iconFontMap = (): Record<string, string> =>
-  Object.fromEntries(
-    Object.entries(ICON_FAMILIES).map(([key, file]) => [key, cdnUrl(file)]),
-  );
+// Register ONLY the families we actually use in the app to keep the
+// bundle small. Feather is our primary icon family. If a new family is
+// introduced, add it here and to the `Feather` etc. imports.
+const iconFontMap = {
+  // Feather is what components/screens use throughout Oromona.
+  Feather: require("@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Feather.ttf"),
+  // A few other families ship with @expo/vector-icons — cheap insurance
+  // if a screen switches its icon family later.
+  Ionicons: require("@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Ionicons.ttf"),
+  MaterialIcons: require("@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/MaterialIcons.ttf"),
+  MaterialCommunityIcons: require("@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/MaterialCommunityIcons.ttf"),
+  AntDesign: require("@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/AntDesign.ttf"),
+} as const;
 
 export const useIconFonts = (): readonly [boolean, Error | null] =>
-  useFonts(
-    Constants.executionEnvironment === ExecutionEnvironment.StoreClient
-      ? iconFontMap()
-      : {},
-  );
+  useFonts(iconFontMap);
