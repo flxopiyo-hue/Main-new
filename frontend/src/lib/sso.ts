@@ -250,6 +250,11 @@ export async function signInWithApple(): Promise<AuthEnvelope | null> {
       // first time.
       email: credential.email ?? null,
       full_name: fullName,
+      // Apple returns a one-time authorization_code alongside the
+      // identity token. The backend trades it for a long-lived refresh
+      // token so account deletion can call /auth/revoke — required by
+      // App Store guideline 5.1.1(v).
+      authorization_code: credential.authorizationCode ?? null,
     }),
   });
   const text = await res.text();

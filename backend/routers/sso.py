@@ -27,6 +27,7 @@ import jwt
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from core import apple as apple_helper
 from core.config import DEFAULT_CURRENCY
 from core.db import db
 from core.security import make_jwt
@@ -220,12 +221,19 @@ async def _get_apple_jwks() -> Dict[str, Any]:
 class AppleLoginIn(BaseModel):
     """Body for POST /auth/apple. The client sends the raw identity token
     plus (on FIRST sign-in only) the display name — Apple never returns
-    the name again on subsequent logins, so we persist it immediately."""
+    the name again on subsequent logins, so we persist it immediately.
+
+    ``authorization_code`` is a one-time code Apple returns alongside the
+    identity token. When our server has Apple credentials configured
+    (see ``core/apple.py``) we exchange it for a long-lived refresh_token
+    that we later revoke during account deletion (App Store 5.1.1(v)).
+    """
 
     identity_token: str = Field(min_length=20)
     # Apple gives these ONLY on the first sign-in. Both optional.
     email: Optional[str] = None
     full_name: Optional[str] = None
+    authorization_code: Optional[str] = None
 
 
 @router.post("/auth/apple", response_model=AuthOut)
@@ -273,9 +281,45 @@ async def apple_login(body: AppleLoginIn) -> AuthOut:
     body_email = (body.email or "").strip().lower() or None
     email = token_email or body_email
 
-    return await _upsert_and_issue_jwt(
+    envelope = await _upsert_and_issue_jwt(
         provider="apple",
         provider_sub=apple_sub,
         email=email,
         full_name=body.full_name,
     )
+
+    # Best-effort refresh_token exchange, gated by the presence of the
+    # one-time authorization_code (Apple returns it on the first sign-in
+    # each session). This is what gets revoked when the user deletes
+    # their account — App Store 5.1.1(v).
+    if body.authorization_code:
+        try:
+            await _persist_apple_refresh_token(
+                user_id=envelope.user.id,
+                authorization_code=body.authorization_code,
+            )
+        except Exception as e:  # never fail login on Apple-side hiccups
+            logger.warning("apple_login: refresh-token persist failed: %s", e)
+
+    return envelope
+
+
+async def _persist_apple_refresh_token(user_id: str, authorization_code: str) -> None:
+    """Best-effort exchange of the one-time authorization_code for a
+    long-lived Apple refresh_token, persisted alongside the user's
+    provider bookkeeping. Never raises — Apple Sign In must continue to
+    work even if the p8 credentials aren't provisioned in this env."""
+    refresh = await apple_helper.exchange_code_for_refresh_token(authorization_code)
+    if not refresh:
+        return
+    now = datetime.now(timezone.utc)
+    await db.users.update_one(
+        {"id": user_id},
+        {
+            "$set": {
+                "providers.apple.refresh_token": refresh,
+                "providers.apple.refresh_token_saved_at": now,
+            }
+        },
+    )
+    logger.info("apple: refresh_token persisted for user %s", user_id)

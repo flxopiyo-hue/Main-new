@@ -4,6 +4,8 @@ import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Image,
+  Linking,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -173,10 +175,12 @@ export default function Profile() {
           ) : null}
         </View>
 
-        {/* Oromona Premium upgrade / status card — the primary monetisation
-            surface on the buyer profile. Free users see an "Upgrade" CTA;
-            Premium users get a compact status pill. */}
-        {user?.role === "buyer" ? (
+        {/* Oromona Premium status card — only shown to Premium users on
+            iOS (Apple 3.1.1: no in-app promotions of external purchases
+            for digital content). Android/web get the free-tier upgrade
+            CTA as well. */}
+        {user?.role === "buyer" &&
+        !(Platform.OS === "ios" && user?.subscription_tier !== "premium") ? (
           <TouchableOpacity
             testID="profile-premium-card"
             onPress={() => router.push("/subscription")}
@@ -599,6 +603,42 @@ export default function Profile() {
           style={{ marginHorizontal: spacing.lg, marginTop: spacing.lg }}
         />
         <TouchableOpacity
+          testID="profile-contact-support-btn"
+          onPress={async () => {
+            const url =
+              "mailto:support@oromona.com?subject=" +
+              encodeURIComponent("Oromona support") +
+              "&body=" +
+              encodeURIComponent(
+                `\n\n— App version: 1.0\nRole: ${user?.role ?? "buyer"}\nUser id: ${user?.id ?? ""}`,
+              );
+            try {
+              const supported = await Linking.canOpenURL(url);
+              if (supported) {
+                await Linking.openURL(url);
+              } else {
+                toast.show(
+                  "No email app installed — write to support@oromona.com",
+                  "info",
+                );
+              }
+            } catch {
+              toast.show("Could not open email — write to support@oromona.com", "error");
+            }
+          }}
+          style={styles.supportRow}
+          accessibilityLabel="Contact Oromona support by email"
+        >
+          <Feather name="mail" size={16} color={colors.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.supportLabel}>Contact Support</Text>
+            <Text style={styles.supportHint}>
+              Questions, issues or refunds — we reply within a business day.
+            </Text>
+          </View>
+          <Feather name="chevron-right" size={18} color={colors.mutedFg} />
+        </TouchableOpacity>
+        <TouchableOpacity
           testID="profile-delete-account-btn"
           onPress={handleDeleteAccount}
           style={styles.deleteAccountBtn}
@@ -647,6 +687,29 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodyMedium,
     fontSize: 12,
     color: colors.error,
+  },
+  supportRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.lg,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  supportLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 14,
+    color: colors.primary,
+  },
+  supportHint: {
+    marginTop: 2,
+    fontFamily: fonts.body,
+    fontSize: 12,
+    lineHeight: 16,
+    color: colors.mutedFg,
   },
   center: { alignItems: "center", justifyContent: "center" },
   scroll: { paddingBottom: spacing.xxl },

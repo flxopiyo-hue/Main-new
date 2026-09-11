@@ -21,6 +21,7 @@ import {
 import { useFonts } from "expo-font";
 
 import { ToastProvider } from "@/src/components/Toast";
+import { ErrorBoundary } from "@/src/components/ErrorBoundary";
 import { AuthProvider } from "@/src/lib/auth";
 import { OutfitProvider } from "@/src/lib/outfit";
 import { ProfileProvider } from "@/src/lib/profiles";
@@ -53,23 +54,25 @@ export default function RootLayout() {
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
         <KeyboardProvider>
-          <AuthProvider>
-            <ProfileProvider>
-              <OutfitProvider>
-                <ToastProvider>
-                  <View style={styles.root}>
-                    <StatusBar style="dark" />
-                    <Stack
-                      screenOptions={{
-                        headerShown: false,
-                        contentStyle: { backgroundColor: colors.background },
-                      }}
-                    />
-                  </View>
-                </ToastProvider>
-              </OutfitProvider>
-            </ProfileProvider>
-          </AuthProvider>
+          <ErrorBoundary>
+            <AuthProvider>
+              <ProfileProvider>
+                <OutfitProvider>
+                  <ToastProvider>
+                    <View style={styles.root}>
+                      <StatusBar style="dark" />
+                      <Stack
+                        screenOptions={{
+                          headerShown: false,
+                          contentStyle: { backgroundColor: colors.background },
+                        }}
+                      />
+                    </View>
+                  </ToastProvider>
+                </OutfitProvider>
+              </ProfileProvider>
+            </AuthProvider>
+          </ErrorBoundary>
         </KeyboardProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

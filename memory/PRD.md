@@ -198,3 +198,31 @@ Editorial Swiss / High-Contrast: Cormorant Garamond display + Manrope body text,
   - Same preferred clothing size chips (XS–XXL) + preferred shoe size chips (EU 35–47).
   - Retains the loved-one-only header block: audience picker, gender, name, relation, age (with 0–17 validation for kids).
 - Verified in preview: navigate to `/profiles/new`, all steps render, "Save profile" pinned at the bottom.
+
+
+## Update — June 2026 (App Store readiness fixes: 2 blockers + 2 warnings)
+
+### Blocker 1: iOS Reader-app pattern (App Store Guideline 3.1.1)
+- iPhone builds no longer surface any external-purchase CTAs for Premium.
+- `frontend/app/subscription/index.tsx` — on `Platform.OS === "ios"` for the free tier the price line, "Start 7-day free trial" (card) and "Pay with M-Pesa" buttons are replaced by a neutral `sub-ios-reader-card` explaining that Premium is managed outside the app. iOS + one-time-pass tier similarly hides the "Extend 30 days" button. Fine-print copy adjusted per state.
+- `frontend/app/(tabs)/profile.tsx` — the "Try Oromona Premium free · KSh 199/mo" upsell card on the buyer profile is fully hidden on iOS + free tier; premium users still see the status/manage card.
+- `frontend/src/components/PaywallModal.tsx` — on iOS the modal shows a "GOT IT" dismiss button instead of "UPGRADE — 7 days free", and does not route to `/subscription`.
+- Android and web behaviour is unchanged; Paystack card + M-Pesa checkout still work as before.
+
+### Blocker 2: Sign in with Apple — refresh token exchange + revocation (Guideline 5.1.1(v))
+- Frontend `signInWithApple` now posts `authorization_code` alongside `identity_token` on every Apple login (`frontend/src/lib/sso.ts`).
+- Backend `POST /api/auth/apple` (`backend/routers/sso.py`) accepts the new field and, after JWKS verification succeeds, calls `_persist_apple_refresh_token()` which trades the one-time code for a long-lived refresh_token via `https://appleid.apple.com/auth/token` and persists it to `users.providers.apple.refresh_token`.
+- New module `backend/core/apple.py` signs the ES256 client_secret JWT (Team ID / Key ID / bundle id / .p8 private key), calls `/auth/token`, and revokes via `https://appleid.apple.com/auth/oauth2/v2/revoke`. Gracefully returns `None`/`False` if any env var is missing (preview builds keep working).
+- `DELETE /api/auth/me` (`backend/routers/auth.py`) now revokes the stored Apple refresh_token before wiping the user row. Revocation failures are logged and swallowed — the local deletion always succeeds.
+- New env keys (backend/.env): `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_CLIENT_ID` (defaults to `com.oromona.myapp`), `APPLE_PRIVATE_KEY_P8`. Production build must fill these in.
+- Documented in `/app/auth_testing.md` per the Sign in with Apple playbook.
+
+### Warning 1: In-app support link (Guideline 1.5)
+- `frontend/app/(tabs)/profile.tsx` — new `profile-contact-support-btn` row between Sign Out and Delete Account. Opens `mailto:support@oromona.com?subject=Oromona%20support&body=…` via `Linking.openURL` (auto-attaches app version, user id and role for context). Falls back to a toast when no mail app is installed.
+
+### Warning 2: Root ErrorBoundary (Guideline 2.1 resilience)
+- New `frontend/src/components/ErrorBoundary.tsx` — a React class component wrapping the entire `<Stack>` in `frontend/app/_layout.tsx`. Renders a branded fallback screen with a "Reload Oromona" button on caught render errors. Dev builds also expose the error message for debugging; production hides it.
+
+### Verified via testing_agent iteration_34
+- Backend: 14/14 pytest passed. Apple no-op behaviour when creds absent verified; refresh_token seeded → delete flow revokes-then-deletes the user row.
+- Frontend: Web/Android path still shows price + Paystack CTAs on `/subscription`; new `profile-contact-support-btn` renders in the expected position; ErrorBoundary invisible during normal use.

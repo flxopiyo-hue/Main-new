@@ -13,6 +13,7 @@ import { router } from "expo-router";
 import React from "react";
 import {
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -69,12 +70,21 @@ export function PaywallModal({ visible, feature, message, onClose }: Props) {
             testID="paywall-upgrade"
             onPress={() => {
               onClose();
-              router.push("/subscription");
+              // On iOS we deliberately do NOT route to /subscription with
+              // a purchase CTA. The subscription screen itself shows a
+              // neutral status card on iOS (App Store 3.1.1 reader-app
+              // pattern) — but suppressing the modal button removes any
+              // ambiguity around an "in-app buy" affordance here.
+              if (Platform.OS !== "ios") {
+                router.push("/subscription");
+              }
             }}
             activeOpacity={0.85}
             style={styles.upgrade}
           >
-            <Text style={styles.upgradeLabel}>UPGRADE — 7 days free</Text>
+            <Text style={styles.upgradeLabel}>
+              {Platform.OS === "ios" ? "GOT IT" : "UPGRADE — 7 days free"}
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity
             testID="paywall-dismiss"

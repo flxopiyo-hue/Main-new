@@ -177,19 +177,30 @@ export default function SubscriptionScreen() {
           <Text style={styles.heroTitle} testID="sub-title">
             {isPremium ? "You're on Premium." : "Unlock the full atelier."}
           </Text>
-          <Text style={styles.heroPrice}>
-            KSh {me?.plan_amount_kes ?? 199}
-            <Text style={styles.heroPriceHint}> / month</Text>
-          </Text>
-          {!isPremium ? (
-            <Text style={styles.heroTrial}>
-              Pay by card to start a {me?.trial_days ?? 7}-day free trial that renews
-              automatically, or pay with M-Pesa for a 30-day Premium pass. Cancel anytime.
+          {/* On iOS + free tier we hide the price to comply with Apple 3.1.1
+              (no price-adjacent-to-buy references for external purchases). */}
+          {!(Platform.OS === "ios" && !isPremium) ? (
+            <Text style={styles.heroPrice}>
+              KSh {me?.plan_amount_kes ?? 199}
+              <Text style={styles.heroPriceHint}> / month</Text>
             </Text>
+          ) : null}
+          {!isPremium ? (
+            Platform.OS === "ios" ? (
+              <Text style={styles.heroTrial}>
+                Unlimited AI try-ons, live size slider and up to 10 body
+                profiles for you and your loved ones.
+              </Text>
+            ) : (
+              <Text style={styles.heroTrial}>
+                Pay by card to start a {me?.trial_days ?? 7}-day free trial that renews
+                automatically, or pay with M-Pesa for a 30-day Premium pass. Cancel anytime.
+              </Text>
+            )
           ) : me?.one_time ? (
             <Text style={styles.heroTrial} testID="sub-pass-status">
               Premium pass active until {periodEnd?.toLocaleDateString() ?? "…"} — no
-              auto-renewal. Pay with M-Pesa again to add 30 more days on top.
+              auto-renewal.{Platform.OS === "ios" ? "" : " Pay with M-Pesa again to add 30 more days on top."}
             </Text>
           ) : (
             <Text style={styles.heroTrial}>
@@ -213,29 +224,101 @@ export default function SubscriptionScreen() {
         </View>
 
         {!isPremium ? (
-          <>
-            <TouchableOpacity
-              testID="sub-upgrade-btn"
-              onPress={() => startCheckout("card")}
-              disabled={checkoutBusy !== null}
-              style={[styles.upgradeBtn, checkoutBusy !== null && { opacity: 0.6 }]}
-              activeOpacity={0.85}
-            >
-              {checkoutBusy === "card" ? (
-                <ActivityIndicator color={colors.primaryFg} />
-              ) : (
-                <>
-                  <Feather name="credit-card" size={16} color={colors.primaryFg} />
-                  <View style={styles.payBtnTextWrap}>
-                    <Text style={styles.upgradeLabel}>Start 7-day free trial</Text>
-                    <Text style={styles.payBtnSub}>Card · auto-renews monthly</Text>
-                  </View>
-                </>
-              )}
-            </TouchableOpacity>
+          Platform.OS === "ios" ? (
+            // App Store 3.1.1 "Reader app" pattern: an iOS build MUST NOT
+            // link out to a purchase, present prices next to a buy button,
+            // or accept payment for digital content through anything other
+            // than StoreKit. We show the benefits + a neutral notice so
+            // iPhone users know Premium exists — upgrading happens on
+            // Android or the web at oromona.com — no CTA button here.
+            <View style={styles.iosReaderCard} testID="sub-ios-reader-card">
+              <View style={styles.iosReaderIcon}>
+                <Feather name="info" size={16} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.iosReaderTitle}>
+                  Premium is managed outside this app
+                </Text>
+                <Text style={styles.iosReaderBody}>
+                  Your Premium membership works the same across every
+                  device you sign in on. Sign in with the same account
+                  after subscribing to unlock unlimited try-ons here.
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <>
+              <TouchableOpacity
+                testID="sub-upgrade-btn"
+                onPress={() => startCheckout("card")}
+                disabled={checkoutBusy !== null}
+                style={[styles.upgradeBtn, checkoutBusy !== null && { opacity: 0.6 }]}
+                activeOpacity={0.85}
+              >
+                {checkoutBusy === "card" ? (
+                  <ActivityIndicator color={colors.primaryFg} />
+                ) : (
+                  <>
+                    <Feather name="credit-card" size={16} color={colors.primaryFg} />
+                    <View style={styles.payBtnTextWrap}>
+                      <Text style={styles.upgradeLabel}>Start 7-day free trial</Text>
+                      <Text style={styles.payBtnSub}>Card · auto-renews monthly</Text>
+                    </View>
+                  </>
+                )}
+              </TouchableOpacity>
 
+              <TouchableOpacity
+                testID="sub-mpesa-btn"
+                onPress={() => startCheckout("mpesa")}
+                disabled={checkoutBusy !== null}
+                style={[styles.mpesaBtn, checkoutBusy !== null && { opacity: 0.6 }]}
+                activeOpacity={0.85}
+              >
+                {checkoutBusy === "mpesa" ? (
+                  <ActivityIndicator color={colors.primary} />
+                ) : (
+                  <>
+                    <Feather name="smartphone" size={16} color={colors.primary} />
+                    <View style={styles.payBtnTextWrap}>
+                      <Text style={styles.mpesaLabel}>Pay with M-Pesa</Text>
+                      <Text style={styles.mpesaSub}>
+                        KSh {me?.plan_amount_kes ?? 199} · 30-day Premium pass
+                      </Text>
+                    </View>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              <Text style={styles.channelNote} testID="sub-channel-note">
+                M-Pesa payments can&apos;t auto-renew (recurring billing works on cards
+                only), so an M-Pesa payment buys a 30-day pass. Pay again anytime —
+                the days stack on top of what&apos;s left.
+              </Text>
+            </>
+          )
+        ) : me?.one_time ? (
+          Platform.OS === "ios" ? (
+            // Reader-app: no additional purchase buttons on iOS. Users
+            // extending an M-Pesa pass do so on Android or the web.
+            <View style={styles.iosReaderCard} testID="sub-ios-extend-notice">
+              <View style={styles.iosReaderIcon}>
+                <Feather name="info" size={16} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.iosReaderTitle}>
+                  Your Premium pass is active
+                </Text>
+                <Text style={styles.iosReaderBody}>
+                  Extending or renewing your pass is handled outside this
+                  app. Any active pass remains available on every device
+                  you sign in on.
+                </Text>
+              </View>
+            </View>
+          ) : (
             <TouchableOpacity
-              testID="sub-mpesa-btn"
+              testID="sub-extend-btn"
               onPress={() => startCheckout("mpesa")}
               disabled={checkoutBusy !== null}
               style={[styles.mpesaBtn, checkoutBusy !== null && { opacity: 0.6 }]}
@@ -247,43 +330,15 @@ export default function SubscriptionScreen() {
                 <>
                   <Feather name="smartphone" size={16} color={colors.primary} />
                   <View style={styles.payBtnTextWrap}>
-                    <Text style={styles.mpesaLabel}>Pay with M-Pesa</Text>
+                    <Text style={styles.mpesaLabel}>Extend 30 days with M-Pesa</Text>
                     <Text style={styles.mpesaSub}>
-                      KSh {me?.plan_amount_kes ?? 199} · 30-day Premium pass
+                      KSh {me?.plan_amount_kes ?? 199} · added on top of your pass
                     </Text>
                   </View>
                 </>
               )}
             </TouchableOpacity>
-
-            <Text style={styles.channelNote} testID="sub-channel-note">
-              M-Pesa payments can&apos;t auto-renew (recurring billing works on cards
-              only), so an M-Pesa payment buys a 30-day pass. Pay again anytime —
-              the days stack on top of what&apos;s left.
-            </Text>
-          </>
-        ) : me?.one_time ? (
-          <TouchableOpacity
-            testID="sub-extend-btn"
-            onPress={() => startCheckout("mpesa")}
-            disabled={checkoutBusy !== null}
-            style={[styles.mpesaBtn, checkoutBusy !== null && { opacity: 0.6 }]}
-            activeOpacity={0.85}
-          >
-            {checkoutBusy === "mpesa" ? (
-              <ActivityIndicator color={colors.primary} />
-            ) : (
-              <>
-                <Feather name="smartphone" size={16} color={colors.primary} />
-                <View style={styles.payBtnTextWrap}>
-                  <Text style={styles.mpesaLabel}>Extend 30 days with M-Pesa</Text>
-                  <Text style={styles.mpesaSub}>
-                    KSh {me?.plan_amount_kes ?? 199} · added on top of your pass
-                  </Text>
-                </View>
-              </>
-            )}
-          </TouchableOpacity>
+          )
         ) : me?.cancel_at_period_end ? (
           <TouchableOpacity
             testID="sub-resume-btn"
@@ -318,9 +373,13 @@ export default function SubscriptionScreen() {
         )}
 
         <Text style={styles.fine} testID="sub-fine">
-          {isPremium && me?.one_time
-            ? "Payment powered by Paystack. Charged in Kenyan Shillings. Your pass expires on its own — nothing to cancel."
-            : "Payment powered by Paystack. Charged in Kenyan Shillings. You can cancel any time from this screen."}
+          {Platform.OS === "ios" && !isPremium
+            ? "Premium is managed outside this app. Sign in with the same account on Android or the web to subscribe."
+            : isPremium && me?.one_time
+              ? Platform.OS === "ios"
+                ? "Your Premium pass is honoured on this app once activated on Android or the web."
+                : "Payment powered by Paystack. Charged in Kenyan Shillings. Your pass expires on its own — nothing to cancel."
+              : "Payment powered by Paystack. Charged in Kenyan Shillings. You can cancel any time from this screen."}
         </Text>
       </ScrollView>
     </SafeAreaView>
@@ -469,6 +528,36 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.error,
     backgroundColor: colors.surface,
+  },
+  iosReaderCard: {
+    marginTop: spacing.xl,
+    padding: spacing.md,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  iosReaderIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.background,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  iosReaderTitle: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 14,
+    color: colors.primary,
+  },
+  iosReaderBody: {
+    marginTop: 4,
+    fontFamily: fonts.body,
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.mutedFg,
   },
   cancelLabel: {
     fontFamily: fonts.bodySemi,

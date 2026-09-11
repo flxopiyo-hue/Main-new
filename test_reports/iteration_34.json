@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 34 — Apple App Store readiness fixes tested end-to-end. All 14 backend tests pass (Apple helper no-ops when creds unset, /api/auth/apple accepts optional authorization_code, invalid identity_token still 401, account deletion works with & without providers.apple.refresh_token, existing auth endpoints intact). Frontend (web preview @ mobile viewport 390x844): /subscription shows KSh 199 price + both payment CTAs (sub-upgrade-btn, sub-mpesa-btn) + sub-channel-note; no iOS reader card leaked to web. /profile renders new Contact Support row (testID=profile-contact-support-btn) between Sign Out and Delete Account, mailto tap did not crash. Root ErrorBoundary is invisible during normal load and correctly wraps <Stack> in _layout.tsx. Backend log confirms: (a) no 'apple revoke' line for non-Apple users, (b) 'apple revoke user=... ok=False' + 'revoke skipped (creds not configured)' for seeded Apple user, (c) user row still deleted in both cases. No blockers found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "react-native deprecation warnings", "issue": "Console warns: 'shadow* style props are deprecated. Use boxShadow', 'props.pointerEvents is deprecated. Use style.pointerEvents', 'Image style.resizeMode is deprecated. Please use props.resizeMode'. Not related to this iteration's changes — pre-existing legacy styles across the codebase."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration34_apple_readiness.py",
+    "/app/test_reports/pytest/iteration34_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "core/apple.py correctly no-ops when APPLE_TEAM_ID/KEY_ID/PRIVATE_KEY_P8 are blank — safe for preview env.",
+    "routers/auth.py delete_account wraps apple revoke in try/except AND checks apple_refresh presence before importing/calling — deletion cannot fail on Apple hiccups.",
+    "routers/sso.py _persist_apple_refresh_token is best-effort and swallows all exceptions — login never breaks if Apple /auth/token 5xxs.",
+    "ErrorBoundary is a class component (correct for componentDidCatch/getDerivedStateFromError) and lives high enough in _layout.tsx to catch any screen render error.",
+    "Subscription screen Reader-app conditional uses Platform.OS === 'ios' guards for BOTH the price and CTA blocks and provides a neutral copy card — matches App Store 3.1.1 guidance."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration34_apple_readiness.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Test buyer users prefixed TEST_ created & cleaned up in tests. One test seeds providers.apple.refresh_token via pymongo before hitting DELETE /api/auth/me and asserts the row is gone.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Frontend .env uses EXPO_PUBLIC_BACKEND_URL (not EXPO_BACKEND_URL). On web the AsyncStorage web shim stores tokens at localStorage key 'aurafit.token' as JSON-stringified string (needs double JSON.stringify when injecting). To auth-gate FE tests, register via /api/auth/register (buyer needs gender+age, use *.com email), then localStorage.setItem('aurafit.token', JSON.stringify(token)) before navigating to any protected route.",
+  "rca_of_issue": "N/A — no issue found. All 4 App Store readiness fixes are correctly implemented and functional."
+}

@@ -402,10 +402,31 @@ async def delete_account(user: Dict[str, Any] = Depends(get_current_user)) -> Di
     payout records are retained for bookkeeping/legal reasons but the login
     is destroyed and can never be reused. A seller's listings come off the
     marketplace immediately.
+
+    If the account was linked via Sign in with Apple, we ALSO revoke the
+    Apple refresh_token before deleting the row — Apple App Store guideline
+    5.1.1(v) requires this. If revocation fails (network, missing p8 creds
+    in this environment, etc.) we log and continue: the local data must
+    still be deleted so the user is honoured.
     """
     uid = user["id"]
     if user.get("role") == "admin":
         raise HTTPException(status_code=400, detail="Admin accounts cannot self-delete")
+
+    # 1) Revoke Apple refresh_token (best-effort).
+    apple_provider = (user.get("providers") or {}).get("apple") or {}
+    apple_refresh = apple_provider.get("refresh_token")
+    if apple_refresh:
+        try:
+            from core import apple as apple_helper
+
+            ok = await apple_helper.revoke_refresh_token(apple_refresh)
+            logger.info("account-delete: apple revoke user=%s ok=%s", uid, ok)
+        except Exception as e:
+            # Never abort the deletion because of an Apple-side error.
+            logger.warning("account-delete: apple revoke crashed for %s: %s", uid, e)
+
+    # 2) Wipe personal data + the user row itself.
     for coll, field in (
         ("profiles", "user_id"),
         ("body_profiles", "user_id"),
