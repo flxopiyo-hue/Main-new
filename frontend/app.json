@@ -13,7 +13,8 @@
       "usesAppleSignIn": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Capture body and clothing photos for try-on.",
-        "NSPhotoLibraryUsageDescription": "Pick photos for try-on and listings."
+        "NSPhotoLibraryUsageDescription": "Pick photos for try-on and listings.",
+        "ITSAppUsesNonExemptEncryption": false
       },
       "bundleIdentifier": "com.oromona.myapp"
     },
