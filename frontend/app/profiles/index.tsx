@@ -67,7 +67,6 @@ export default function ProfilesIndex() {
 
   const confirmDelete = (lo: LovedOne) => {
     if (Platform.OS === "web") {
-      // eslint-disable-next-line no-alert
       if (typeof window !== "undefined" && window.confirm(`Remove ${lo.name}?`)) {
         remove(lo);
       }
@@ -154,10 +153,12 @@ export default function ProfilesIndex() {
           lovedOnes.map((lo) => {
             const isActive = active?.profile_id === lo.id;
             return (
-              <View
+              <TouchableOpacity
                 key={lo.id}
                 style={[styles.card, isActive && styles.cardActive]}
                 testID={`loved-one-card-${lo.id}`}
+                onPress={() => router.push({ pathname: "/profiles/new", params: { id: lo.id } })}
+                activeOpacity={0.85}
               >
                 <View style={styles.cardLeft}>
                   <View style={[styles.avatar, isActive && styles.avatarLight]}>
@@ -192,19 +193,42 @@ export default function ProfilesIndex() {
                   ) : (
                     <TouchableOpacity
                       testID={`loved-one-${lo.id}-activate`}
-                      onPress={async () => {
+                      onPress={async (e) => {
+                        e.stopPropagation();
                         await setActive(lo.id);
                         toast.show(`Switched to ${lo.name}`, "success");
                       }}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     >
                       <Text style={styles.activateLink}>Switch</Text>
                     </TouchableOpacity>
                   )}
                   <TouchableOpacity
+                    testID={`loved-one-${lo.id}-edit`}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      router.push({ pathname: "/profiles/new", params: { id: lo.id } });
+                    }}
+                    hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                    style={styles.iconAction}
+                    accessibilityLabel={`Edit ${lo.name}`}
+                  >
+                    <Feather
+                      name="edit-2"
+                      size={16}
+                      color={isActive ? colors.primaryFg : colors.primary}
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity
                     testID={`loved-one-${lo.id}-delete`}
-                    onPress={() => confirmDelete(lo)}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      confirmDelete(lo);
+                    }}
                     disabled={deleting === lo.id}
-                    style={styles.deleteBtn}
+                    style={styles.iconAction}
+                    hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                    accessibilityLabel={`Delete ${lo.name}`}
                   >
                     {deleting === lo.id ? (
                       <ActivityIndicator size="small" color={colors.error} />
@@ -213,7 +237,7 @@ export default function ProfilesIndex() {
                     )}
                   </TouchableOpacity>
                 </View>
-              </View>
+              </TouchableOpacity>
             );
           })
         )}
@@ -285,6 +309,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
   deleteBtn: { padding: 8 },
+  iconAction: { padding: 6, minWidth: 32, minHeight: 32, alignItems: "center", justifyContent: "center" },
   addBtn: {
     flexDirection: "row",
     alignItems: "center",

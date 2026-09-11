@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 36 — Re-verified 'Editable Loved Ones' after the BodyMeasureGuide 'kid' crash fix from iteration 35. Frontend-only testing (backend explicitly skipped per main agent). ALL 5 regression scenarios PASS. (1) /profiles/new → tap 'Child' chip: BodyMeasureGuide now renders without ErrorBoundary; all six guide legend rows (height/shoulders/chest/waist/hips/inseam) are visible; internal male/female toggle inside the guide is correctly HIDDEN because the loved-one flow does not pass onChangeGender (matches the fix). (2) /profiles/new?id=<kid_id> edit: hydration completes, name/age/relation pre-fill correctly (TEST_Kid_678f32/7/Daughter), BodyMeasureGuide renders, form fully interactive. (3) Adult path regression: audience=adult + gender=female still renders guide without crash and with the internal toggle also hidden (consistent with the widened optional prop). (4) End-to-end kid CRUD: created a kid via UI → API confirms the loved-one exists (id a6a0a2c6-…) → tapped pencil → edit screen rendered with pre-filled values → changed age (7→9) and chest_cm (blank→62) → Save changes → GET /api/loved-ones/{id} confirms age=9 and chest_cm=62.0 persisted → tapped pencil again → Delete profile → confirm dialog accepted → GET returns 404 (deleted). (5) Adult create-then-edit round-trip works identically (created id 82ed8b68-…, edit renders, name pre-filled). Console produced only two benign 'GO_BACK' navigator warnings from router.back() after direct-navigation submits (expected on web preview when there is no history stack). NO 'Cannot read properties of undefined (reading height_cm)' crash occurred in any of the five flows. The iteration-35 critical bug is FIXED and no regression was introduced.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "shadow* / pointerEvents / useNativeDriver",
+        "issue": "Pre-existing legacy warnings only ('shadow*' style props deprecated on web, props.pointerEvents deprecated, Animated useNativeDriver not supported on web). Unrelated to this iteration's fix. Reference: multiple third-party components (react-native-web layer)."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_36.json",
+    "/app/test_reports/pytest/iteration35_results.xml (reused; backend not re-run per instructions)"
+  ],
+  "action_items": [
+    "No further action required for the BodyMeasureGuide kid crash — verified fixed end-to-end.",
+    "Optional cleanup (not blocking): consider suppressing the 'GO_BACK' navigator warning when submit runs from a directly-navigated /profiles/new (e.g. router.canGoBack() ? router.back() : router.replace('/profiles')). It's a dev-only console warning today but hides real production console noise from testers.",
+    "Optional: BodyMeasureGuide's `activeKey` prop is typed as `BodyMeasureKey | null` but new.tsx passes `guideKey ?? undefined`. Not runtime-breaking (falsy is treated the same downstream), but TS-strict callers will warn. Consider tightening to `BodyMeasureKey | null | undefined` or changing the caller to `guideKey ?? null`."
+  ],
+  "critical_code_review_comments": [
+    "BodyMeasureGuide.tsx now widens GuideGender to 'male' | 'female' | 'kid', adds a SPECS.kid entry (reuses female coordinates as documented), AND defensively falls back with `SPECS[gender] ?? SPECS.female` — belt-and-braces so an unknown gender never crashes again.",
+    "onChangeGender is now optional; the guide's internal MALE/FEMALE toggle only renders when the callback is provided. Loved-one create/edit correctly omits it (audience-driven) so the toggle stays hidden — verified visually and via selector absence.",
+    "The `guideGender = useMemo(...)` in profiles/new.tsx maps audience='kid' → 'kid' first (so kid stays kid regardless of the underlying gender), otherwise male/female — consistent with the SPECS map.",
+    "Edit-mode hydration correctly restores audience, gender, age, name, relation, all three photo b64s and measurements. Cross-tenant guard on the backend is still in place (verified in iter35)."
+  ],
+  "updated_files": [
+    "/app/test_reports/iteration_36.json (new — this report)"
+  ],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100%"},
+  "seed_data_creation": "One TEST_iter36_<hex>@example.com buyer was registered via /api/auth/register. During E2E it created TEST_Kid_<hex> (deleted at end of test) and TEST_Adult_<hex> (deleted at end of test). No stray data left behind other than the buyer account itself.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Registration payload for buyers requires `full_name` (NOT `name`), plus `role='buyer'`, `gender`, and `age>=13`. Token lives at localStorage 'aurafit.token' as JSON.stringify(token). For direct-navigation tests: router.back() after a successful submit falls back to a benign 'GO_BACK not handled' console warning on web preview — this is expected, not a bug. All BodyMeasureGuide crash paths (create-with-kid, edit-of-kid, and adult regressions) are now verified green; no further work on iteration-35's blocker is needed.",
+  "rca_of_issue": "N/A — retest confirms iteration-35 RCA fix is complete. Fix summary: BodyMeasureGuide.tsx now (a) exports GuideGender = 'male' | 'female' | 'kid', (b) declares a SPECS.kid entry (kid arrows reuse the female coordinates, acceptable placeholder), (c) still guards with `SPECS[gender] ?? SPECS.female` as a safety net, and (d) makes onChangeGender optional and only renders the internal MALE/FEMALE toggle when the callback is provided. Playwright E2E confirms: no ErrorBoundary, all guide legends render, kid measurements save, CRUD round-trip completes, adult path unchanged."
+}

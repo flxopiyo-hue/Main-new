@@ -414,6 +414,17 @@ class LovedOneOut(BaseModel):
     updated_at: datetime
 
 
+class LovedOneDetail(LovedOneOut):
+    """Extended shape returned by ``GET /loved-ones/{id}`` — carries the
+    actual photo base64 strings so the mobile edit screen can prefill the
+    three-angle picker. The list endpoint keeps returning ``LovedOneOut``
+    (no photo data) to keep payloads small."""
+
+    front_photo_b64: Optional[str] = None
+    side_photo_b64: Optional[str] = None
+    three_quarter_photo_b64: Optional[str] = None
+
+
 class ProfileSummary(BaseModel):
     """Either the buyer's own 'self' profile or a loved-one profile, used in
     the unified profile switcher."""

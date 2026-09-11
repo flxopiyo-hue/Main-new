@@ -665,6 +665,15 @@ export interface LovedOne {
   updated_at: string;
 }
 
+// Same as LovedOne but also carries the base64 photo strings — returned
+// only by GET /loved-ones/{id}. Used by the edit screen to prefill the
+// three-angle photo picker without needing a separate photo endpoint.
+export interface LovedOneDetail extends LovedOne {
+  front_photo_b64?: string | null;
+  side_photo_b64?: string | null;
+  three_quarter_photo_b64?: string | null;
+}
+
 export interface ProfileSummary {
   id: string; // "self" or LovedOne uuid
   is_self: boolean;
@@ -1344,6 +1353,7 @@ export const api = {
 
   // Loved-ones (alternate body profiles) + active profile switcher
   listLovedOnes: () => request<LovedOne[]>("/loved-ones"),
+  getLovedOne: (id: string) => request<LovedOneDetail>(`/loved-ones/${id}`),
   createLovedOne: (body: {
     name: string;
     audience: ProfileAudience;

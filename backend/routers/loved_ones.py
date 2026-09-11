@@ -26,6 +26,7 @@ from core.security import get_current_user
 from models import (
     ActiveProfileIn,
     ActiveProfileOut,
+    LovedOneDetail,
     LovedOneIn,
     LovedOneOut,
     LovedOnePatch,
@@ -51,6 +52,32 @@ def _lo_doc_to_out(doc: Dict[str, Any]) -> LovedOneOut:
         has_front_photo=bool(doc.get("front_photo_b64")),
         has_side_photo=bool(doc.get("side_photo_b64")),
         has_three_quarter_photo=bool(doc.get("three_quarter_photo_b64")),
+        created_at=doc["created_at"],
+        updated_at=doc["updated_at"],
+    )
+
+
+def _lo_doc_to_detail(doc: Dict[str, Any]) -> LovedOneDetail:
+    """Same as _lo_doc_to_out but also returns the raw photo base64
+    strings. Only used by the single-loved-one GET endpoint that powers
+    the edit screen."""
+    return LovedOneDetail(
+        id=doc["id"],
+        user_id=doc["user_id"],
+        name=doc["name"],
+        audience=doc["audience"],
+        gender=doc.get("gender"),
+        age=doc.get("age"),
+        relation=doc.get("relation"),
+        measurements=Measurements(**(doc.get("measurements") or {})),
+        preferred_size=doc.get("preferred_size"),
+        preferred_shoe_size=doc.get("preferred_shoe_size"),
+        has_front_photo=bool(doc.get("front_photo_b64")),
+        has_side_photo=bool(doc.get("side_photo_b64")),
+        has_three_quarter_photo=bool(doc.get("three_quarter_photo_b64")),
+        front_photo_b64=doc.get("front_photo_b64"),
+        side_photo_b64=doc.get("side_photo_b64"),
+        three_quarter_photo_b64=doc.get("three_quarter_photo_b64"),
         created_at=doc["created_at"],
         updated_at=doc["updated_at"],
     )
@@ -112,6 +139,21 @@ async def list_loved_ones(
         "created_at", 1
     )
     return [_lo_doc_to_out(d) for d in await cursor.to_list(50)]
+
+
+@router.get("/loved-ones/{profile_id}", response_model=LovedOneDetail)
+async def get_loved_one(
+    profile_id: str, user: Dict[str, Any] = Depends(get_current_user)
+) -> LovedOneDetail:
+    """Full loved-one document (photos included as base64) — powers the
+    edit screen so it can prefill the three-angle photo picker plus every
+    measurement/identity field. Access is scoped to the owning user."""
+    doc = await db.body_profiles.find_one(
+        {"id": profile_id, "user_id": user["id"]}, {"_id": 0}
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    return _lo_doc_to_detail(doc)
 
 
 @router.post("/loved-ones", response_model=LovedOneOut)

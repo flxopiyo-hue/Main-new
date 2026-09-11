@@ -244,3 +244,18 @@ Testers on Android + Expo Go reported an entirely blank amber gradient with no l
 ### Tester note
 Existing builds still have the old font stack — testers must open the latest deployed version (or reinstall from a fresh QR code) to pick up the hotfix.
 
+
+## Update — June 2026 (Editable Loved Ones)
+
+### What shipped
+- **Backend**: New `GET /api/loved-ones/{profile_id}` endpoint returning a `LovedOneDetail` shape that carries the base64 photo strings (`front_photo_b64`, `side_photo_b64`, `three_quarter_photo_b64`) alongside every field of `LovedOneOut`. The list endpoint keeps returning the slim `LovedOneOut` (no photo bytes) to keep payloads small.
+- **API client**: New `api.getLovedOne(id)` + `LovedOneDetail` type mirroring the backend.
+- **Frontend edit route**: `frontend/app/profiles/new.tsx` is now a dual create/edit screen driven by an optional `?id=<uuid>` search param. In edit mode it (1) fetches the loved-one via `getLovedOne`, (2) pre-fills every field (audience, gender, name, relation, age, all 6 measurements, preferred size, preferred shoe size, all 3 photos), (3) submits via `PATCH /api/loved-ones/{id}`, (4) shows a "Delete profile" button under "Save changes" that fires a confirm dialog then `DELETE /api/loved-ones/{id}`. Header switches to "EDIT PROFILE" and title to "Edit <name>". Hydration state renders an ActivityIndicator so the form never flashes empty.
+- **List affordance**: `frontend/app/profiles/index.tsx` — the loved-one card is now a `TouchableOpacity`; tapping the body OR the new pencil icon navigates to the edit screen. Trash icon and Switch link kept intact with `e.stopPropagation()` so nested taps don't fight.
+- **BodyMeasureGuide `kid` variant**: Widened `GuideGender` to `"male" | "female" | "kid"`, added a `kid` entry in `SPECS` (mirrors female positions), added a defensive `SPECS[gender] ?? SPECS.female` fallback, and made `onChangeGender` optional (hidden when not provided so the loved-one flow no longer shows the misleading gender toggle). This eliminated an ErrorBoundary crash previously triggered by tapping the "Child" audience chip.
+- **Safe back navigation**: submit now uses `router.canGoBack()` before falling back to `router.replace("/profiles")` — deep-linked edit sessions no longer emit "GO_BACK not handled" warnings.
+
+### Verified via testing_agent (iteration 35 + 36)
+- Backend: 10/10 pytest (GET/POST/PATCH/DELETE + auth + cross-tenant + full CRUD round-trip preserving photos and measurements).
+- Frontend: Kid + Adult CRUD round-trip green; edit hydration works; Delete-from-edit-screen dismisses back to the list with the row gone; create flow unchanged.
+

@@ -1,0 +1,59 @@
+{
+  "summary": "Iteration 35 — Editable Loved Ones tested. Backend: all 10 pytest cases pass (auth 401, unknown-id 404, cross-tenant 404, full POST→GET(with photo b64)→PATCH(name+photo+measurement)→GET(reflects change)→DELETE→GET-404 cycle, list endpoint does NOT leak photo b64, PATCH accepts preferred_size/shoe/photo individually). GET /api/loved-ones/{id} returns LovedOneDetail with all three photo_b64 keys as raw base64 (no data: prefix). Frontend adult path works end-to-end: /profiles list shows pencil (loved-one-<id>-edit) + trash (loved-one-<id>-delete) + Switch on each card, tapping the pencil navigates to /profiles/new?id=<uuid>, edit screen renders 'EDIT PROFILE' header, 'Edit <name>' title, name/relation/age/gender/audience/photos all pre-fill, Save changes calls PATCH (200) and persists on backend, Delete profile button (loved-one-delete-btn) is present ONLY in edit mode and calls DELETE (200) with subsequent GET returning 404, /profiles/new without ?id shows 'NEW BODY PROFILE' and hides the delete button. ONE CRITICAL BUG: opening the edit screen for a KID loved-one (audience='kid') crashes the whole screen with ErrorBoundary and 'TypeError: Cannot read properties of undefined (reading height_cm)'. RCA: src/components/BodyMeasureGuide.tsx SPECS only defines the 'male' and 'female' variants, but the type GuideGender includes 'kid' and app/profiles/new.tsx line 191 returns 'kid' whenever audience==='kid'. specs = SPECS[gender] then evaluates undefined, and specs[key] blows up. Same crash will occur in CREATE mode as soon as a user picks the 'Child' chip. Also confirmed: card-body tap was blocked because the pencil edit path also fires; router.push happens from both the outer TouchableOpacity onPress AND the pencil icon onPress — since the kid case never rendered the edit screen we can't verify card-body-tap navigation on kid loved-ones, but on adult loved-ones tapping the pencil correctly routes.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "BodyMeasureGuide.tsx",
+        "issue": "SPECS constant is Record<GuideGender, Record<BodyMeasureKey, MeasureSpec>> in type but only defines the 'male' and 'female' keys — 'kid' is missing. When app/profiles/new.tsx sets guideGender='kid' (any child loved-one, whether creating or editing), specs=SPECS['kid'] is undefined and specs[key] throws 'Cannot read properties of undefined (reading height_cm)', tripping ErrorBoundary and hiding the entire edit/create screen. Reference: /app/frontend/src/components/BodyMeasureGuide.tsx:53-70 and /app/frontend/app/profiles/new.tsx:189-193.",
+        "testID": "guide-legend-height_cm",
+        "priority": "CRITICAL"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Edit loved-one (kid audience)",
+        "issue": "Edit screen crashes to ErrorBoundary for any kid loved-one; user cannot edit or delete them from the edit screen. Workaround: delete via trash icon on the /profiles list still works. Same crash blocks CREATE flow the moment the user selects 'Child'.",
+        "affected_testIDs": ["loved-one-<id>-edit", "loved-one-audience-kid", "loved-one-delete-btn"]
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "shadow*/pointerEvents/resizeMode",
+        "issue": "Pre-existing legacy console warnings (shadow* style props deprecated, props.pointerEvents deprecated, Animated useNativeDriver missing on web). Not new to this iteration."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration35_loved_ones_edit.py",
+    "/app/test_reports/pytest/iteration35_results.xml"
+  ],
+  "action_items": [
+    "Add a 'kid' variant (or a fallback) to SPECS in /app/frontend/src/components/BodyMeasureGuide.tsx so specs=SPECS['kid'] is never undefined. Simplest fix: `kid: { ...SPECS.female }` (or a copy of the 'male' block) — the guide silhouette will render even if the arrow coordinates aren't kid-specific. Alternatively, gate the render with `const specs = SPECS[gender] ?? SPECS.female;`.",
+    "After the SPECS fix, re-verify: (a) editing a kid loved-one loads the form, (b) creating a new profile with audience='kid' does not crash, (c) both flows finish with a successful PATCH/POST + list refresh."
+  ],
+  "critical_code_review_comments": [
+    "Backend GET /api/loved-ones/{id} correctly enforces ownership via a compound {id, user_id} query so cross-tenant returns 404 with no info leak.",
+    "PATCH merges measurements (existing values preserved when the client omits keys) — validated in test_5.",
+    "List endpoint keeps returning LovedOneOut (photo b64 stripped) — payload discipline maintained; edit screen fetches per-id detail only when needed.",
+    "Frontend edit path is guarded by hydrating state so no half-empty form flashes; hydration failure routes back to /profiles.",
+    "e.stopPropagation is correctly wired on activate/edit/delete inner buttons in profiles/index.tsx.",
+    "confirmDialog usage from src/lib/confirm.ts wraps the delete on the edit screen with a destructive prompt — matches the trash icon behaviour on the list.",
+    "The kid-crash bug is a pre-existing latent defect in BodyMeasureGuide that this iteration surfaces because the edit screen is the first path that can arrive on the guide with audience='kid' already selected from the persisted profile (create mode only reaches 'kid' after a user interaction, but this iteration didn't test that regression path either)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration35_loved_ones_edit.py (new)",
+    "/app/test_reports/pytest/iteration35_results.xml (new, from pytest run)",
+    "/app/test_reports/iteration_35.json (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "80%"},
+  "seed_data_creation": "Two TEST_-prefixed buyers registered via /api/auth/register during backend tests; each test class cleans up its loved-ones via DELETE. Frontend test also registered TEST_lofe_* and TEST_lofe2_* buyers plus loved-ones TEST_Milo (kid, verified the crash) and TEST_Sam (adult, verified full CRUD).",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Frontend env key is EXPO_PUBLIC_BACKEND_URL (not EXPO_BACKEND_URL). Web token is stored at localStorage 'aurafit.token' as JSON.stringify(token). To exercise the auth-gated /profiles routes, register via /api/auth/register (buyer needs gender+age, *.com email), inject the token into localStorage, then goto /profiles. After the SPECS['kid'] fix ships, re-run test_iteration35_loved_ones_edit.py plus a quick Playwright check: (1) create a KID loved-one via UI, (2) navigate to /profiles, (3) tap pencil, verify the edit screen renders without ErrorBoundary, (4) rename and Save changes → PATCH 200 and toast, (5) tap Delete profile → confirm dialog → DELETE 200 → returns to /profiles.",
+  "rca_of_issue": "Bug: opening /profiles/new?id=<kid-loved-one-uuid> crashes with 'TypeError: Cannot read properties of undefined (reading height_cm)'. Repro: 1) POST /api/loved-ones with audience='kid'. 2) Navigate to /profiles/new?id=<that-uuid>. 3) After hydration, ErrorBoundary catches the crash. RCA: In BodyMeasureGuide.tsx (line 179) `specs = SPECS[gender]` — SPECS only defines 'male' and 'female' keys. When new.tsx line 191-193 returns guideGender='kid', SPECS['kid'] is undefined; the next line `specs[activeKey]` and the map at line 231 both dereference undefined. Fix: add a 'kid' entry to SPECS (copy female or use fallback SPECS[gender] ?? SPECS.female). Note: same crash surfaces in CREATE flow the instant a user picks the 'Child' chip, but that path wasn't in the diff so main agent may not have noticed."
+}

@@ -18,11 +18,11 @@ import { cmToDisplay, LengthUnit } from "@/src/lib/units";
 import { MeasureLine, MeasureSpec, PulseHalo } from "./MeasureGuideParts";
 
 export type BodyMeasureKey = keyof Measurements;
-export type GuideGender = "male" | "female";
+export type GuideGender = "male" | "female" | "kid";
 
 interface Props {
   gender: GuideGender;
-  onChangeGender: (g: GuideGender) => void;
+  onChangeGender?: (g: GuideGender) => void;
   activeKey: BodyMeasureKey | null;
   values: Measurements;
   unit: LengthUnit;
@@ -60,6 +60,17 @@ const SPECS: Record<GuideGender, Record<BodyMeasureKey, MeasureSpec>> = {
     inseam_cm: { x1: 100, y1: 236, x2: 100, y2: 378, label: "INSEAM", labelX: 111, labelY: 307, rotate: true },
   },
   female: {
+    height_cm: { x1: 175, y1: 8, x2: 175, y2: 388, label: "HEIGHT", labelX: 187, labelY: 199, rotate: true },
+    shoulders_cm: { x1: 55, y1: 74, x2: 145, y2: 74, label: "SHOULDERS", labelX: 100, labelY: 67 },
+    chest_cm: { x1: 58, y1: 108, x2: 142, y2: 108, label: "CHEST", labelX: 100, labelY: 101 },
+    waist_cm: { x1: 72, y1: 165, x2: 128, y2: 165, label: "WAIST", labelX: 100, labelY: 158 },
+    hips_cm: { x1: 54, y1: 208, x2: 146, y2: 208, label: "HIPS", labelX: 100, labelY: 201 },
+    inseam_cm: { x1: 100, y1: 240, x2: 100, y2: 378, label: "INSEAM", labelX: 111, labelY: 308, rotate: true },
+  },
+  // Kids don't yet have their own silhouette; we reuse the female specs so
+  // arrow positions still line up over the (also-female-shaped) fallback
+  // figure. The parent picks kid gender for `audience === "kid"`.
+  kid: {
     height_cm: { x1: 175, y1: 8, x2: 175, y2: 388, label: "HEIGHT", labelX: 187, labelY: 199, rotate: true },
     shoulders_cm: { x1: 55, y1: 74, x2: 145, y2: 74, label: "SHOULDERS", labelX: 100, labelY: 67 },
     chest_cm: { x1: 58, y1: 108, x2: 142, y2: 108, label: "CHEST", labelX: 100, labelY: 101 },
@@ -178,7 +189,9 @@ function FemaleFigure() {
 
 export function BodyMeasureGuide({ gender, onChangeGender, activeKey, values, unit }: Props) {
   const [box, setBox] = useState<{ w: number; h: number } | null>(null);
-  const specs = SPECS[gender];
+  // Defensive fallback — if a caller ever passes an unknown gender, we
+  // render the female-shaped guide instead of crashing on `specs[key]`.
+  const specs = SPECS[gender] ?? SPECS.female;
   const active = activeKey ? specs[activeKey] : null;
   const halo =
     active && box
@@ -198,24 +211,29 @@ export function BodyMeasureGuide({ gender, onChangeGender, activeKey, values, un
     <View style={styles.card} testID="body-measure-guide">
       <View style={styles.headRow}>
         <Text style={tp.caption}>Measurement guide</Text>
-        <View style={styles.genderRow}>
-          {(["male", "female"] as GuideGender[]).map((g) => {
-            const on = g === gender;
-            return (
-              <TouchableOpacity
-                key={g}
-                testID={`guide-gender-${g}`}
-                onPress={() => onChangeGender(g)}
-                style={[styles.genderBtn, on ? styles.genderBtnActive : styles.genderBtnInactive]}
-                activeOpacity={0.85}
-              >
-                <Text style={[styles.genderLabel, on ? styles.genderLabelActive : styles.genderLabelInactive]}>
-                  {g === "male" ? "MALE" : "FEMALE"}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+        {/* Gender toggle only makes sense when the parent wants the user
+            to be able to flip the figure. Loved-one flows pre-select
+            gender/audience upstream and pass no callback. */}
+        {onChangeGender ? (
+          <View style={styles.genderRow}>
+            {(["male", "female"] as GuideGender[]).map((g) => {
+              const on = g === gender;
+              return (
+                <TouchableOpacity
+                  key={g}
+                  testID={`guide-gender-${g}`}
+                  onPress={() => onChangeGender(g)}
+                  style={[styles.genderBtn, on ? styles.genderBtnActive : styles.genderBtnInactive]}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.genderLabel, on ? styles.genderLabelActive : styles.genderLabelInactive]}>
+                    {g === "male" ? "MALE" : "FEMALE"}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        ) : null}
       </View>
 
       <View style={styles.bodyRow}>

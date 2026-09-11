@@ -10,9 +10,10 @@
 // because those don't apply when a user is onboarding themselves.
 
 import { Feather } from "@expo/vector-icons";
-import { router } from "expo-router";
-import React, { useMemo, useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import React, { useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Image,
   Platform,
   StyleSheet,
@@ -32,6 +33,7 @@ import {
 } from "@/src/components/BodyMeasureGuide";
 import { useToast } from "@/src/components/Toast";
 import { Gender, Measurements, ProfileAudience, api } from "@/src/lib/api";
+import { confirmDialog } from "@/src/lib/confirm";
 import { dataUriFromBase64, pickImageFromCamera, pickImageFromLibrary } from "@/src/lib/images";
 import { useProfiles } from "@/src/lib/profiles";
 import { ADULT_SHOE_SIZES } from "@/src/lib/shoe-sizes";
@@ -85,7 +87,14 @@ const CLOTHING_SIZES = ["XS", "S", "M", "L", "XL", "XXL"] as const;
 
 export default function NewLovedOneScreen() {
   const toast = useToast();
-  const { refresh, setActive } = useProfiles();
+  const { refresh, setActive, active } = useProfiles();
+
+  // Route params — when `id` is set the screen operates in EDIT mode:
+  // it hydrates from GET /loved-ones/{id}, PATCHes on submit, and shows
+  // an extra "Delete profile" button. Otherwise it stays a pure create
+  // form. Both flows share every input widget below.
+  const { id: editId } = useLocalSearchParams<{ id?: string }>();
+  const isEdit = typeof editId === "string" && editId.length > 0;
 
   // --- Loved-one identity (unique to this screen) -------------------------
   const [audience, setAudience] = useState<ProfileAudience | null>(null);
@@ -104,6 +113,67 @@ export default function NewLovedOneScreen() {
   const [threeQuarter, setThreeQuarter] = useState<PickState | null>(null);
   const [estimating, setEstimating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  // Edit-mode hydration state. `hydrating=true` until we've fetched the
+  // existing loved-one so the form doesn't render half-empty.
+  const [hydrating, setHydrating] = useState<boolean>(isEdit);
+  // Cached identity name so the header can say "Edit Avery" while the
+  // form is still editable. Also used by the delete confirm dialog.
+  const [originalName, setOriginalName] = useState<string>("");
+
+  // ---------------------------------------------------------------------
+  // Hydrate the form when editing. We fetch ONCE on mount — subsequent
+  // renders are driven by local state only, so users can keep tweaking
+  // even while the network responds slowly.
+  // ---------------------------------------------------------------------
+  useEffect(() => {
+    if (!isEdit || !editId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const doc = await api.getLovedOne(editId);
+        if (cancelled) return;
+        setAudience(doc.audience);
+        setGender((doc.gender as Gender) ?? null);
+        setName(doc.name ?? "");
+        setOriginalName(doc.name ?? "");
+        setRelation(doc.relation ?? "");
+        setAge(doc.age != null ? String(doc.age) : "");
+        setM(doc.measurements ?? {});
+        setPreferredSize(doc.preferred_size ?? null);
+        setPreferredShoeSize(doc.preferred_shoe_size ?? null);
+        if (doc.front_photo_b64) {
+          setFront({
+            uri: dataUriFromBase64(doc.front_photo_b64),
+            base64: doc.front_photo_b64,
+          });
+        }
+        if (doc.side_photo_b64) {
+          setSide({
+            uri: dataUriFromBase64(doc.side_photo_b64),
+            base64: doc.side_photo_b64,
+          });
+        }
+        if (doc.three_quarter_photo_b64) {
+          setThreeQuarter({
+            uri: dataUriFromBase64(doc.three_quarter_photo_b64),
+            base64: doc.three_quarter_photo_b64,
+          });
+        }
+      } catch (e: any) {
+        toast.show(e?.message ?? "Could not load profile", "error");
+        // Bail back to the list — the id in the URL is stale/invalid.
+        router.replace("/profiles");
+      } finally {
+        if (!cancelled) setHydrating(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Deliberately ignore `toast` — it's a stable identity from ToastProvider.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEdit, editId]);
 
   // Body-guide silhouette highlight — matches self-user onboarding.
   const [guideKey, setGuideKey] = useState<BodyMeasureKey | null>(null);
@@ -216,7 +286,7 @@ export default function NewLovedOneScreen() {
         const v = m[key];
         if (typeof v === "number" && Number.isFinite(v)) (measurements as any)[key] = v;
       }
-      const created = await api.createLovedOne({
+      const payload = {
         name: name.trim(),
         audience,
         gender,
@@ -228,16 +298,60 @@ export default function NewLovedOneScreen() {
         front_photo_b64: front?.base64,
         side_photo_b64: side?.base64,
         three_quarter_photo_b64: threeQuarter?.base64,
-      });
-      toast.show(`${created.name} added`, "success");
-      await setActive(created.id);
-      await refresh();
-      router.back();
+      };
+      if (isEdit && editId) {
+        const updated = await api.updateLovedOne(editId, payload);
+        toast.show(`${updated.name} updated`, "success");
+        await refresh();
+        // If the user landed on this screen via a direct deep link there's
+        // nothing to go back to — fall through to the profiles list.
+        if (router.canGoBack()) router.back();
+        else router.replace("/profiles");
+      } else {
+        const created = await api.createLovedOne(payload);
+        toast.show(`${created.name} added`, "success");
+        await setActive(created.id);
+        await refresh();
+        if (router.canGoBack()) router.back();
+        else router.replace("/profiles");
+      }
     } catch (e: any) {
       toast.show(e?.message ?? "Could not save profile", "error");
     } finally {
       setSaving(false);
     }
+  };
+
+  // Delete the loved-one from the edit screen (mirrors the trash icon
+  // in the list). We keep the confirm dialog identical to the list so
+  // the user always sees the same "This won't affect your orders" copy.
+  const handleDelete = () => {
+    if (!isEdit || !editId) return;
+    const displayName = originalName || name || "this profile";
+    confirmDialog({
+      title: "Delete profile?",
+      message: `Remove ${displayName}? This won't affect your orders — you can add them back later.`,
+      confirmLabel: "Delete profile",
+      destructive: true,
+      onConfirm: async () => {
+        setDeleting(true);
+        try {
+          await api.deleteLovedOne(editId);
+          // If the deleted profile was the active one, the backend
+          // has already reset it to "self"; refresh mirrors that.
+          if (active?.profile_id === editId) {
+            await setActive("self");
+          }
+          await refresh();
+          toast.show(`${displayName} removed`, "success");
+          router.replace("/profiles");
+        } catch (e: any) {
+          toast.show(e?.message ?? "Could not delete profile", "error");
+        } finally {
+          setDeleting(false);
+        }
+      },
+    });
   };
 
   const showGenderOptions =
@@ -253,16 +367,31 @@ export default function NewLovedOneScreen() {
         >
           <Feather name="arrow-left" size={22} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={tp.caption}>NEW BODY PROFILE</Text>
+        <Text style={tp.caption}>{isEdit ? "EDIT PROFILE" : "NEW BODY PROFILE"}</Text>
         <View style={styles.iconBtn} />
       </View>
 
-      <KeyboardAwareScrollView contentContainerStyle={styles.scroll} bottomOffset={24}>
-        <Text style={[tp.h1, { marginTop: spacing.sm }]}>Who are you{"\n"}shopping for?</Text>
-        <Text style={[tp.bodyMuted, { marginTop: spacing.sm }]}>
-          Same photos, measurements, and shoe size as your own profile — so AI Try-On dresses
-          them just as accurately.
-        </Text>
+      {hydrating ? (
+        <View style={styles.hydrateBlock} testID="loved-one-hydrating">
+          <ActivityIndicator color={colors.primary} />
+          <Text style={[tp.bodyMuted, { marginTop: spacing.sm }]}>
+            Loading profile…
+          </Text>
+        </View>
+      ) : (
+        <KeyboardAwareScrollView contentContainerStyle={styles.scroll} bottomOffset={24}>
+          <Text style={[tp.h1, { marginTop: spacing.sm }]}>
+            {isEdit ? (
+              <>Edit{"\n"}{originalName || name || "profile"}</>
+            ) : (
+              <>Who are you{"\n"}shopping for?</>
+            )}
+          </Text>
+          <Text style={[tp.bodyMuted, { marginTop: spacing.sm }]}>
+            {isEdit
+              ? "Update photos, measurements or preferred sizes any time. Changes apply to future Try-Ons immediately."
+              : "Same photos, measurements, and shoe size as your own profile — so AI Try-On dresses them just as accurately."}
+          </Text>
 
         {/* ---------- Loved-one identity block ---------- */}
         <Text style={[tp.caption, styles.label]}>Adult or child</Text>
@@ -430,7 +559,7 @@ export default function NewLovedOneScreen() {
 
         <BodyMeasureGuide
           gender={guideGender}
-          activeKey={guideKey ?? undefined}
+          activeKey={guideKey}
           values={m}
           unit={unit}
         />
@@ -528,16 +657,38 @@ export default function NewLovedOneScreen() {
         </View>
 
         <View style={{ height: spacing.xl }} />
-      </KeyboardAwareScrollView>
+        </KeyboardAwareScrollView>
+      )}
 
-      <View style={styles.footer}>
-        <AppButton
-          testID="loved-one-submit"
-          label={saving ? "Saving…" : "Save profile"}
-          onPress={submit}
-          loading={saving}
-        />
-      </View>
+      {!hydrating ? (
+        <View style={styles.footer}>
+          <AppButton
+            testID="loved-one-submit"
+            label={saving ? "Saving…" : isEdit ? "Save changes" : "Save profile"}
+            onPress={submit}
+            loading={saving}
+            disabled={deleting}
+          />
+          {isEdit ? (
+            <TouchableOpacity
+              testID="loved-one-delete-btn"
+              onPress={handleDelete}
+              disabled={deleting || saving}
+              style={[styles.deleteBtn, (deleting || saving) && { opacity: 0.6 }]}
+              accessibilityLabel="Delete this loved-one profile"
+            >
+              {deleting ? (
+                <ActivityIndicator color={colors.error} size="small" />
+              ) : (
+                <>
+                  <Feather name="trash-2" size={14} color={colors.error} />
+                  <Text style={styles.deleteBtnLabel}>Delete profile</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -671,5 +822,26 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
     backgroundColor: colors.background,
+  },
+  hydrateBlock: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: spacing.xl,
+  },
+  deleteBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    minHeight: 44,
+    marginTop: spacing.sm,
+  },
+  deleteBtnLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 12,
+    letterSpacing: 1.2,
+    color: colors.error,
+    textTransform: "uppercase",
   },
 });
