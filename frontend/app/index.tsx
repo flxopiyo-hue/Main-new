@@ -2,11 +2,12 @@
 
 import { Redirect } from "expo-router";
 import { useEffect } from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
 
 import { useAuth } from "@/src/lib/auth";
 import { diag } from "@/src/lib/boot-diag";
 import { colors } from "@/src/lib/theme";
+import { WebLanding } from "@/src/components/web/WebLanding";
 
 export default function Index() {
   const { user, loading } = useAuth();
@@ -20,7 +21,13 @@ export default function Index() {
       </View>
     );
   }
-  if (!user) return <Redirect href="/welcome" />;
+  if (!user) {
+    // On the web this is the front door to oromona.com — show the
+    // marketing landing (guests can then browse the public store).
+    // Native apps keep the login-first flow.
+    if (Platform.OS === "web") return <WebLanding />;
+    return <Redirect href="/welcome" />;
+  }
   if (user.role === "admin") return <Redirect href="/admin" />;
   if (user.role === "seller") return <Redirect href="/(seller)" />;
   if (user.role === "courier") return <Redirect href="/(courier)" />;

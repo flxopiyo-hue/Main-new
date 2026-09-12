@@ -291,3 +291,13 @@ Hotfix v1 (fonts) and v2 (`mixBlendMode`) were speculative and did not fix the t
 - `src/lib/boot-diag.ts` + `POST /api/diag` (`backend/routers/diag.py`, collection `boot_diag`): device posts boot stages (module eval → fonts → route → welcome/login mount → per-block `onLayout` boxes → logo load → global/console/ErrorBoundary errors). Lines appear in `backend.err.log` as `[diag <session>] <platform> …`. Lets us verify device rendering without device access. Instrumented: `_layout.tsx`, `index.tsx`, `(auth)/welcome.tsx`, `(auth)/login.tsx`, `ErrorBoundary.tsx`.
 
 **Rule for future agents**: run `npx tsc --noEmit -p frontend` after ANY SDK/RN bump — TypeScript caught this instantly; web screenshots never will.
+
+## Update — June 2026 (oromona.com Website: landing + public store + web checkout)
+- **The website = the Expo web build.** react-native-web already renders the app in the browser, so the site is served from the same codebase/backend. Everything new is gated to `Platform.OS === "web"` so the native mobile app is untouched.
+- **Public front door**: web guests at `/` now see a marketing **landing** (`src/components/web/WebLanding.tsx`) in the warm cream + terracotta editorial style of the existing oromona.com page — hero, features, how-it-works, CTA band, footer. Native still redirects to `/welcome`.
+- **Public storefront** `app/store/index.tsx` (`/store`): browse the LIVE marketplace without an account — responsive grid (4-col desktop / 2-col phone), gender + category chips (from `/api/categories`), search. Cards open the existing `/item/{id}` page.
+- **Item detail on web**: gets a top nav (`WebNav`) + centered boutique column. Guests tapping **Try It On** or **Buy** are routed to `/(auth)/login`; signed-in buyers get the full existing Paystack checkout (address sheet → `POST /api/payments/checkout`).
+- **Accounts + checkout**: login/register and Paystack checkout already work on web (same components) — the website reuses them; no backend changes.
+- Shared web helpers in `src/lib/web.ts` (`isWeb`, `useBreakpoint`, `storeColumns`, `homeRouteForUser`, `webColors`, max-width constants); `WebNav` / `WebFooter` / `LogoMark` under `src/components/web/`.
+- **Hosting**: deploy via Emergent **Publish**, then point `oromona.com` DNS at the deployment (one deploy powers landing + store + login + checkout). The standalone `/app/oromona_landing.html` remains as an SEO/backup marketing page.
+

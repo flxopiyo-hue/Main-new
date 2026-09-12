@@ -340,3 +340,38 @@ Frontend `.env` currently points at preview (`https://fit-finder-app-5.preview.e
 - frontend: src/components/LookCheckoutSheet.tsx + Shop-the-look button on stylist outfit cards.
 - Main-agent verified: tests/smoke_look.py all-pass + browser E2E (sheet totals KSh 11,997 + 300 = 12,297; Pay button NOT tapped — LIVE keys). All smoke users/items/orders cleaned.
 - WARNING for future agents: two same-file parallel edit races occurred (payments.py tail duplication + payment_status revert) — NEVER batch multiple search_replace calls to the same file.
+
+## Iteration 41 — oromona.com WEBSITE (landing + public store + web checkout)
+### Goal (user)
+"Can we create a website for the same? I already have oromona.com." User chose: BOTH (landing + shoppable store), FULL buy + checkout on web, FULL login/accounts on web, KEEP current style, show the LIVE marketplace. Hosting recommendation given: deploy via Emergent Publish, point oromona.com DNS at it.
+
+### Approach
+The Expo app already renders on web via react-native-web, so the website IS that web build. All new surfaces are gated to `Platform.OS === "web"` so the NATIVE mobile app is 100% unchanged (no regression to the recently-fixed blank-screen / RN 0.86 work).
+
+### New files (web-only)
+- `src/lib/web.ts` — isWeb, useBreakpoint, storeColumns, homeRouteForUser, WEB_MAX_WIDTH/WEB_READ_WIDTH, warm `webColors` palette (matches existing oromona.com landing).
+- `src/components/web/LogoMark.tsx`, `WebNav.tsx`, `WebFooter.tsx`, `WebLanding.tsx`.
+- `app/store/index.tsx` — public storefront (grid + gender/category chips + search), guest-browsable, native → Redirect "/".
+
+### Edited files
+- `app/index.tsx` — web guest now renders `<WebLanding/>` at `/` (native still redirects to /welcome). Logged-in users still redirect to their role home.
+- `app/item/[id].tsx` — on web: WebNav on top + content constrained to WEB_READ_WIDTH centered column (`webCol`). Guest gating: `runTryOn` and `startBuy` route guests to `/(auth)/login` instead of erroring.
+
+### Verified by main agent (browser screenshots)
+- `/` landing renders at desktop (warm cream + terracotta editorial, phone hero, features, how-it-works, CTA band, footer).
+- `/store` lists 6 LIVE marketplace items — 4-col desktop / 2-col phone; nav collapses "Sign in" on phone.
+- `/item/{id}` renders on web with nav + centered boutique column.
+- Guest tapping "Buy" on an item routes to the login screen. ✅
+
+### To test (frontend web only — NO backend changes this iteration)
+1. `/` landing CTAs (Shop the collection → /store; Create account → register).
+2. `/store` browse: items load, gender+category chips filter, search works, card → item.
+3. Item detail (guest): "Try It On" and "Buy" both route to LOGIN.
+4. Register a NEW buyer via web register (buyer path) → lands in app.
+5. Logged-in buyer: /store → item → Buy → (add address if prompted) → checkout INITIALIZES to a checkout.paystack.com URL. ⚠️ LIVE Paystack — assert the init URL only, DO NOT complete payment, no transfers/recipients.
+6. Web login (email/password) for the new buyer works.
+
+### Notes
+- Only `admin@oromona.com` pre-exists (password = backend/.env ADMIN_SEED_PASSWORD). Register a fresh `.com` buyer for buyer-side tests.
+- The category chip row may show a duplicate "TOPS" — that is live marketplace category data, not a website bug.
+

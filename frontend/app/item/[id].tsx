@@ -44,6 +44,8 @@ import { useProfiles } from "@/src/lib/profiles";
 import { shareBase64Image } from "@/src/lib/share";
 import { stockBadge, totalAvailable } from "@/src/lib/stock";
 import { absoluteFill, colors, fonts, spacing, type as tp } from "@/src/lib/theme";
+import { isWeb, WEB_READ_WIDTH } from "@/src/lib/web";
+import { WebNav } from "@/src/components/web/WebNav";
 
 // FitBadge — auto-loads the fit score for this item against the buyer's
 // active body profile and renders the green/amber/red chip.
@@ -231,6 +233,12 @@ export default function ItemDetail() {
   const runTryOn = useCallback(
     async (angles: TryOnAngle[] = ["front"]) => {
       if (!item) return;
+      // Guests (web storefront) must sign in before trying on.
+      if (!user) {
+        toast.show("Sign in to try items on", "info");
+        router.push("/(auth)/login");
+        return;
+      }
       const multi = angles.length > 1;
       if (multi) setGeneratingMulti(true);
       else setGenerating(true);
@@ -280,7 +288,7 @@ export default function ItemDetail() {
         setGeneratingMulti(false);
       }
     },
-    [item, toast, activeProfile?.profile_id, activeProfile?.profile.has_front_photo, selectedColor?.name],
+    [item, toast, activeProfile?.profile_id, activeProfile?.profile.has_front_photo, selectedColor?.name, user],
   );
 
   useEffect(() => {
@@ -372,7 +380,12 @@ export default function ItemDetail() {
 
   const startBuy = () => {
     if (!item || !selectedSize) return;
-    if (user?.role !== "buyer") {
+    if (!user) {
+      // Web storefront guest — send to login, then they can return to buy.
+      router.push("/(auth)/login");
+      return;
+    }
+    if (user.role !== "buyer") {
       toast.show("Sign in as a buyer to purchase", "error");
       return;
     }
@@ -446,7 +459,9 @@ export default function ItemDetail() {
 
   return (
     <View style={styles.root}>
+      {isWeb ? <WebNav active="shop" /> : null}
       <ScrollView contentContainerStyle={styles.scroll}>
+        <View style={isWeb ? styles.webCol : undefined}>
         <View style={[styles.heroWrap, { maxHeight: heroMaxHeight }]}>
           <Image source={{ uri: displayImage }} style={styles.hero} resizeMode="cover" />
           <SafeAreaView style={styles.heroOverlay} edges={["top"]} pointerEvents="box-none">
@@ -1050,6 +1065,7 @@ export default function ItemDetail() {
           />
           <View style={{ height: spacing.xxl }} />
         </View>
+        </View>
       </ScrollView>
       <OutfitDrawer visible={outfitOpen} onClose={() => setOutfitOpen(false)} />
       <PaywallModal
@@ -1081,6 +1097,9 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
   center: { alignItems: "center", justifyContent: "center" },
   scroll: { paddingBottom: spacing.xxl },
+  // On the web store, constrain the reading column so the item page looks
+  // like a boutique product page rather than a stretched phone layout.
+  webCol: { width: "100%", maxWidth: WEB_READ_WIDTH, alignSelf: "center" },
   heroWrap: { width: "100%", aspectRatio: 3 / 4, backgroundColor: colors.muted },
   hero: { width: "100%", height: "100%" },
   heroOverlay: { ...absoluteFill, padding: spacing.md },
