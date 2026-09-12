@@ -126,7 +126,7 @@ export function recommendationExplanation({
   const raw = row?.size ?? "XXL";
   const clamped = applyHeightClamp(raw, heightCm, gender ?? "female");
   if (raw !== clamped) {
-    return `Adjusted for your height (${heightCm}cm). Chest alone suggests ${raw}, but your frame fits ${clamped} better in Kenyan tops.`;
+    return `Adjusted for your height (${heightCm}cm). Chest alone suggests ${raw}, but your frame fits ${clamped} better in most tops.`;
   }
   return null;
 }

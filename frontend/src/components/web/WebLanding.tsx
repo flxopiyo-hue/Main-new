@@ -26,10 +26,10 @@ export function WebLanding() {
         <View style={styles.section}>
           <View style={[styles.hero, !isDesktop && styles.heroStack]}>
             <View style={styles.heroCopy}>
-              <Text style={styles.kicker}>Made in Nairobi · Sized to you</Text>
+              <Text style={styles.kicker}>Fashion, sized to you</Text>
               <Text style={[styles.h1, isPhone && styles.h1Phone]}>The boutique that fits you.</Text>
               <Text style={styles.lede}>
-                Kenya-crafted fashion, sized to your body. Try it on with AI, get styled by AI,
+                Designer fashion, sized to your body. Try it on with AI, get styled by AI,
                 and have it delivered — with escrow protection until you say it fits.
               </Text>
               <View style={[styles.ctaRow, isPhone && styles.ctaRowStack]}>
@@ -81,8 +81,8 @@ export function WebLanding() {
           <View style={[styles.features, isPhone && styles.featuresPhone]}>
             <Feature icon="✨" title="AI Try-On" body="Photorealistic try-on on your body — front, side and back." />
             <Feature icon="📏" title="Real Fit" body="Match every listing to your measurements with a live fit score." />
-            <Feature icon="🧵" title="Kenyan Ateliers" body="Local designers and small labels, verified and paid securely." />
-            <Feature icon="🛵" title="Escrow Delivery" body="Boda-tracked to your door. Money moves only when it fits." />
+            <Feature icon="🧵" title="Designer Ateliers" body="Independent designers and boutique labels, verified and paid securely." />
+            <Feature icon="🛵" title="Escrow Delivery" body="Tracked to your door. Money moves only when it fits." />
           </View>
         </View>
 

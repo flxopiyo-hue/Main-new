@@ -22,7 +22,7 @@ export function WebFooter() {
           <View style={styles.brandCol}>
             <LogoMark size={30} />
             <Text style={styles.tagline}>
-              The boutique that fits you. Kenya-crafted fashion, sized to your body.
+              The boutique that fits you. Designer fashion, sized to your body.
             </Text>
           </View>
 
@@ -51,7 +51,7 @@ export function WebFooter() {
         </View>
 
         <View style={[styles.copyRow, isPhone && styles.copyStack]}>
-          <Text style={styles.copy}>© 2026 Oromona. Made in Nairobi.</Text>
+          <Text style={styles.copy}>© 2026 Oromona.</Text>
           <Text style={styles.copy}>Version 1.0</Text>
         </View>
       </View>
