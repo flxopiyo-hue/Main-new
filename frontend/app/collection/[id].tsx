@@ -17,7 +17,7 @@ import { api, Collection, Item } from "@/src/lib/api";
 import { useAuth } from "@/src/lib/auth";
 import { formatPriceIn } from "@/src/lib/currency";
 import { dataUriFromBase64 } from "@/src/lib/images";
-import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
+import { absoluteFill, colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
 export default function CollectionDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -130,9 +130,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     marginBottom: spacing.lg,
   },
-  hero: { ...StyleSheet.absoluteFillObject, width: "100%", height: "100%" },
-  heroOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.45)" },
-  heroBar: { ...StyleSheet.absoluteFillObject, padding: spacing.md },
+  hero: { ...absoluteFill, width: "100%", height: "100%" },
+  heroOverlay: { ...absoluteFill, backgroundColor: "rgba(0,0,0,0.45)" },
+  heroBar: { ...absoluteFill, padding: spacing.md },
   heroBarRow: { flexDirection: "row" },
   heroIcon: {
     width: 40,

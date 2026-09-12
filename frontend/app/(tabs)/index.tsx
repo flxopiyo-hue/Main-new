@@ -30,7 +30,7 @@ import { useAuth } from "@/src/lib/auth";
 import { formatPriceIn } from "@/src/lib/currency";
 import { dataUriFromBase64 } from "@/src/lib/images";
 import { useProfiles } from "@/src/lib/profiles";
-import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
+import { absoluteFill, colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
 // Full set, ordered by buyer intent. Filtered down based on the active
 // audience so a Men shopper never sees Dresses, etc.
@@ -815,10 +815,10 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     position: "relative",
   },
-  dropImage: { ...StyleSheet.absoluteFillObject, width: 240, height: 150 },
+  dropImage: { ...absoluteFill, width: 240, height: 150 },
   dropImageEmpty: { backgroundColor: colors.primary },
   dropOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...absoluteFill,
     backgroundColor: "rgba(0,0,0,0.35)",
   },
   dropTextWrap: {

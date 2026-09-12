@@ -43,7 +43,7 @@ import { useOutfit } from "@/src/lib/outfit";
 import { useProfiles } from "@/src/lib/profiles";
 import { shareBase64Image } from "@/src/lib/share";
 import { stockBadge, totalAvailable } from "@/src/lib/stock";
-import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
+import { absoluteFill, colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
 // FitBadge — auto-loads the fit score for this item against the buyer's
 // active body profile and renders the green/amber/red chip.
@@ -1083,7 +1083,7 @@ const styles = StyleSheet.create({
   scroll: { paddingBottom: spacing.xxl },
   heroWrap: { width: "100%", aspectRatio: 3 / 4, backgroundColor: colors.muted },
   hero: { width: "100%", height: "100%" },
-  heroOverlay: { ...StyleSheet.absoluteFillObject, padding: spacing.md },
+  heroOverlay: { ...absoluteFill, padding: spacing.md },
   heroBar: { flexDirection: "row", alignItems: "center" },
   heroIcon: {
     width: 40,
@@ -1126,7 +1126,7 @@ const styles = StyleSheet.create({
   },
   angleThumbLabelActive: { color: colors.primary },
   generating: {
-    ...StyleSheet.absoluteFillObject,
+    ...absoluteFill,
     backgroundColor: "rgba(0,0,0,0.55)",
     alignItems: "center",
     justifyContent: "center",

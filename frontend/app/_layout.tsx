@@ -12,10 +12,14 @@ import { useFonts } from "expo-font";
 import { ToastProvider } from "@/src/components/Toast";
 import { ErrorBoundary } from "@/src/components/ErrorBoundary";
 import { AuthProvider } from "@/src/lib/auth";
+import { diag, installBootDiag } from "@/src/lib/boot-diag";
 import { OutfitProvider } from "@/src/lib/outfit";
 import { ProfileProvider } from "@/src/lib/profiles";
 import { colors } from "@/src/lib/theme";
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
+
+installBootDiag();
+diag("layout-module-eval");
 
 SplashScreen.preventAutoHideAsync().catch(() => {
   // Not a fatal — some environments (older web) throw here.
@@ -55,9 +59,22 @@ export default function RootLayout() {
     ((iconsLoaded || iconsError) && (fontsLoaded || fontsError)) || timedOut;
 
   useEffect(() => {
+    diag("fonts-state", {
+      iconsLoaded,
+      iconsError: iconsError ? String(iconsError.message ?? iconsError) : null,
+      fontsLoaded,
+      fontsError: fontsError ? String(fontsError.message ?? fontsError) : null,
+      timedOut,
+    });
+  }, [iconsLoaded, iconsError, fontsLoaded, fontsError, timedOut]);
+
+  useEffect(() => {
     if (ready) {
+      diag("ready-hide-splash");
       // Swallow errors — hideAsync can throw if splash was never presented.
-      SplashScreen.hideAsync().catch(() => {});
+      SplashScreen.hideAsync()
+        .then(() => diag("splash-hidden"))
+        .catch((e) => diag("splash-hide-failed", { message: String(e?.message ?? e) }));
     }
   }, [ready]);
 

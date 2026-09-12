@@ -272,3 +272,22 @@ The previous font hotfix didn't fully resolve the tester's blank welcome page �
 
 Same file also imports `Platform` from `react-native` so the check is authoritative.
 
+
+## Hotfix v3 — June 2026 (Blank welcome — VERIFIED root cause: RN 0.86 removed `StyleSheet.absoluteFillObject`)
+
+Hotfix v1 (fonts) and v2 (`mixBlendMode`) were speculative and did not fix the tester reports. The verified cause:
+
+- The Sep-9 SDK 54 → 57 upgrade moved React Native 0.81 → 0.86. **RN 0.85 removed `StyleSheet.absoluteFillObject`** (deprecated since 0.82; only `StyleSheet.absoluteFill` remains). `react-native-web` still ships it, so the web preview looked perfect while every native device broke — which is why all previous web-only testing passed.
+- The codebase spread `...StyleSheet.absoluteFillObject` in 11 places / 7 files. On native this spread `undefined`, silently dropping `position: absolute`.
+- In `welcome.tsx` the plaster-texture `<Image>` lost its absolute positioning, became a flow child at its intrinsic size (704×1520 dp), and pushed the `SafeAreaView` (logo, headline, both buttons) entirely below the screen. The three `LinearGradient`s kept their explicit positions → exactly the "amber gradient with nothing on it" tester screenshot. Users literally could not reach Login/Register.
+- Confirmed via `npx tsc --noEmit` (TS2551 on every usage) and by inspecting `node_modules/react-native/Libraries/StyleSheet/StyleSheetExports.js`.
+
+**Fix**
+- `src/lib/theme.ts` exports a platform-safe `absoluteFill` object; all 11 usages (`welcome.tsx`, `(tabs)/index.tsx`, `collection/[id].tsx`, `item/[id].tsx`, `outfit/result.tsx`, `DobPicker.tsx`, `OutfitDrawer.tsx`) now spread it. `grep absoluteFillObject` → 0 code hits.
+- `(seller)/analytics.tsx` referenced non-existent `tp.bodyMedium` (undefined style) → fixed.
+- Deprecated `pointerEvents` prop on the grain `Image` moved into its style.
+
+**Boot telemetry (new, kept)**
+- `src/lib/boot-diag.ts` + `POST /api/diag` (`backend/routers/diag.py`, collection `boot_diag`): device posts boot stages (module eval → fonts → route → welcome/login mount → per-block `onLayout` boxes → logo load → global/console/ErrorBoundary errors). Lines appear in `backend.err.log` as `[diag <session>] <platform> …`. Lets us verify device rendering without device access. Instrumented: `_layout.tsx`, `index.tsx`, `(auth)/welcome.tsx`, `(auth)/login.tsx`, `ErrorBoundary.tsx`.
+
+**Rule for future agents**: run `npx tsc --noEmit -p frontend` after ANY SDK/RN bump — TypeScript caught this instantly; web screenshots never will.

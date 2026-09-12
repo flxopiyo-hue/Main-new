@@ -32,7 +32,7 @@ import {
   sortByLayer,
   useOutfit,
 } from "@/src/lib/outfit";
-import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
+import { absoluteFill, colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
 interface DrawerProps {
   visible: boolean;
@@ -370,7 +370,7 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
   },
   generatingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...absoluteFill,
     backgroundColor: "rgba(10,10,10,0.55)",
     alignItems: "center",
     justifyContent: "center",

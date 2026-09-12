@@ -1,10 +1,12 @@
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import { Image, Platform, StyleSheet, Text, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useCallback, useEffect } from "react";
+import { Image, LayoutChangeEvent, Platform, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppButton } from "@/src/components/AppButton";
-import { fonts, spacing } from "@/src/lib/theme";
+import { diag } from "@/src/lib/boot-diag";
+import { absoluteFill, fonts, spacing } from "@/src/lib/theme";
 
 // Palette matched to the OROMONA logo:
 //   • Deep maroon    #1F0A08  (the logo's own background)
@@ -22,8 +24,30 @@ const OCHRE_WARM = "#B87326";
 const IVORY = "#FFF7EE";
 
 export default function Welcome() {
+  const insets = useSafeAreaInsets();
+
+  useEffect(() => {
+    diag("welcome-mounted", { insets });
+  }, [insets]);
+
+  // Reports where each block actually landed on the device — the
+  // definitive answer to "blank screen" reports without device access.
+  const onBox = useCallback(
+    (name: string) => (e: LayoutChangeEvent) => {
+      const b = e.nativeEvent.layout;
+      diag("welcome-layout", {
+        name,
+        x: Math.round(b.x),
+        y: Math.round(b.y),
+        width: Math.round(b.width),
+        height: Math.round(b.height),
+      });
+    },
+    [],
+  );
+
   return (
-    <View style={styles.root} testID="welcome-screen">
+    <View style={styles.root} testID="welcome-screen" onLayout={onBox("root")}>
       {/* Layer 1 — base warm ochre glow, biased centre. */}
       <LinearGradient
         colors={[MAROON_MID, AMBER, OCHRE, OCHRE_WARM, MAROON_MID]}
@@ -37,7 +61,6 @@ export default function Welcome() {
         source={require("@/assets/brand/plaster-texture.png")}
         style={styles.grain}
         resizeMode="cover"
-        pointerEvents="none"
       />
       {/* Layer 3 — dark maroon vignette top so the logo pops. */}
       <LinearGradient
@@ -54,17 +77,24 @@ export default function Welcome() {
         pointerEvents="none"
       />
 
-      <SafeAreaView style={styles.content} edges={["top", "bottom"]}>
+      <SafeAreaView
+        style={styles.content}
+        edges={["top", "bottom"]}
+        onLayout={onBox("safe")}
+      >
         <View style={styles.top}>
           <Image
             source={require("@/assets/brand/oromona-logo-transparent.png")}
             style={styles.logoMark}
             resizeMode="contain"
+            onLayout={onBox("logo")}
+            onLoad={() => diag("welcome-logo-loaded")}
+            onError={(e) => diag("welcome-logo-error", { error: String(e?.nativeEvent?.error ?? "") })}
           />
         </View>
 
         <View style={styles.middle}>
-          <Text style={styles.title}>
+          <Text style={styles.title} onLayout={onBox("title")}>
             Fits on{"\n"}
             <Text style={styles.titleItalic}>1st Try.</Text>
           </Text>
@@ -73,7 +103,7 @@ export default function Welcome() {
           </Text>
         </View>
 
-        <View style={styles.bottom}>
+        <View style={styles.bottom} onLayout={onBox("bottom")}>
           <AppButton
             testID="welcome-create-account-btn"
             label="Create Account"
@@ -97,8 +127,9 @@ export default function Welcome() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: MAROON_DEEP },
   grain: {
-    ...StyleSheet.absoluteFillObject,
+    ...absoluteFill,
     opacity: 0.22,
+    pointerEvents: "none",
     // `mixBlendMode` is a WEB-ONLY CSS property; on React Native's New
     // Architecture (Fabric) shipping SDK 57 an unknown style prop can
     // trigger a silent render failure on Android — this is what caused

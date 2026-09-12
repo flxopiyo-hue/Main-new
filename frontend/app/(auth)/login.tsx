@@ -16,7 +16,7 @@
 
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { StyleSheet, Image, Text, TouchableOpacity, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -26,6 +26,7 @@ import { AppInput } from "@/src/components/AppInput";
 import { SsoButtons } from "@/src/components/SsoButtons";
 import { useToast } from "@/src/components/Toast";
 import { useAuth } from "@/src/lib/auth";
+import { diag } from "@/src/lib/boot-diag";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
 type Intent = "buyer" | "seller";
@@ -37,6 +38,10 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [intent, setIntent] = useState<Intent>("buyer");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    diag("login-mounted");
+  }, []);
 
   const routeForUser = (u: { role: string }, needsSellerOnboarding = false) => {
     if (u.role === "admin") {

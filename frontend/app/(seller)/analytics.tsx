@@ -128,7 +128,7 @@ export default function Analytics() {
           <View style={styles.connectedCard} testID="analytics-connected-card">
             <Feather name="check-circle" size={20} color={colors.success} />
             <View style={{ flex: 1 }}>
-              <Text style={[tp.bodyMedium]}>Payout account active</Text>
+              <Text style={[tp.body, { fontFamily: fonts.bodyMedium }]}>Payout account active</Text>
               <Text style={tp.bodyMuted}>
                 Escrow release: buyer confirmation or 48h auto-release
               </Text>

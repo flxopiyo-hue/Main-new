@@ -19,6 +19,7 @@ import {
 } from "react-native";
 
 import { colors, fonts, spacing } from "@/src/lib/theme";
+import { diag } from "@/src/lib/boot-diag";
 
 interface Props {
   children: React.ReactNode;
@@ -37,6 +38,10 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     console.error("[ErrorBoundary]", error, info?.componentStack);
+    diag("error-boundary", {
+      message: String(error?.message ?? error).slice(0, 800),
+      componentStack: String(info?.componentStack ?? "").slice(0, 1200),
+    });
   }
 
   reset = () => {

@@ -35,6 +35,7 @@ from routers import (
     categories,
     collections,
     delivery,
+    diag,
     items,
     legal,
     loved_ones,
@@ -98,6 +99,7 @@ api_router.include_router(seller.router)
 api_router.include_router(delivery.router)
 api_router.include_router(collections.router)
 api_router.include_router(legal.router)
+api_router.include_router(diag.router)
 api_router.include_router(admin.router)
 
 # Store/marketing assets (App Store screenshots etc.) — read-only static

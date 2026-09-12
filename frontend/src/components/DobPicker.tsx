@@ -23,7 +23,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { colors, fonts, spacing } from "@/src/lib/theme";
+import { absoluteFill, colors, fonts, spacing } from "@/src/lib/theme";
 
 const MONTHS = [
   "January",
@@ -280,7 +280,7 @@ export function DobPicker({
 
 const styles = StyleSheet.create({
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...absoluteFill,
     backgroundColor: colors.overlay,
   },
   sheetWrap: {

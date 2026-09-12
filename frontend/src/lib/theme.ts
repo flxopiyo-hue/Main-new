@@ -32,6 +32,20 @@ export const radius = {
   sheet: 24,
 };
 
+// React Native 0.86 REMOVED `StyleSheet.absoluteFillObject` (only
+// `StyleSheet.absoluteFill` remains). Spreading the removed property
+// yields `undefined` on native, silently dropping `position: absolute`
+// — which is what pushed the welcome screen's content off-screen on
+// tester phones while web (react-native-web still ships it) looked fine.
+// Always spread THIS object instead; it works identically everywhere.
+export const absoluteFill = {
+  position: "absolute" as const,
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+};
+
 // Custom fonts bundled locally via `assets/fonts/*.ttf`, loaded in
 // `app/_layout.tsx`. The family names below MUST match the keys given
 // to `useFonts` in the layout — no more `@expo-google-fonts/*` deps.

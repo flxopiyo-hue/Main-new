@@ -22,7 +22,7 @@ import { useToast } from "@/src/components/Toast";
 import { api, TryOnAngle, TryOnImageOut, TryOnResult } from "@/src/lib/api";
 import { dataUriFromBase64 } from "@/src/lib/images";
 import { shareBase64Image } from "@/src/lib/share";
-import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
+import { absoluteFill, colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
 const ANGLE_LABEL: Record<TryOnAngle, string> = {
   front: "Front",
@@ -228,7 +228,7 @@ const styles = StyleSheet.create({
   center: { alignItems: "center", justifyContent: "center" },
   scroll: { paddingBottom: spacing.xxl },
   heroWrap: { width: "100%", backgroundColor: colors.muted },
-  heroOverlay: { ...StyleSheet.absoluteFillObject, padding: spacing.md },
+  heroOverlay: { ...absoluteFill, padding: spacing.md },
   heroBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   heroIcon: {
     width: 40,

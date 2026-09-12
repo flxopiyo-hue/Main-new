@@ -1,13 +1,18 @@
 // Entry point. Routes user to (tabs) when authenticated, otherwise to /welcome.
 
 import { Redirect } from "expo-router";
+import { useEffect } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
 import { useAuth } from "@/src/lib/auth";
+import { diag } from "@/src/lib/boot-diag";
 import { colors } from "@/src/lib/theme";
 
 export default function Index() {
   const { user, loading } = useAuth();
+  useEffect(() => {
+    diag("index-route", { loading, hasUser: !!user, role: user?.role ?? null });
+  }, [loading, user]);
   if (loading) {
     return (
       <View style={styles.center} testID="boot-loader">
