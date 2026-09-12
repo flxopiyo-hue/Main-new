@@ -259,3 +259,16 @@ Existing builds still have the old font stack — testers must open the latest d
 - Backend: 10/10 pytest (GET/POST/PATCH/DELETE + auth + cross-tenant + full CRUD round-trip preserving photos and measurements).
 - Frontend: Kid + Adult CRUD round-trip green; edit hydration works; Delete-from-edit-screen dismisses back to the list with the row gone; create flow unchanged.
 
+
+## Hotfix v2 — June 2026 (Blank welcome, root cause identified)
+
+The previous font hotfix didn't fully resolve the tester's blank welcome page — the fonts were only ONE contributor. The **actual** root cause was a web-only CSS property leaking onto native:
+
+- `frontend/app/(auth)/welcome.tsx` had `...(typeof window !== "undefined" ? { mixBlendMode: "overlay" } : {})` on the plaster-texture layer.
+- `typeof window` is truthy in React Native — RN polyfills a `window` global on both iOS and Android. So `mixBlendMode` was being applied on native as well.
+- On the New Architecture (Fabric, `newArchEnabled: true` in `app.json`), Android is strict about unknown style props and silently drops rendering for the affected subtree. Result: the amber gradient still rendered (LinearGradient absolute-fill), but the SafeAreaView containing the logo, title and buttons was blanked out.
+
+**Fix**: Gate on `Platform.OS === "web"` explicitly — the standard React Native way. `mixBlendMode` now stays web-only, the Android subtree renders normally.
+
+Same file also imports `Platform` from `react-native` so the check is authoritative.
+

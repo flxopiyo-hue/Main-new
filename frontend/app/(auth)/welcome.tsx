@@ -1,6 +1,6 @@
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import { Image, StyleSheet, Text, View } from "react-native";
+import { Image, Platform, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppButton } from "@/src/components/AppButton";
@@ -99,9 +99,13 @@ const styles = StyleSheet.create({
   grain: {
     ...StyleSheet.absoluteFillObject,
     opacity: 0.22,
-    // On web this blends more naturally. On native it just overlays at low
-    // opacity which still produces a pleasant plaster-like variation.
-    ...(typeof window !== "undefined" ? { mixBlendMode: "overlay" as any } : {}),
+    // `mixBlendMode` is a WEB-ONLY CSS property; on React Native's New
+    // Architecture (Fabric) shipping SDK 57 an unknown style prop can
+    // trigger a silent render failure on Android — this is what caused
+    // the "blank amber page" bug tester devices were seeing. `typeof
+    // window` is truthy on native too (RN polyfills it) so we MUST gate
+    // on `Platform.OS === "web"` explicitly.
+    ...(Platform.OS === "web" ? { mixBlendMode: "overlay" as any } : {}),
   },
   topFade: {
     position: "absolute",
