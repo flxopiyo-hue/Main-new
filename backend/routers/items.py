@@ -566,17 +566,26 @@ async def items_feed(
         ):
             await bump(it.get("seller_id", ""), it.get("category", ""), 1.5)
 
-    async for o in db.orders.find(
+    # Batch-fetch the category for every ordered item in a single query
+    # instead of doing per-order `find_one` calls (deployment_agent flagged
+    # this as an N+1). Feed personalization runs on every open, so keeping
+    # this cheap matters as paid-order volume grows.
+    paid_orders = await db.orders.find(
         {"buyer_id": user["id"], "status": "paid"},
         {"_id": 0, "seller_id": 1, "item_id": 1, "fit_feedback": 1},
-    ):
-        seller_id = o.get("seller_id")
-        item_doc = await db.items.find_one(
-            {"id": o["item_id"]}, {"_id": 0, "category": 1}
-        )
-        category = item_doc.get("category") if item_doc else ""
-        weight = 4.0 if o.get("fit_feedback") == "perfect" else 3.0
-        await bump(seller_id, category, weight)
+    ).to_list(500)
+    if paid_orders:
+        item_ids = list({o["item_id"] for o in paid_orders if o.get("item_id")})
+        category_by_item: Dict[str, str] = {}
+        async for it in db.items.find(
+            {"id": {"$in": item_ids}}, {"_id": 0, "id": 1, "category": 1}
+        ):
+            category_by_item[it["id"]] = it.get("category") or ""
+        for o in paid_orders:
+            seller_id = o.get("seller_id")
+            category = category_by_item.get(o["item_id"], "")
+            weight = 4.0 if o.get("fit_feedback") == "perfect" else 3.0
+            await bump(seller_id, category, weight)
 
     # Build the candidate query — same audience filter logic as list_items.
     query: Dict[str, Any] = {}
