@@ -301,3 +301,33 @@ Hotfix v1 (fonts) and v2 (`mixBlendMode`) were speculative and did not fix the t
 - Shared web helpers in `src/lib/web.ts` (`isWeb`, `useBreakpoint`, `storeColumns`, `homeRouteForUser`, `webColors`, max-width constants); `WebNav` / `WebFooter` / `LogoMark` under `src/components/web/`.
 - **Hosting**: deploy via Emergent **Publish**, then point `oromona.com` DNS at the deployment (one deploy powers landing + store + login + checkout). The standalone `/app/oromona_landing.html` remains as an SEO/backup marketing page.
 
+
+
+---
+
+## Iteration (Sep 2026) — Self-delivery handover-code flow + milestone emails (PREVIEW ONLY)
+Fixed the reported bug where a seller choosing "I'll deliver myself" instantly
+marked the order delivered and released escrow with no proof of delivery.
+
+New fulfilment state machine (self-delivery):
+- Buyer pays → escrow held; buyer sees payment confirmation + "waiting for seller".
+- Seller "Accept order" → `in_fulfillment` (buyer sees "being packed").
+- Seller "I'll deliver myself" (`self_deliver`) → OUT FOR DELIVERY: status stays
+  `shipped`, `out_for_delivery_at` stamped, `self_delivery=true`, buyer-visible
+  4-digit `handover_code` minted. Does NOT mark delivered / start 48h window.
+- Seller "Confirm handover" (`confirm_handover` + code) → validates the buyer's
+  code → `delivered` + 48h buyer-confirm/dispute/auto-release window starts.
+- Rider path unchanged (rider enters the buyer's code). Legacy external-carrier
+  "Ship with tracking" → "Mark as delivered" (`deliver`) still works but is
+  blocked for `self_delivery` orders.
+
+Buyer emails (best-effort, `core/notifications.py`) ONLY at 3 milestones:
+payment success, rider pickup, delivered. All other status is in-app.
+
+Verified: backend pytest 10/10 (`tests/test_iteration37_self_delivery_handover.py`)
++ full seller UI walkthrough via seeded paid order (Accept → I'll deliver myself →
+Confirm handover with code → Delivered; escrow stayed `held`, release_at = +48h).
+
+NOTE: User will REDEPLOY after the 14-day closed Google Play test — do not deploy
+during the closed test. Also: remove the KES 100 "Payment Review" test item
+(id bc2e940f-10f0-4daa-a72e-6001bf09bd33) once Paystack review is done.

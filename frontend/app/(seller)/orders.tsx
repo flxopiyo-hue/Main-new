@@ -75,6 +75,11 @@ interface ShipModalState {
   order: Order | null;
 }
 
+interface CodeModalState {
+  open: boolean;
+  order: Order | null;
+}
+
 export default function SellerOrders() {
   const toast = useToast();
   const [orders, setOrders] = useState<Order[]>([]);
@@ -83,6 +88,7 @@ export default function SellerOrders() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterKey>("todo");
   const [shipModal, setShipModal] = useState<ShipModalState>({ open: false, order: null });
+  const [codeModal, setCodeModal] = useState<CodeModalState>({ open: false, order: null });
 
   const load = useCallback(async () => {
     try {
@@ -143,6 +149,41 @@ export default function SellerOrders() {
       await load();
     } catch (e: any) {
       toast.show(e?.message ?? "Could not request a rider", "error");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // "I'll deliver myself" — marks the parcel out for delivery and mints
+  // the buyer's 4-digit handover code. Delivery is only confirmed once
+  // the seller enters that code at handover (see confirmHandover).
+  const selfDeliver = async (order: Order) => {
+    setBusyId(order.id);
+    try {
+      await api.sellerUpdateFulfillment(order.id, { action: "self_deliver" });
+      toast.show(
+        "Out for delivery — enter the buyer's 4-digit code when you hand it over",
+        "success",
+      );
+      await load();
+    } catch (e: any) {
+      toast.show(e?.message ?? "Could not update", "error");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // Seller enters the buyer's 4-digit code at physical handover → the
+  // order becomes delivered and the 48h escrow window starts.
+  const confirmHandover = async (order: Order, code: string) => {
+    setBusyId(order.id);
+    try {
+      await api.sellerUpdateFulfillment(order.id, { action: "confirm_handover", code });
+      toast.show(`Delivered "${order.item_name}" — thanks!`, "success");
+      setCodeModal({ open: false, order: null });
+      await load();
+    } catch (e: any) {
+      toast.show(e?.message ?? "Wrong code — try again", "error");
     } finally {
       setBusyId(null);
     }
@@ -296,6 +337,8 @@ export default function SellerOrders() {
                 onShip={() => setShipModal({ open: true, order: o })}
                 onDeliver={() => markDelivered(o)}
                 onRequestCourier={() => requestCourier(o)}
+                onSelfDeliver={() => selfDeliver(o)}
+                onConfirmHandover={() => setCodeModal({ open: true, order: o })}
               />
             ))}
           </View>
@@ -310,6 +353,15 @@ export default function SellerOrders() {
         onCancel={() => setShipModal({ open: false, order: null })}
         onSubmit={(num, url, eta) => {
           if (shipModal.order) submitShip(shipModal.order, num, url, eta);
+        }}
+      />
+
+      <CodeModal
+        state={codeModal}
+        busy={!!busyId}
+        onCancel={() => setCodeModal({ open: false, order: null })}
+        onSubmit={(code) => {
+          if (codeModal.order) confirmHandover(codeModal.order, code);
         }}
       />
     </SafeAreaView>
@@ -327,6 +379,8 @@ function OrderRow({
   onShip,
   onDeliver,
   onRequestCourier,
+  onSelfDeliver,
+  onConfirmHandover,
 }: {
   order: Order;
   busy: boolean;
@@ -334,6 +388,8 @@ function OrderRow({
   onShip: () => void;
   onDeliver: () => void;
   onRequestCourier: () => void;
+  onSelfDeliver: () => void;
+  onConfirmHandover: () => void;
 }) {
   const [imgB64, setImgB64] = useState<string | null>(null);
 
@@ -427,6 +483,14 @@ function OrderRow({
                 : "Riders notified — hand the parcel over when the rider arrives."}
           </Text>
         </View>
+      ) : order.self_delivery && status !== "delivered" ? (
+        <View style={styles.deliveryHintRow} testID={`seller-order-${order.id}-self-hint`}>
+          <Feather name="user" size={13} color={colors.mutedFg} />
+          <Text style={styles.deliveryHintText}>
+            You're delivering this yourself — enter the buyer's 4-digit code at
+            handover to complete delivery.
+          </Text>
+        </View>
       ) : null}
 
       {/* Actions row */}
@@ -467,6 +531,23 @@ function OrderRow({
         ) : null}
         {status === "in_fulfillment" && !order.courier_job_id ? (
           <TouchableOpacity
+            testID={`seller-order-${order.id}-self-deliver`}
+            onPress={onSelfDeliver}
+            disabled={busy}
+            style={[styles.actionBtn, styles.actionGhost]}
+          >
+            {busy ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <>
+                <Feather name="user" size={14} color={colors.primary} />
+                <Text style={styles.actionGhostLabel}>I&apos;ll deliver myself</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        ) : null}
+        {status === "in_fulfillment" && !order.courier_job_id ? (
+          <TouchableOpacity
             testID={`seller-order-${order.id}-ship`}
             onPress={onShip}
             disabled={busy}
@@ -477,12 +558,29 @@ function OrderRow({
             ) : (
               <>
                 <Feather name="send" size={14} color={colors.primary} />
-                <Text style={styles.actionGhostLabel}>Ship myself</Text>
+                <Text style={styles.actionGhostLabel}>Ship with tracking</Text>
               </>
             )}
           </TouchableOpacity>
         ) : null}
-        {status === "shipped" && !order.courier_job_id ? (
+        {status === "shipped" && !order.courier_job_id && order.self_delivery ? (
+          <TouchableOpacity
+            testID={`seller-order-${order.id}-confirm-handover`}
+            onPress={onConfirmHandover}
+            disabled={busy}
+            style={[styles.actionBtn, styles.actionPrimary]}
+          >
+            {busy ? (
+              <ActivityIndicator size="small" color={colors.primaryFg} />
+            ) : (
+              <>
+                <Feather name="key" size={14} color={colors.primaryFg} />
+                <Text style={styles.actionPrimaryLabel}>Confirm handover</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        ) : null}
+        {status === "shipped" && !order.courier_job_id && !order.self_delivery ? (
           <TouchableOpacity
             testID={`seller-order-${order.id}-deliver`}
             onPress={onDeliver}
@@ -620,6 +718,70 @@ function ShipModal({
                 onPress={() => onSubmit(num.trim(), url.trim(), eta)}
                 loading={busy}
                 disabled={!num.trim() || busy}
+              />
+            </View>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+
+function CodeModal({
+  state,
+  busy,
+  onCancel,
+  onSubmit,
+}: {
+  state: CodeModalState;
+  busy: boolean;
+  onCancel: () => void;
+  onSubmit: (code: string) => void;
+}) {
+  const [code, setCode] = useState("");
+
+  React.useEffect(() => {
+    if (state.open) setCode("");
+  }, [state.open]);
+
+  if (!state.order) return null;
+
+  return (
+    <Modal visible={state.open} animationType="slide" transparent onRequestClose={onCancel}>
+      <Pressable style={styles.modalBackdrop} onPress={onCancel}>
+        <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+          <View style={styles.modalHandle} />
+          <Text style={[tp.h3, { marginBottom: 6 }]}>Confirm handover</Text>
+          <Text style={[tp.bodyMuted, { marginBottom: spacing.md }]}>
+            Ask the buyer for the 4-digit code shown on their order screen, then
+            enter it here to complete delivery of {state.order.item_name}.
+          </Text>
+          <AppInput
+            testID="seller-orders-handover-code"
+            label="Buyer's 4-digit code"
+            value={code}
+            onChangeText={(t) => setCode(t.replace(/[^0-9]/g, "").slice(0, 4))}
+            placeholder="e.g. 4821"
+            keyboardType="number-pad"
+            maxLength={4}
+          />
+          <View style={styles.modalActions}>
+            <TouchableOpacity
+              testID="seller-orders-handover-cancel"
+              onPress={onCancel}
+              style={[styles.modalBtn, styles.modalBtnGhost]}
+            >
+              <Text style={styles.modalGhostLabel}>CANCEL</Text>
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <AppButton
+                testID="seller-orders-handover-submit"
+                label="Confirm delivery"
+                onPress={() => onSubmit(code.trim())}
+                loading={busy}
+                disabled={code.trim().length !== 4 || busy}
               />
             </View>
           </View>

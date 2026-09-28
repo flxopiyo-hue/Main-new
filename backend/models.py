@@ -858,6 +858,12 @@ class OrderOut(BaseModel):
     delivery_fee_cents: int = 0
     courier_job_id: Optional[str] = None
     courier_requested_at: Optional[datetime] = None
+    # Self-delivery (seller hand-delivers the parcel). Reuses the same
+    # 4-digit handover code as the rider flow — the order only becomes
+    # ``delivered`` once the seller enters the buyer's code at handover.
+    # ``out_for_delivery_at`` is stamped for BOTH the rider and self paths.
+    out_for_delivery_at: Optional[datetime] = None
+    self_delivery: Optional[bool] = None
 
 
 class OrderSellerOut(BaseModel):
@@ -901,18 +907,31 @@ class FulfillmentIn(BaseModel):
       - `action: "ship"` + `tracking_number` (and optional `tracking_url`,
                           `estimated_delivery_days` 1-5)
                           → in_fulfillment | paid → shipped
-      - `action: "deliver"` → shipped → delivered (marked by seller/
-                              courier). Starts the 48h buyer-confirmation
-                              window before funds auto-release.
+      - `action: "self_deliver"` → in_fulfillment → out for delivery.
+                          Seller chose "I'll deliver myself": generates the
+                          buyer-visible 4-digit handover code and marks the
+                          parcel out for delivery. Does NOT mark delivered
+                          or start the escrow window yet.
+      - `action: "confirm_handover"` + `code` → out for delivery → delivered.
+                          Seller enters the buyer's 4-digit code at physical
+                          handover. Only now does the 48h buyer-confirmation
+                          window start.
+      - `action: "deliver"` → shipped → delivered (self-shipped via an
+                          external carrier only). Starts the 48h window.
       - `action: "request_courier"` → paid | in_fulfillment: opens a
                               delivery job on the rider board (door-
                               delivery orders only).
     """
 
-    action: Literal["acknowledge", "ship", "deliver", "request_courier"]
+    action: Literal[
+        "acknowledge", "ship", "deliver", "request_courier",
+        "self_deliver", "confirm_handover",
+    ]
     tracking_number: Optional[str] = Field(default=None, max_length=120)
     tracking_url: Optional[str] = Field(default=None, max_length=400)
     estimated_delivery_days: Optional[int] = Field(default=None, ge=1, le=5)
+    # 4-digit buyer handover code, required for action="confirm_handover".
+    code: Optional[str] = Field(default=None, min_length=4, max_length=4)
     note: Optional[str] = Field(default=None, max_length=400)
 
 

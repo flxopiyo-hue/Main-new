@@ -1,0 +1,32 @@
+{
+  "summary": "Iteration 37 backend verification of the self-delivery handover-code fix: seller 'I'll deliver myself' now moves the order Out for Delivery only, mints a 4-digit handover code, and does NOT release escrow. Only entering the buyer's code (confirm_handover) marks the order delivered and arms the 48h escrow window; wrong code returns 400. Legacy 'deliver' action is blocked on self_delivery orders. Rider flow (picked_up -> shipped/out_for_delivery, deliver + code -> delivered) still works. All 10 backend tests pass. Frontend web preview loads cleanly (no bundle/red-screen errors) and code inspection confirms all required testIDs are wired (seller-order-{id}-self-deliver, seller-order-{id}-confirm-handover, seller-orders-handover-code, seller-orders-handover-submit, order-handover-code, plus buyer self-delivery card with the code visible only while shipped). A full UI walkthrough of the paid-order path cannot be run in the preview environment because Paystack is in LIVE mode (per /app/memory/test_credentials.md) and creating a real paid order would move real money.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration37_self_delivery_handover.py",
+    "/app/test_reports/pytest/iteration37_results.xml"
+  ],
+  "action_items": [
+    "Consider adding an in-app notification (not email) to the buyer at self_deliver time so they see 'Seller is out for delivery' immediately — currently only the rider picked_up path emits an email; self_deliver is silent by design but a push/inbox event would tighten the UX.",
+    "Because Paystack is in LIVE mode, no automated E2E test can exercise the seller/buyer UI against a real paid order. Recommend adding a preview-only test-mode toggle or seeded fixture so testing agents can validate the full UI flow end-to-end without moving real money."
+  ],
+  "critical_code_review_comments": [
+    "seller.py update_fulfillment is now ~170 LOC in one function — consider extracting per-action handlers (acknowledge/ship/self_deliver/confirm_handover/deliver/request_courier) into small helpers for readability and unit-testability.",
+    "confirm_handover requires status=='shipped' AND out_for_delivery_at, but self_deliver already sets both atomically — the double gate is defensive but redundant. Non-blocking.",
+    "handover_code in _order_doc_to_detail is only included for the BUYER (include_code=is_buyer). Confirmed correct: sellers/admins do NOT see the code, forcing them to ask the buyer at handover — this is exactly what the state machine requires."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration37_self_delivery_handover.py (new)"
+  ],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "smoke-only: web bundle loads cleanly; full paid-order UI walkthrough blocked by LIVE Paystack"},
+  "seed_data_creation": "Test creates TEST_ prefixed buyer/seller/item/courier docs and a paid order+payout row directly in Mongo, then cleans up in module teardown (idempotent).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The self-delivery handover flow is backend-verified. If retesting UI, log in as a seller who already has a paid order (see /app/memory/test_credentials.md — Paystack is LIVE so DO NOT initiate real checkouts; use the DB-seed pattern in test_iteration37_self_delivery_handover.py::_seed_paid_order and mint tokens via core.security.make_jwt). testIDs to drive the flow: 'seller-order-<id>-acknowledge' -> 'seller-order-<id>-self-deliver' -> 'seller-order-<id>-confirm-handover' -> modal 'seller-orders-handover-code' + 'seller-orders-handover-submit'. Buyer sees the code at testID 'order-handover-code' on /order/[id]. STOP at confirm_handover; do NOT call POST /orders/{id}/confirm-delivery against a seller with a paystack_recipient_code (would trigger a real live transfer).",
+  "rca_of_issue": "Prior bug: seller pressing 'I'll deliver myself' called the legacy 'deliver' action which flipped status=delivered and armed escrow_release_at immediately (via escrow_mod.start_delivery_window). No proof of handover, buyer got no update. Fix (verified): added a dedicated 'self_deliver' branch in update_fulfillment that ONLY sets status=shipped + self_delivery=true + out_for_delivery_at + handover_code, and a 'confirm_handover' branch that gates the delivered transition on the seller entering the buyer's 4-digit code. The legacy 'deliver' action is now 400-guarded when order.self_delivery is true. Payout row remains status='held' throughout — release_payout is only invoked by buyer confirm_delivery or the 48h background sweep, both untouched by the seller-side state machine."
+}

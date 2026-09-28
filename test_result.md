@@ -1,3 +1,54 @@
+# Oromona — LATEST ITERATION (Sep 2026): Self-delivery handover-code flow + milestone emails
+
+## What changed (preview only — user will redeploy AFTER the 14-day closed test)
+Fixes the bug where a seller choosing "I'll deliver myself" jumped straight to
+`delivered` and released escrow with no proof of delivery. New flow:
+
+Buyer pays → held escrow (buyer sees "waiting for seller").
+Seller "Accept order" → `in_fulfillment` (buyer sees "being packed").
+Seller "I'll deliver myself" (`action:self_deliver`) → order goes OUT FOR
+DELIVERY (status stays `shipped` + `out_for_delivery_at` stamped +
+`self_delivery=true` + a buyer-visible 4-digit `handover_code` is minted).
+It does NOT mark delivered and does NOT start the 48h window.
+Seller "Confirm handover" (`action:confirm_handover` + `code`) → validates the
+buyer's code; only then → `delivered` + 48h escrow window starts.
+
+Rider path unchanged (rider still enters the buyer's code to confirm delivery).
+Legacy external-carrier "Ship with tracking" → "Mark as delivered"
+(`action:deliver`) still works, but is now BLOCKED for `self_delivery` orders.
+
+### Buyer emails — ONLY 3 milestones (everything else is in-app):
+1. payment success (`_on_order_paid` → notifications.send_order_update "paid")
+2. rider picks item up (delivery.py job_status picked_up → "out_for_delivery")
+3. delivered (rider deliver_job + seller confirm_handover → "delivered")
+Emails are best-effort (core/notifications.py); failures never block the request.
+
+### Files changed
+- backend/models.py — OrderOut +out_for_delivery_at,+self_delivery; FulfillmentIn +self_deliver/confirm_handover actions +code field.
+- backend/routers/seller.py — new self_deliver + confirm_handover actions; deliver now blocks self_delivery; seller_orders returns new fields; +import secrets.
+- backend/routers/orders.py — _order_doc_to_out + _order_doc_to_detail return out_for_delivery_at + self_delivery.
+- backend/routers/payments.py — _on_order_paid sends "paid" email.
+- backend/routers/delivery.py — picked_up sends "out_for_delivery" email + stamps out_for_delivery_at; deliver_job sends "delivered" email.
+- backend/core/mailer.py — new order_update_template(); country-neutral copy.
+- backend/core/notifications.py — NEW best-effort send_order_update().
+- frontend/src/lib/api.ts — Order +out_for_delivery_at/self_delivery; sellerUpdateFulfillment +self_deliver/confirm_handover/code.
+- frontend/src/components/OrderTimeline.tsx — shipped step shows "Out for delivery" when out_for_delivery_at set.
+- frontend/app/order/[id].tsx — courier card + handover code work for self_delivery; code hidden once delivered.
+- frontend/app/(seller)/orders.tsx — "I'll deliver myself" button + "Confirm handover" code modal.
+
+### Main-agent manual verification (backend, no Paystack): PASSED
+acknowledge→in_fulfillment; self_deliver→shipped+ofd+self+code, delivered_at/release_at NULL (no early release);
+buyer sees code; wrong code→400; right code→delivered + escrow_release_at set. Escrow NOT released (release_payout not called).
+
+### ⚠️ LIVE Paystack — do NOT complete payments or initiate transfers/recipients in tests.
+To get a `paid` order without Paystack: insert one directly in Mongo (buyer+seller+item docs),
+then drive /api/seller/orders/{id}/fulfillment with a JWT from core.security.make_jwt.
+Do NOT call buyer confirm-delivery against a seller that has a paystack_recipient_code (would trigger a transfer);
+freshly-created sellers have none, so it's safe, but prefer to stop at confirm_handover.
+
+---
+
+
 # Oromona — Full Regression: Stripe Purge + Feature Verification
 
 ## Original Problem Statement (this iteration)

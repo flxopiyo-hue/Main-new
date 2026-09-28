@@ -492,6 +492,11 @@ export interface Order {
   delivery_fee_cents?: number;
   courier_job_id?: string | null;
   courier_requested_at?: string | null;
+  // Out for delivery timestamp (rider pickup OR seller self-delivery).
+  out_for_delivery_at?: string | null;
+  // True when the seller is hand-delivering the parcel themselves
+  // (reuses the 4-digit handover code, confirmed by the seller).
+  self_delivery?: boolean | null;
 }
 
 export type FitFeedback = "small" | "perfect" | "large";
@@ -1090,10 +1095,17 @@ export const api = {
   sellerUpdateFulfillment: (
     orderId: string,
     body: {
-      action: "acknowledge" | "ship" | "deliver" | "request_courier";
+      action:
+        | "acknowledge"
+        | "ship"
+        | "deliver"
+        | "request_courier"
+        | "self_deliver"
+        | "confirm_handover";
       tracking_number?: string;
       tracking_url?: string;
       estimated_delivery_days?: number;
+      code?: string;
       note?: string;
     },
   ) =>

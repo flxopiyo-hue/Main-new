@@ -265,15 +265,19 @@ export default function OrderDetailScreen() {
                   <View style={styles.trackingHeader}>
                     <Feather name="truck" size={16} color={colors.primary} />
                     <Text style={styles.trackingCarrier}>
-                      {!order.courier || order.courier.status === "open"
-                        ? "Looking for a rider…"
-                        : order.courier.status === "accepted"
-                          ? "Rider assigned — pickup soon"
-                          : order.courier.status === "picked_up"
-                            ? "Rider has your parcel"
-                            : order.courier.status === "out_for_delivery"
-                              ? "Out for delivery — rider on the way"
-                              : "Delivered by Oromona Rider"}
+                      {order.self_delivery
+                        ? order.status === "delivered"
+                          ? "Delivered by your seller"
+                          : "Out for delivery — your seller is bringing it"
+                        : !order.courier || order.courier.status === "open"
+                          ? "Looking for a rider…"
+                          : order.courier.status === "accepted"
+                            ? "Rider assigned — pickup soon"
+                            : order.courier.status === "picked_up"
+                              ? "Rider has your parcel"
+                              : order.courier.status === "out_for_delivery"
+                                ? "Out for delivery — rider on the way"
+                                : "Delivered by Oromona Rider"}
                     </Text>
                   </View>
                   {order.courier?.rider_name ? (
@@ -292,16 +296,22 @@ export default function OrderDetailScreen() {
                       ) : null}
                     </View>
                   ) : null}
-                  {isBuyer && order.handover_code && order.courier?.status !== "delivered" ? (
+                  {isBuyer &&
+                  order.handover_code &&
+                  order.status !== "delivered" &&
+                  order.courier?.status !== "delivered" ? (
                     <View style={styles.handoverBox} testID="order-handover-code">
                       <Text style={styles.handoverLabel}>
-                        HANDOVER CODE — give this to the rider
+                        HANDOVER CODE — give this to{" "}
+                        {order.self_delivery ? "your seller" : "the rider"}
                       </Text>
                       <Text style={styles.handoverCode} selectable>
                         {order.handover_code}
                       </Text>
                       <Text style={styles.handoverHint}>
-                        The rider enters this code to complete your delivery —
+                        {order.self_delivery
+                          ? "Your seller enters this code to complete the delivery —"
+                          : "The rider enters this code to complete your delivery —"}{" "}
                         only share it once the parcel is in your hands.
                       </Text>
                     </View>

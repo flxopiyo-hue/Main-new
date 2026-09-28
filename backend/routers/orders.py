@@ -61,6 +61,8 @@ def _order_doc_to_out(d: Dict[str, Any]) -> OrderOut:
         delivery_fee_cents=int(d.get("delivery_fee_cents") or 0),
         courier_job_id=d.get("courier_job_id"),
         courier_requested_at=d.get("courier_requested_at"),
+        out_for_delivery_at=d.get("out_for_delivery_at"),
+        self_delivery=d.get("self_delivery"),
     )
 
 
@@ -176,6 +178,7 @@ async def _order_doc_to_detail(
         delivery_fee_cents=int(d.get("delivery_fee_cents") or 0),
         delivery_zone_label=d.get("delivery_zone_label"),
         out_for_delivery_at=d.get("out_for_delivery_at"),
+        self_delivery=d.get("self_delivery"),
         handover_code=d.get("handover_code") if include_code else None,
         courier=courier_view,
     )

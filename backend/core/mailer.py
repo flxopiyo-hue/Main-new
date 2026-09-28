@@ -99,7 +99,7 @@ def password_reset_template(*, name: str, web_link: str, deep_link: str) -> tupl
                 <tr>
                   <td style="padding:28px 32px;background:#1F0A08;">
                     <div style="font-family:Georgia,'Times New Roman',serif;font-size:20px;color:#C88A3D;letter-spacing:4px;">OROMONA</div>
-                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;letter-spacing:1.5px;color:rgba(255,247,238,0.7);margin-top:4px;">FASHION · KENYA · FIT ON 1ST TRY</div>
+                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;letter-spacing:1.5px;color:rgba(255,247,238,0.7);margin-top:4px;">FASHION · FIT ON 1ST TRY</div>
                   </td>
                 </tr>
                 <tr>
@@ -122,7 +122,7 @@ def password_reset_template(*, name: str, web_link: str, deep_link: str) -> tupl
                 </tr>
                 <tr>
                   <td style="padding:20px 32px;border-top:1px solid #E7DCC7;font-size:11px;color:#7A6B5A;">
-                    Sent by Oromona · Nairobi. If the button doesn't work, paste this URL into your browser:<br/>
+                    Sent by Oromona. If the button doesn't work, paste this URL into your browser:<br/>
                     <span style="word-break:break-all;color:#3B160F;">{web_link}</span>
                   </td>
                 </tr>
@@ -141,6 +141,105 @@ def password_reset_template(*, name: str, web_link: str, deep_link: str) -> tupl
         f"  {web_link}\n\n"
         f"On your phone? Deep-link into the app: {deep_link}\n\n"
         "Didn't request this? Ignore this email — your password won't change.\n\n"
-        "— Oromona · Nairobi"
+        "— Oromona"
     )
     return html, text
+
+
+# ---------------------------------------------------------------------------
+# Order milestone template (paid / out for delivery / delivered)
+# ---------------------------------------------------------------------------
+def order_update_template(
+    *, kind: str, name: str, item_name: str
+) -> tuple[str, str, str]:
+    """Return (subject, html, text) for a buyer order-milestone email.
+
+    ``kind`` is one of ``paid`` | ``out_for_delivery`` | ``delivered``.
+    Copy is deliberately country-neutral (Oromona is going worldwide).
+    """
+    display_name = (name or "").strip() or "there"
+    item = (item_name or "your item").strip()
+
+    if kind == "paid":
+        subject = "Payment confirmed — your Oromona order is on the way to being packed"
+        headline = "Payment confirmed"
+        lead = (
+            f"We've received your payment for <strong>{item}</strong> and it's "
+            "safely held while the seller prepares your order. We'll email you "
+            "again when it's out for delivery and once it arrives — you can "
+            "track every step inside the app."
+        )
+        text_lead = (
+            f"We've received your payment for {item}. Your money is safely held "
+            "while the seller packs your order. We'll email you when it's out "
+            "for delivery and once it arrives — track it anytime in the app."
+        )
+    elif kind == "out_for_delivery":
+        subject = f"On its way — {item} is out for delivery"
+        headline = "Out for delivery"
+        lead = (
+            f"<strong>{item}</strong> has been picked up and is on its way to "
+            "you. Have your 4-digit handover code ready — you'll find it on "
+            "your order screen in the app. Share it only once the parcel is in "
+            "your hands."
+        )
+        text_lead = (
+            f"{item} has been picked up and is on its way to you. Have your "
+            "4-digit handover code ready (it's on your order screen in the app) "
+            "and share it only once the parcel is in your hands."
+        )
+    else:  # delivered
+        subject = f"Delivered — enjoy your {item}"
+        headline = "Delivered"
+        lead = (
+            f"<strong>{item}</strong> has been delivered. If everything looks "
+            "good you don't need to do a thing. You have 48 hours to confirm "
+            "receipt or report a problem in the app — after that, payment is "
+            "released to the seller automatically."
+        )
+        text_lead = (
+            f"{item} has been delivered. If everything looks good you don't "
+            "need to do anything — you have 48 hours to confirm receipt or "
+            "report a problem in the app before payment is released to the "
+            "seller."
+        )
+
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+      <body style="margin:0;padding:0;background:#FAFAF7;font-family:Georgia,'Times New Roman',serif;color:#1F0A08;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:32px 16px;">
+          <tr>
+            <td align="center">
+              <table role="presentation" width="520" cellspacing="0" cellpadding="0" style="background:#FFF7EE;border:1px solid #E7DCC7;">
+                <tr>
+                  <td style="padding:28px 32px;background:#1F0A08;">
+                    <div style="font-family:Georgia,'Times New Roman',serif;font-size:20px;color:#C88A3D;letter-spacing:4px;">OROMONA</div>
+                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;letter-spacing:1.5px;color:rgba(255,247,238,0.7);margin-top:4px;">FASHION · FIT ON 1ST TRY</div>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:32px;">
+                    <h1 style="margin:0 0 12px 0;font-size:24px;letter-spacing:-0.5px;color:#1F0A08;">{headline}, {display_name}</h1>
+                    <p style="margin:0 0 16px 0;font-size:15px;line-height:22px;color:#3B160F;">{lead}</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:20px 32px;border-top:1px solid #E7DCC7;font-size:11px;color:#7A6B5A;">
+                    Sent by Oromona. You're receiving this because you placed an order in the app.
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+    </html>
+    """.strip()
+
+    text = (
+        f"Hi {display_name},\n\n"
+        f"{text_lead}\n\n"
+        "— Oromona"
+    )
+    return subject, html, text

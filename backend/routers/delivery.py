@@ -285,10 +285,17 @@ async def job_status(
                 "$set": {
                     "status": "shipped",
                     "shipped_at": now,
+                    "out_for_delivery_at": now,
                     "carrier": "Oromona Rider",
                     "tracking_number": f"RIDER-{job_id[:8].upper()}",
                 }
             },
+        )
+        # Buyer email #2 of 3 — a rider picked the item up.
+        from core.notifications import send_order_update
+        await send_order_update(
+            {"id": job["order_id"], "buyer_id": job.get("buyer_id"), "item_name": job.get("item_name")},
+            "out_for_delivery",
         )
     else:  # out_for_delivery
         if job["status"] not in ("picked_up", "accepted"):
@@ -334,6 +341,12 @@ async def deliver_job(
     # Code entry = proof of handover → order delivered + 48h escrow
     # window starts (buyer can still confirm early or dispute).
     await escrow_mod.start_delivery_window(job["order_id"])
+    # Buyer email #3 of 3 — the item was delivered.
+    from core.notifications import send_order_update
+    await send_order_update(
+        {"id": job["order_id"], "buyer_id": job.get("buyer_id"), "item_name": job.get("item_name")},
+        "delivered",
+    )
     # Credit the rider's 90% cut — paid out end-of-day by admin.
     await db.courier_earnings.insert_one(
         {

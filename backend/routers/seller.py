@@ -10,6 +10,7 @@ release timer expires. See `core/escrow.py`.
 from __future__ import annotations
 
 import logging
+import secrets
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -219,6 +220,8 @@ async def seller_orders(
             delivery_fee_cents=int(d.get("delivery_fee_cents") or 0),
             courier_job_id=d.get("courier_job_id"),
             courier_requested_at=d.get("courier_requested_at"),
+            out_for_delivery_at=d.get("out_for_delivery_at"),
+            self_delivery=d.get("self_delivery"),
         )
         for d in docs
     ]
@@ -592,13 +595,71 @@ async def update_fulfillment(
         job = await dlv.create_delivery_job(order, seller=user)
         update["courier_requested_at"] = now
         logger.info("courier job %s opened for order %s", job["id"], order_id)
+    elif body.action == "self_deliver":
+        # "I'll deliver myself" — the seller hand-delivers the parcel.
+        # This does NOT mark the order delivered. It moves it out for
+        # delivery and mints the buyer-visible 4-digit handover code;
+        # the seller enters that code (action="confirm_handover") at the
+        # physical handover, which is the moment delivery is confirmed
+        # and the 48h escrow window starts. No premature payout release.
+        if order.get("courier_job_id"):
+            raise HTTPException(
+                status_code=400,
+                detail="A rider is already handling this delivery",
+            )
+        if current != "in_fulfillment":
+            raise HTTPException(
+                status_code=400,
+                detail="Accept the order first — then choose how it's delivered",
+            )
+        code = order.get("handover_code") or f"{secrets.randbelow(10000):04d}"
+        update["status"] = "shipped"
+        update["self_delivery"] = True
+        update["handover_code"] = code
+        update["shipped_at"] = now
+        update["out_for_delivery_at"] = now
+        update["carrier"] = "Seller delivery"
+    elif body.action == "confirm_handover":
+        # Seller enters the buyer's 4-digit code at handover → delivered.
+        if not order.get("self_delivery"):
+            raise HTTPException(
+                status_code=400,
+                detail="This order isn't a self-delivery",
+            )
+        if current != "shipped" or not order.get("out_for_delivery_at"):
+            raise HTTPException(
+                status_code=400,
+                detail="Mark the order out for delivery before confirming handover",
+            )
+        expected = order.get("handover_code")
+        supplied = (body.code or "").strip()
+        if not expected or supplied != expected:
+            raise HTTPException(
+                status_code=400,
+                detail="Wrong handover code — ask the buyer for the 4-digit code on their order screen.",
+            )
+        # Handover confirmed → delivered + 48h buyer-confirmation window.
+        result = await escrow_mod.start_delivery_window(order_id)
+        update["status"] = "delivered"
+        update["delivered_at"] = result["delivered_at"]
+        update["escrow_release_at"] = result["escrow_release_at"]
+        # Buyer email #3 of 3 — the item was delivered.
+        from core.notifications import send_order_update
+        await send_order_update(order, "delivered")
     elif body.action == "deliver":
-        # Self-shipped orders only — courier deliveries are confirmed by
-        # the rider entering the buyer's 4-digit handover code.
+        # Self-SHIPPED orders only (external carrier with a tracking
+        # number). In-person self-delivery uses self_deliver +
+        # confirm_handover; rider deliveries are confirmed by the
+        # buyer's handover code entered by the rider.
         if order.get("courier_job_id"):
             raise HTTPException(
                 status_code=400,
                 detail="An Oromona rider is delivering this order — delivery is confirmed by the buyer's handover code",
+            )
+        if order.get("self_delivery"):
+            raise HTTPException(
+                status_code=400,
+                detail="Enter the buyer's 4-digit handover code to complete this delivery",
             )
         if current not in ("shipped", "in_fulfillment"):
             raise HTTPException(

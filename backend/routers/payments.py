@@ -635,6 +635,9 @@ async def _on_order_paid(order: Dict[str, Any]) -> None:
             await maybe_verify_seller(order["seller_id"])
         except Exception as e:  # pragma: no cover
             logger.warning("seller verify skipped for %s: %s", order["seller_id"], e)
+    # Buyer email #1 of 3 — payment confirmed (best-effort, never blocks).
+    from core.notifications import send_order_update
+    await send_order_update(order, "paid")
 
 
 # ---------------------------------------------------------------------------

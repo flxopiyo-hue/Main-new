@@ -57,10 +57,13 @@ export function OrderTimeline({ order }: { order: Order }) {
     },
     {
       key: "shipped",
-      label: order.carrier
-        ? `Shipped via ${order.carrier}`
-        : "Shipped",
-      at: order.shipped_at,
+      label:
+        order.out_for_delivery_at && order.status !== "delivered"
+          ? "Out for delivery"
+          : order.carrier
+            ? `Shipped via ${order.carrier}`
+            : "Shipped",
+      at: order.out_for_delivery_at || order.shipped_at,
       icon: "truck",
     },
     {
