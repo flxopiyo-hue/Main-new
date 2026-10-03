@@ -331,3 +331,31 @@ Confirm handover with code → Delivered; escrow stayed `held`, release_at = +48
 NOTE: User will REDEPLOY after the 14-day closed Google Play test — do not deploy
 during the closed test. Also: remove the KES 100 "Payment Review" test item
 (id bc2e940f-10f0-4daa-a72e-6001bf09bd33) once Paystack review is done.
+
+---
+
+## Iteration (Oct 2026) — Delivery UX polish (PREVIEW ONLY)
+Three enhancements on top of the self-delivery handover-code flow:
+1. Buyer alert banner — buyer Orders history (frontend/app/orders/index.tsx) shows a
+   terracotta banner "N order(s) out for delivery — have your handover code ready";
+   tap → opens the order (or Shipped filter). Uses out_for_delivery_at + not delivered/
+   confirmed/disputed.
+2. Self-delivery ETA — seller "I'll deliver myself" now opens SelfDeliverModal with ETA
+   presets (Within 1 hour / 3 hours / Later today / Tomorrow) + custom text. Stored as
+   order.self_delivery_eta; shown to buyer on the order card as "Expected · <eta>".
+   Backend: FulfillmentIn.delivery_eta; seller.py self_deliver persists it; surfaced in
+   OrderOut + OrderDetailOut.
+3. Handover proof photo (optional) — CodeModal (Confirm handover) can attach a photo via
+   camera/gallery (src/lib/images helpers, stored base64 to match the app convention).
+   Backend: FulfillmentIn.proof_photo_b64; seller.py confirm_handover persists
+   order.handover_proof_b64; OrderDetailOut returns it; buyer order detail renders it in a
+   "Handover photo" card after delivery.
+
+Verified: backend persistence (eta + proof) + full seller UI (ETA modal) + buyer UI
+(banner + "Expected · Within 3 hours" + handover code). Proof attach uses camera/gallery
+(native) — display path verified via seeded data.
+
+STILL PENDING (user deferred): remove KES 100 "Payment Review" test item
+(id bc2e940f-10f0-4daa-a72e-6001bf09bd33) — KEEP until user confirms Paystack review done.
+Do NOT deploy during the 14-day closed Google Play test; user will redeploy after.
+

@@ -864,6 +864,8 @@ class OrderOut(BaseModel):
     # ``out_for_delivery_at`` is stamped for BOTH the rider and self paths.
     out_for_delivery_at: Optional[datetime] = None
     self_delivery: Optional[bool] = None
+    # Buyer-facing ETA the seller set when choosing to deliver it themselves.
+    self_delivery_eta: Optional[str] = None
 
 
 class OrderSellerOut(BaseModel):
@@ -891,6 +893,9 @@ class OrderDetailOut(OrderOut):
     # 4-digit code the buyer reads to the rider at handover. Only
     # populated for the BUYER (never for seller/rider responses).
     handover_code: Optional[str] = None
+    # Optional proof-of-handover photo (base64 JPEG) captured by the
+    # seller at a self-delivery handover. Visible to buyer + seller.
+    handover_proof_b64: Optional[str] = None
     # Rider snapshot once a courier job exists.
     courier: Optional[Dict[str, Any]] = None
 
@@ -932,6 +937,11 @@ class FulfillmentIn(BaseModel):
     estimated_delivery_days: Optional[int] = Field(default=None, ge=1, le=5)
     # 4-digit buyer handover code, required for action="confirm_handover".
     code: Optional[str] = Field(default=None, min_length=4, max_length=4)
+    # Self-delivery ETA the buyer sees (action="self_deliver"), e.g.
+    # "Today, 4–6pm" or "Within 3 hours". Optional free text.
+    delivery_eta: Optional[str] = Field(default=None, max_length=80)
+    # Optional base64 JPEG proof-of-handover photo (action="confirm_handover").
+    proof_photo_b64: Optional[str] = None
     note: Optional[str] = Field(default=None, max_length=400)
 
 

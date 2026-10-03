@@ -497,6 +497,8 @@ export interface Order {
   // True when the seller is hand-delivering the parcel themselves
   // (reuses the 4-digit handover code, confirmed by the seller).
   self_delivery?: boolean | null;
+  // Buyer-facing ETA the seller set when choosing self-delivery.
+  self_delivery_eta?: string | null;
 }
 
 export type FitFeedback = "small" | "perfect" | "large";
@@ -522,6 +524,8 @@ export interface OrderDetail extends Order {
   out_for_delivery_at?: string | null;
   // 4-digit code the buyer reads to the rider at handover (buyer-only).
   handover_code?: string | null;
+  // Optional proof-of-handover photo (base64 JPEG) from a self-delivery.
+  handover_proof_b64?: string | null;
   courier?: {
     status: "open" | "accepted" | "picked_up" | "out_for_delivery" | "delivered";
     rider_name?: string | null;
@@ -1106,6 +1110,8 @@ export const api = {
       tracking_url?: string;
       estimated_delivery_days?: number;
       code?: string;
+      delivery_eta?: string;
+      proof_photo_b64?: string;
       note?: string;
     },
   ) =>

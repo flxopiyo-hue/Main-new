@@ -222,6 +222,7 @@ async def seller_orders(
             courier_requested_at=d.get("courier_requested_at"),
             out_for_delivery_at=d.get("out_for_delivery_at"),
             self_delivery=d.get("self_delivery"),
+            self_delivery_eta=d.get("self_delivery_eta"),
         )
         for d in docs
     ]
@@ -619,6 +620,8 @@ async def update_fulfillment(
         update["shipped_at"] = now
         update["out_for_delivery_at"] = now
         update["carrier"] = "Seller delivery"
+        if body.delivery_eta and body.delivery_eta.strip():
+            update["self_delivery_eta"] = body.delivery_eta.strip()
     elif body.action == "confirm_handover":
         # Seller enters the buyer's 4-digit code at handover → delivered.
         if not order.get("self_delivery"):
@@ -643,6 +646,8 @@ async def update_fulfillment(
         update["status"] = "delivered"
         update["delivered_at"] = result["delivered_at"]
         update["escrow_release_at"] = result["escrow_release_at"]
+        if body.proof_photo_b64:
+            update["handover_proof_b64"] = body.proof_photo_b64
         # Buyer email #3 of 3 — the item was delivered.
         from core.notifications import send_order_update
         await send_order_update(order, "delivered")

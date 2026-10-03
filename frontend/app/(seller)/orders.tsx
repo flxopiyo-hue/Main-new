@@ -42,6 +42,11 @@ import { AppInput } from "@/src/components/AppInput";
 import { useToast } from "@/src/components/Toast";
 import { api, Order, OrderStatus } from "@/src/lib/api";
 import { formatPrice } from "@/src/lib/currency";
+import {
+  dataUriFromBase64,
+  pickImageFromCamera,
+  pickImageFromLibrary,
+} from "@/src/lib/images";
 import { colors, fonts, spacing, type as tp } from "@/src/lib/theme";
 
 type FilterKey = "todo" | "all" | "paid" | "in_fulfillment" | "shipped" | "delivered";
@@ -89,6 +94,7 @@ export default function SellerOrders() {
   const [filter, setFilter] = useState<FilterKey>("todo");
   const [shipModal, setShipModal] = useState<ShipModalState>({ open: false, order: null });
   const [codeModal, setCodeModal] = useState<CodeModalState>({ open: false, order: null });
+  const [selfModal, setSelfModal] = useState<CodeModalState>({ open: false, order: null });
 
   const load = useCallback(async () => {
     try {
@@ -156,15 +162,20 @@ export default function SellerOrders() {
 
   // "I'll deliver myself" — marks the parcel out for delivery and mints
   // the buyer's 4-digit handover code. Delivery is only confirmed once
-  // the seller enters that code at handover (see confirmHandover).
-  const selfDeliver = async (order: Order) => {
+  // the seller enters that code at handover (see confirmHandover). The
+  // optional ETA is shown to the buyer so they know when to expect it.
+  const selfDeliver = async (order: Order, eta: string) => {
     setBusyId(order.id);
     try {
-      await api.sellerUpdateFulfillment(order.id, { action: "self_deliver" });
+      await api.sellerUpdateFulfillment(order.id, {
+        action: "self_deliver",
+        delivery_eta: eta.trim() || undefined,
+      });
       toast.show(
         "Out for delivery — enter the buyer's 4-digit code when you hand it over",
         "success",
       );
+      setSelfModal({ open: false, order: null });
       await load();
     } catch (e: any) {
       toast.show(e?.message ?? "Could not update", "error");
@@ -174,11 +185,20 @@ export default function SellerOrders() {
   };
 
   // Seller enters the buyer's 4-digit code at physical handover → the
-  // order becomes delivered and the 48h escrow window starts.
-  const confirmHandover = async (order: Order, code: string) => {
+  // order becomes delivered and the 48h escrow window starts. An optional
+  // proof photo can be attached for extra confirmation.
+  const confirmHandover = async (
+    order: Order,
+    code: string,
+    proofB64: string | null,
+  ) => {
     setBusyId(order.id);
     try {
-      await api.sellerUpdateFulfillment(order.id, { action: "confirm_handover", code });
+      await api.sellerUpdateFulfillment(order.id, {
+        action: "confirm_handover",
+        code,
+        proof_photo_b64: proofB64 || undefined,
+      });
       toast.show(`Delivered "${order.item_name}" — thanks!`, "success");
       setCodeModal({ open: false, order: null });
       await load();
@@ -337,7 +357,7 @@ export default function SellerOrders() {
                 onShip={() => setShipModal({ open: true, order: o })}
                 onDeliver={() => markDelivered(o)}
                 onRequestCourier={() => requestCourier(o)}
-                onSelfDeliver={() => selfDeliver(o)}
+                onSelfDeliver={() => setSelfModal({ open: true, order: o })}
                 onConfirmHandover={() => setCodeModal({ open: true, order: o })}
               />
             ))}
@@ -360,8 +380,17 @@ export default function SellerOrders() {
         state={codeModal}
         busy={!!busyId}
         onCancel={() => setCodeModal({ open: false, order: null })}
-        onSubmit={(code) => {
-          if (codeModal.order) confirmHandover(codeModal.order, code);
+        onSubmit={(code, proof) => {
+          if (codeModal.order) confirmHandover(codeModal.order, code, proof);
+        }}
+      />
+
+      <SelfDeliverModal
+        state={selfModal}
+        busy={!!busyId}
+        onCancel={() => setSelfModal({ open: false, order: null })}
+        onSubmit={(eta) => {
+          if (selfModal.order) selfDeliver(selfModal.order, eta);
         }}
       />
     </SafeAreaView>
@@ -738,13 +767,38 @@ function CodeModal({
   state: CodeModalState;
   busy: boolean;
   onCancel: () => void;
-  onSubmit: (code: string) => void;
+  onSubmit: (code: string, proofB64: string | null) => void;
 }) {
+  const toast = useToast();
   const [code, setCode] = useState("");
+  const [proof, setProof] = useState<string | null>(null);
 
   React.useEffect(() => {
-    if (state.open) setCode("");
+    if (state.open) {
+      setCode("");
+      setProof(null);
+    }
   }, [state.open]);
+
+  const attach = async (fromCamera: boolean) => {
+    try {
+      const picked = fromCamera
+        ? await pickImageFromCamera()
+        : await pickImageFromLibrary();
+      if (!picked) {
+        toast.show(
+          fromCamera
+            ? "Camera access is needed to take a photo"
+            : "Photo access is needed to pick an image",
+          "info",
+        );
+        return;
+      }
+      setProof(picked.base64);
+    } catch {
+      toast.show("Couldn't attach that photo", "error");
+    }
+  };
 
   if (!state.order) return null;
 
@@ -767,6 +821,48 @@ function CodeModal({
             keyboardType="number-pad"
             maxLength={4}
           />
+
+          {/* Optional proof-of-handover photo */}
+          <Text style={[tp.caption, { marginTop: spacing.md, marginBottom: 8 }]}>
+            HANDOVER PHOTO (OPTIONAL)
+          </Text>
+          {proof ? (
+            <View style={styles.proofPreviewRow}>
+              <Image
+                source={{ uri: dataUriFromBase64(proof) }}
+                style={styles.proofThumb}
+                resizeMode="cover"
+              />
+              <TouchableOpacity
+                testID="seller-orders-handover-proof-remove"
+                onPress={() => setProof(null)}
+                style={[styles.actionBtn, styles.actionGhost]}
+              >
+                <Feather name="trash-2" size={14} color={colors.primary} />
+                <Text style={styles.actionGhostLabel}>Remove</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.proofBtnRow}>
+              <TouchableOpacity
+                testID="seller-orders-handover-proof-camera"
+                onPress={() => attach(true)}
+                style={[styles.actionBtn, styles.actionGhost, { flex: 1 }]}
+              >
+                <Feather name="camera" size={14} color={colors.primary} />
+                <Text style={styles.actionGhostLabel}>Take photo</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="seller-orders-handover-proof-gallery"
+                onPress={() => attach(false)}
+                style={[styles.actionBtn, styles.actionGhost, { flex: 1 }]}
+              >
+                <Feather name="image" size={14} color={colors.primary} />
+                <Text style={styles.actionGhostLabel}>Gallery</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           <View style={styles.modalActions}>
             <TouchableOpacity
               testID="seller-orders-handover-cancel"
@@ -779,9 +875,103 @@ function CodeModal({
               <AppButton
                 testID="seller-orders-handover-submit"
                 label="Confirm delivery"
-                onPress={() => onSubmit(code.trim())}
+                onPress={() => onSubmit(code.trim(), proof)}
                 loading={busy}
                 disabled={code.trim().length !== 4 || busy}
+              />
+            </View>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+const ETA_PRESETS = ["Within 1 hour", "Within 3 hours", "Later today", "Tomorrow"];
+
+function SelfDeliverModal({
+  state,
+  busy,
+  onCancel,
+  onSubmit,
+}: {
+  state: CodeModalState;
+  busy: boolean;
+  onCancel: () => void;
+  onSubmit: (eta: string) => void;
+}) {
+  const [eta, setEta] = useState("");
+
+  React.useEffect(() => {
+    if (state.open) setEta("");
+  }, [state.open]);
+
+  if (!state.order) return null;
+
+  return (
+    <Modal visible={state.open} animationType="slide" transparent onRequestClose={onCancel}>
+      <Pressable style={styles.modalBackdrop} onPress={onCancel}>
+        <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+          <View style={styles.modalHandle} />
+          <Text style={[tp.h3, { marginBottom: 6 }]}>Deliver it yourself</Text>
+          <Text style={[tp.bodyMuted, { marginBottom: spacing.md }]}>
+            {state.order.item_name} · Size {state.order.size}. We&apos;ll mark it
+            out for delivery and show the buyer their 4-digit handover code.
+          </Text>
+          <Text style={[tp.caption, { marginBottom: 8 }]}>
+            EXPECTED DELIVERY (OPTIONAL)
+          </Text>
+          <Text style={styles.etaHint}>
+            The buyer sees this so they know when to expect you.
+          </Text>
+          <View style={styles.etaPresetRow}>
+            {ETA_PRESETS.map((p) => {
+              const active = eta === p;
+              return (
+                <TouchableOpacity
+                  key={p}
+                  testID={`seller-self-eta-${p.replace(/\s+/g, "-").toLowerCase()}`}
+                  onPress={() => setEta(active ? "" : p)}
+                  style={[
+                    styles.etaPresetChip,
+                    active ? styles.etaChipActive : styles.etaChipInactive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.etaPresetLabel,
+                      active ? styles.etaLabelActive : styles.etaLabelInactive,
+                    ]}
+                  >
+                    {p}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <AppInput
+            testID="seller-self-eta-custom"
+            label="Or type your own"
+            value={eta}
+            onChangeText={setEta}
+            placeholder="e.g. Today, 4–6pm"
+            maxLength={80}
+          />
+          <View style={styles.modalActions}>
+            <TouchableOpacity
+              testID="seller-self-cancel"
+              onPress={onCancel}
+              style={[styles.modalBtn, styles.modalBtnGhost]}
+            >
+              <Text style={styles.modalGhostLabel}>CANCEL</Text>
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <AppButton
+                testID="seller-self-submit"
+                label="Out for delivery"
+                onPress={() => onSubmit(eta)}
+                loading={busy}
+                disabled={busy}
               />
             </View>
           </View>
@@ -1035,5 +1225,37 @@ const styles = StyleSheet.create({
     fontSize: 12,
     letterSpacing: 1.5,
     color: colors.primary,
+  },
+  proofBtnRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  proofPreviewRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  proofThumb: {
+    width: 72,
+    height: 72,
+    borderRadius: 8,
+    backgroundColor: colors.muted,
+  },
+  etaPresetRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: spacing.md,
+  },
+  etaPresetChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  etaPresetLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 12,
+    letterSpacing: 0.4,
   },
 });

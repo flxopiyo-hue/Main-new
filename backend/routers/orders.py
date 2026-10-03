@@ -63,6 +63,7 @@ def _order_doc_to_out(d: Dict[str, Any]) -> OrderOut:
         courier_requested_at=d.get("courier_requested_at"),
         out_for_delivery_at=d.get("out_for_delivery_at"),
         self_delivery=d.get("self_delivery"),
+        self_delivery_eta=d.get("self_delivery_eta"),
     )
 
 
@@ -179,7 +180,9 @@ async def _order_doc_to_detail(
         delivery_zone_label=d.get("delivery_zone_label"),
         out_for_delivery_at=d.get("out_for_delivery_at"),
         self_delivery=d.get("self_delivery"),
+        self_delivery_eta=d.get("self_delivery_eta"),
         handover_code=d.get("handover_code") if include_code else None,
+        handover_proof_b64=d.get("handover_proof_b64"),
         courier=courier_view,
     )
 

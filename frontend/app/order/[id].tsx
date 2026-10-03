@@ -280,6 +280,16 @@ export default function OrderDetailScreen() {
                                 : "Delivered by Oromona Rider"}
                     </Text>
                   </View>
+                  {order.self_delivery &&
+                  order.self_delivery_eta &&
+                  order.status !== "delivered" ? (
+                    <View style={styles.courierRiderRow}>
+                      <Feather name="clock" size={14} color={colors.mutedFg} />
+                      <Text style={styles.courierRiderName}>
+                        Expected · {order.self_delivery_eta}
+                      </Text>
+                    </View>
+                  ) : null}
                   {order.courier?.rider_name ? (
                     <View style={styles.courierRiderRow}>
                       <Feather name="user" size={14} color={colors.mutedFg} />
@@ -316,6 +326,21 @@ export default function OrderDetailScreen() {
                       </Text>
                     </View>
                   ) : null}
+                </View>
+              ) : null}
+
+              {/* Handover proof photo (self-delivery) */}
+              {order.handover_proof_b64 ? (
+                <View style={styles.proofCard} testID="order-handover-proof">
+                  <View style={styles.trackingHeader}>
+                    <Feather name="camera" size={16} color={colors.primary} />
+                    <Text style={styles.trackingCarrier}>Handover photo</Text>
+                  </View>
+                  <Image
+                    source={{ uri: dataUriFromBase64(order.handover_proof_b64) }}
+                    style={styles.proofImage}
+                    resizeMode="cover"
+                  />
                 </View>
               ) : null}
 
@@ -878,6 +903,20 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     backgroundColor: colors.surface,
     padding: spacing.md,
+  },
+  proofCard: {
+    marginTop: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+  },
+  proofImage: {
+    marginTop: spacing.sm,
+    width: "100%",
+    aspectRatio: 4 / 3,
+    borderRadius: 10,
+    backgroundColor: colors.muted,
   },
   courierRiderRow: {
     flexDirection: "row",

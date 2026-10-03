@@ -112,6 +112,23 @@ export default function OrderHistoryScreen() {
     [orders],
   );
 
+  // Orders currently out for delivery that still need the buyer's
+  // handover code — surfaced as a reminder banner so the buyer has the
+  // code ready when the rider / seller arrives.
+  const outForDelivery = useMemo(
+    () =>
+      orders.filter(
+        (o) =>
+          !!o.out_for_delivery_at &&
+          o.status !== "delivered" &&
+          o.status !== "cancelled" &&
+          o.status !== "failed" &&
+          !o.buyer_confirmed_at &&
+          !o.dispute_raised_at,
+      ),
+    [orders],
+  );
+
   if (loading) {
     return (
       <SafeAreaView style={[styles.root, styles.center]} edges={["top"]}>
@@ -159,6 +176,30 @@ export default function OrderHistoryScreen() {
           </Text>
         </View>
       </View>
+
+      {/* Out-for-delivery reminder — have your handover code ready */}
+      {outForDelivery.length > 0 ? (
+        <TouchableOpacity
+          testID="orders-history-handover-banner"
+          activeOpacity={0.85}
+          onPress={() => {
+            if (outForDelivery.length === 1) {
+              router.push(`/order/${outForDelivery[0].id}`);
+            } else {
+              setFilter("shipped");
+            }
+          }}
+          style={styles.handoverBanner}
+        >
+          <Feather name="truck" size={16} color={colors.primaryFg} />
+          <Text style={styles.handoverBannerText}>
+            {outForDelivery.length === 1
+              ? "1 order is out for delivery — have your 4-digit handover code ready"
+              : `${outForDelivery.length} orders are out for delivery — have your handover codes ready`}
+          </Text>
+          <Feather name="chevron-right" size={16} color={colors.primaryFg} />
+        </TouchableOpacity>
+      ) : null}
 
       {/* Search */}
       <View style={styles.searchRow}>
@@ -353,6 +394,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
+  },
+  handoverBanner: {
+    marginTop: spacing.md,
+    marginHorizontal: spacing.lg,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    backgroundColor: colors.primary,
+  },
+  handoverBannerText: {
+    flex: 1,
+    fontFamily: fonts.bodySemi,
+    fontSize: 12,
+    lineHeight: 16,
+    letterSpacing: 0.3,
+    color: colors.primaryFg,
   },
   searchInput: {
     flex: 1,
