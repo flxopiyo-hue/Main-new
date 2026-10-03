@@ -1,3 +1,29 @@
+# Oromona — LATEST ITERATION (Oct 2026): Delivery map + rating + seller reminder (PREVIEW ONLY)
+
+Three features on top of the self-delivery handover flow (all verified in web preview):
+- Delivery Map: buyer sees seller's APPROXIMATE city area (OSM, keyless) while out for delivery.
+  Backend core/geocode.py (Nominatim, cached in geo_cache). order.seller_geo set on self_deliver +
+  request_courier. Frontend platform-split: SellerMap.native.tsx (webview+Leaflet) / SellerMap.web.tsx
+  (react-leaflet). New deps: leaflet, react-leaflet (installed via `yarn expo install`).
+- Rate Handover: POST /api/orders/{id}/delivery-rating (rating 1-5 + comment). RatingModal prompts
+  after buyer confirm-delivery; rating card shows stars. api.rateDelivery.
+- Seller Reminders: seller orders.tsx banner for self_delivery+shipped+out_for_delivery orders
+  awaiting the handover code.
+
+Files: backend/models.py (GeoPoint, DeliveryRatingIn, OrderDetailOut +seller_geo/delivery_rating),
+backend/core/geocode.py (new), backend/routers/orders.py (delivery-rating endpoint + detail fields),
+backend/routers/seller.py (_maybe_seller_geo on self_deliver/request_courier),
+frontend/src/components/SellerMap.{tsx,native.tsx,web.tsx}, frontend/src/css.d.ts,
+frontend/app/order/[id].tsx (map card + RatingModal + rating card),
+frontend/app/(seller)/orders.tsx (reminder banner), frontend/src/lib/api.ts.
+
+⚠️ LIVE Paystack — new sellers have no recipient_code so confirm-delivery/escrow release moves NO
+money. KEEP the KES 100 "Payment Review" item until Paystack review confirmed. Do NOT deploy during
+the 14-day closed Play test.
+
+---
+
+
 # Oromona — LATEST ITERATION (Sep 2026): Self-delivery handover-code flow + milestone emails
 
 ## What changed (preview only — user will redeploy AFTER the 14-day closed test)

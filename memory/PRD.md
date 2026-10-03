@@ -359,3 +359,31 @@ STILL PENDING (user deferred): remove KES 100 "Payment Review" test item
 (id bc2e940f-10f0-4daa-a72e-6001bf09bd33) — KEEP until user confirms Paystack review done.
 Do NOT deploy during the 14-day closed Google Play test; user will redeploy after.
 
+
+---
+
+## Iteration (Oct 2026) — Delivery map + delivery rating + seller reminder (PREVIEW ONLY)
+1. Delivery Map — buyer sees the seller's APPROXIMATE (city-centre) area on a small map while
+   out for delivery. Keyless: backend core/geocode.py geocodes city/country via OSM Nominatim
+   (cached in geo_cache coll, misses cached too), stamped on the order as seller_geo {lat,lon}
+   during self_deliver + request_courier (seller.py _maybe_seller_geo, best-effort). Frontend
+   map is platform-split: src/components/SellerMap.native.tsx (react-native-webview + Leaflet CDN)
+   + SellerMap.web.tsx (react-leaflet; deps leaflet@1.9.4 + react-leaflet@5). Circle (not a pin) =
+   approximate; "exact location kept private". Shown in order/[id].tsx when isBuyer + seller_geo +
+   out_for_delivery + not delivered/confirmed. NEW dep install used `yarn expo install` (yarn add is
+   guard-blocked). css.d.ts declares "*.css"; SellerMap.tsx is a type-only stub (Metro resolves
+   platform files at build).
+2. Rate Handover — new POST /orders/{id}/delivery-rating (DeliveryRatingIn rating 1-5 + comment);
+   stored delivery_rating/_comment/_rated_at; returned on OrderDetailOut. Buyer prompted via
+   RatingModal right after confirm-delivery; rating card (filled stars, MaterialCommunityIcons)
+   shown once rated. api.rateDelivery.
+3. Seller Reminders — seller orders.tsx banner counting self_delivery + shipped + out_for_delivery
+   orders awaiting the handover code ("N order(s) out for delivery — confirm the handover…", VIEW →
+   shipped filter).
+
+Verified in web preview: map tiles + attribution render ("Coming from Nairobi"); rating modal →
+5-star card; seller reminder banner. Backend: geo stored + cached, rating 200, invalid rating 422.
+NOTE: native map uses react-native-webview (works in Expo Go / builds; web uses react-leaflet).
+Still deferred: KEEP KES 100 "Payment Review" item (id bc2e940f-10f0-4daa-a72e-6001bf09bd33) until
+user confirms Paystack review is done. Do NOT deploy during the 14-day closed Play test.
+

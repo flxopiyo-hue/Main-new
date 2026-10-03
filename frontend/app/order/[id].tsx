@@ -1,6 +1,6 @@
 // Rich, role-aware order detail screen with post-purchase fit feedback step.
 
-import { Feather } from "@expo/vector-icons";
+import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -20,6 +20,7 @@ import {
 import * as Clipboard from "expo-clipboard";
 
 import { OrderTimeline } from "@/src/components/OrderTimeline";
+import SellerMap from "@/src/components/SellerMap";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -64,6 +65,8 @@ export default function OrderDetailScreen() {
   const [reportOpen, setReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState("");
   const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [ratingOpen, setRatingOpen] = useState(false);
+  const [ratingSubmitting, setRatingSubmitting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const pollTimer = useRef<any>(null);
 
@@ -126,6 +129,24 @@ export default function OrderDetailScreen() {
       setRefreshing(false);
     }
   }, [load]);
+
+  const submitRating = async (rating: number, comment: string) => {
+    if (!order) return;
+    setRatingSubmitting(true);
+    try {
+      const updated = await api.rateDelivery(order.id, {
+        rating,
+        comment: comment.trim() ? comment.trim() : undefined,
+      });
+      setOrder(updated);
+      setRatingOpen(false);
+      toast.show("Thanks for rating your delivery!", "success");
+    } catch (e: any) {
+      toast.show(e?.message ?? "Couldn't submit rating", "error");
+    } finally {
+      setRatingSubmitting(false);
+    }
+  };
 
   const submitReport = async () => {
     if (!order) return;
@@ -329,6 +350,28 @@ export default function OrderDetailScreen() {
                 </View>
               ) : null}
 
+              {/* Approximate delivery location map (out for delivery) */}
+              {isBuyer &&
+              order.seller_geo &&
+              order.out_for_delivery_at &&
+              order.status !== "delivered" &&
+              !order.buyer_confirmed_at ? (
+                <View style={styles.mapCard} testID="order-delivery-map">
+                  <View style={styles.trackingHeader}>
+                    <Feather name="map-pin" size={16} color={colors.primary} />
+                    <Text style={styles.trackingCarrier}>
+                      Coming from {order.seller?.location?.city || "the seller"}
+                    </Text>
+                  </View>
+                  <View style={styles.mapFrame}>
+                    <SellerMap lat={order.seller_geo.lat} lon={order.seller_geo.lon} />
+                  </View>
+                  <Text style={styles.mapHint}>
+                    Approximate area only — exact location is kept private.
+                  </Text>
+                </View>
+              ) : null}
+
               {/* Handover proof photo (self-delivery) */}
               {order.handover_proof_b64 ? (
                 <View style={styles.proofCard} testID="order-handover-proof">
@@ -415,6 +458,7 @@ export default function OrderDetailScreen() {
                               const updated = await api.confirmDelivery(order.id);
                               setOrder(updated);
                               toast.show("Payment released to seller — thanks!", "success");
+                              if (!updated.delivery_rating) setRatingOpen(true);
                             } catch (e: any) {
                               toast.show(e?.message ?? "Couldn't confirm", "error");
                             }
@@ -491,6 +535,42 @@ export default function OrderDetailScreen() {
                     })}
                   </Text>
                 </View>
+              ) : null}
+
+              {/* Delivery rating (after delivered / confirmed) */}
+              {isBuyer &&
+              (order.buyer_confirmed_at || order.status === "delivered") ? (
+                order.delivery_rating ? (
+                  <View style={styles.rateCard} testID="order-delivery-rating-done">
+                    <Text style={styles.rateDoneLabel}>YOUR DELIVERY RATING</Text>
+                    <View style={styles.starRow}>
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <MaterialCommunityIcons
+                          key={n}
+                          name={n <= (order.delivery_rating || 0) ? "star" : "star-outline"}
+                          size={22}
+                          color={n <= (order.delivery_rating || 0) ? colors.primary : colors.border}
+                        />
+                      ))}
+                    </View>
+                    {order.delivery_rating_comment ? (
+                      <Text style={styles.rateComment}>
+                        “{order.delivery_rating_comment}”
+                      </Text>
+                    ) : null}
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    testID="order-rate-delivery-btn"
+                    style={styles.rateCta}
+                    activeOpacity={0.85}
+                    onPress={() => setRatingOpen(true)}
+                  >
+                    <Feather name="star" size={16} color={colors.primary} />
+                    <Text style={styles.rateCtaLabel}>Rate your delivery experience</Text>
+                    <Feather name="chevron-right" size={16} color={colors.primary} />
+                  </TouchableOpacity>
+                )
               ) : null}
             </View>
           ) : null}
@@ -709,7 +789,102 @@ export default function OrderDetailScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <RatingModal
+        visible={ratingOpen}
+        submitting={ratingSubmitting}
+        onClose={() => setRatingOpen(false)}
+        onSubmit={submitRating}
+      />
     </SafeAreaView>
+  );
+}
+
+function RatingModal({
+  visible,
+  submitting,
+  onClose,
+  onSubmit,
+}: {
+  visible: boolean;
+  submitting: boolean;
+  onClose: () => void;
+  onSubmit: (rating: number, comment: string) => void;
+}) {
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState("");
+
+  useEffect(() => {
+    if (visible) {
+      setRating(0);
+      setComment("");
+    }
+  }, [visible]);
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={reportStyles.backdrop} onPress={onClose}>
+        <Pressable style={reportStyles.sheet} onPress={() => {}}>
+          <View style={reportStyles.header}>
+            <MaterialCommunityIcons name="star" size={20} color={colors.primary} />
+            <Text style={reportStyles.title}>Rate your delivery</Text>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+              <Feather name="x" size={20} color={colors.primary} />
+            </TouchableOpacity>
+          </View>
+          <Text style={reportStyles.body}>
+            How smooth was getting your item — speed, communication and handover?
+          </Text>
+          <View style={ratingStyles.pickRow}>
+            {[1, 2, 3, 4, 5].map((n) => (
+              <TouchableOpacity
+                key={n}
+                testID={`order-rating-star-${n}`}
+                onPress={() => setRating(n)}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              >
+                <MaterialCommunityIcons
+                  name={n <= rating ? "star" : "star-outline"}
+                  size={38}
+                  color={n <= rating ? colors.primary : colors.border}
+                />
+              </TouchableOpacity>
+            ))}
+          </View>
+          <TextInput
+            testID="order-rating-comment"
+            placeholder="Add a note (optional)…"
+            placeholderTextColor={colors.mutedFg}
+            value={comment}
+            onChangeText={setComment}
+            style={reportStyles.input}
+            maxLength={600}
+            multiline
+          />
+          <View style={reportStyles.actions}>
+            <TouchableOpacity onPress={onClose} style={[reportStyles.btn, reportStyles.btnGhost]}>
+              <Text style={reportStyles.btnGhostLabel}>Not now</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="order-rating-submit"
+              onPress={() => onSubmit(rating, comment)}
+              disabled={submitting || rating < 1}
+              style={[
+                reportStyles.btn,
+                ratingStyles.btnPrimary,
+                submitting || rating < 1 ? reportStyles.btnDisabled : null,
+              ]}
+            >
+              {submitting ? (
+                <ActivityIndicator size="small" color={colors.primaryFg} />
+              ) : (
+                <Text style={ratingStyles.btnPrimaryLabel}>Submit rating</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -918,6 +1093,69 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: colors.muted,
   },
+  mapCard: {
+    marginTop: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+  },
+  mapFrame: {
+    marginTop: spacing.sm,
+    height: 170,
+    borderRadius: 10,
+    overflow: "hidden",
+    backgroundColor: colors.muted,
+  },
+  mapHint: {
+    marginTop: 8,
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: colors.mutedFg,
+  },
+  rateCard: {
+    marginTop: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+  },
+  rateDoneLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 11,
+    letterSpacing: 1.2,
+    color: colors.mutedFg,
+    marginBottom: 8,
+  },
+  starRow: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  rateComment: {
+    marginTop: 10,
+    fontFamily: fonts.body,
+    fontSize: 13,
+    fontStyle: "italic",
+    color: colors.text,
+  },
+  rateCta: {
+    marginTop: spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.surface,
+  },
+  rateCtaLabel: {
+    flex: 1,
+    fontFamily: fonts.bodySemi,
+    fontSize: 13,
+    letterSpacing: 0.3,
+    color: colors.primary,
+  },
   courierRiderRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1042,6 +1280,25 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
 });
+
+const ratingStyles = StyleSheet.create({
+  pickRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 10,
+    marginVertical: spacing.md,
+  },
+  btnPrimary: {
+    backgroundColor: colors.primary,
+  },
+  btnPrimaryLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 13,
+    letterSpacing: 0.5,
+    color: colors.primaryFg,
+  },
+});
+
 
 const reportStyles = StyleSheet.create({
   backdrop: {

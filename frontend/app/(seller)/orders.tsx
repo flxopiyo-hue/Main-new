@@ -132,6 +132,19 @@ export default function SellerOrders() {
     return out;
   }, [orders]);
 
+  // Self-delivery orders still out for delivery (seller hasn't entered the
+  // buyer's handover code yet) — surfaced as a gentle reminder to confirm.
+  const awaitingHandover = useMemo(
+    () =>
+      orders.filter(
+        (o) =>
+          !!o.self_delivery &&
+          o.status === "shipped" &&
+          !!o.out_for_delivery_at,
+      ),
+    [orders],
+  );
+
   const acknowledge = async (order: Order) => {
     setBusyId(order.id);
     try {
@@ -296,6 +309,26 @@ export default function SellerOrders() {
               style={styles.newOrderCta}
             >
               <Text style={styles.newOrderCtaLabel}>OPEN</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {/* Gentle reminder — self-deliveries awaiting the handover code. */}
+        {awaitingHandover.length > 0 ? (
+          <View style={styles.handoverReminder} testID="seller-orders-handover-reminder">
+            <Feather name="clock" size={14} color={colors.primary} />
+            <Text style={styles.handoverReminderLabel}>
+              {awaitingHandover.length === 1
+                ? "1 order is out for delivery — confirm the handover once you've dropped it off"
+                : `${awaitingHandover.length} orders are out for delivery — confirm each handover once dropped off`}
+            </Text>
+            <TouchableOpacity
+              testID="seller-orders-handover-reminder-jump"
+              onPress={() => setFilter("shipped")}
+              activeOpacity={0.85}
+              style={styles.handoverReminderCta}
+            >
+              <Text style={styles.handoverReminderCtaLabel}>VIEW</Text>
             </TouchableOpacity>
           </View>
         ) : null}
@@ -1024,6 +1057,37 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 1.5,
     color: colors.primary,
+  },
+  handoverReminder: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.surface,
+  },
+  handoverReminderLabel: {
+    flex: 1,
+    fontFamily: fonts.bodySemi,
+    fontSize: 12,
+    lineHeight: 16,
+    letterSpacing: 0.3,
+    color: colors.primary,
+  },
+  handoverReminderCta: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: colors.primary,
+  },
+  handoverReminderCtaLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 11,
+    letterSpacing: 1.5,
+    color: colors.primaryFg,
   },
   filterChip: {
     paddingHorizontal: 12,

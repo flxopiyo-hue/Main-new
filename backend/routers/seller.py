@@ -510,6 +510,18 @@ async def update_seller_profile(
 # ---------------------------------------------------------------------------
 # Fulfillment workflow
 # ---------------------------------------------------------------------------
+async def _maybe_seller_geo(user: Dict[str, Any]) -> Optional[Dict[str, float]]:
+    """Best-effort approximate coordinates for the seller's city, used to
+    show a small delivery map to the buyer. Never raises."""
+    try:
+        from core.geocode import approx_location
+
+        loc = (user or {}).get("location") or {}
+        return await approx_location(loc.get("city"), loc.get("country"))
+    except Exception:  # pragma: no cover — best effort
+        return None
+
+
 # State machine (any allowed transition; we never auto-revert):
 #   paid               → in_fulfillment (action="acknowledge")
 #   paid|in_fulfillment → shipped       (action="ship",      requires tracking_number)
@@ -595,6 +607,9 @@ async def update_fulfillment(
 
         job = await dlv.create_delivery_job(order, seller=user)
         update["courier_requested_at"] = now
+        geo = await _maybe_seller_geo(user)
+        if geo:
+            update["seller_geo"] = geo
         logger.info("courier job %s opened for order %s", job["id"], order_id)
     elif body.action == "self_deliver":
         # "I'll deliver myself" — the seller hand-delivers the parcel.
@@ -622,6 +637,9 @@ async def update_fulfillment(
         update["carrier"] = "Seller delivery"
         if body.delivery_eta and body.delivery_eta.strip():
             update["self_delivery_eta"] = body.delivery_eta.strip()
+        geo = await _maybe_seller_geo(user)
+        if geo:
+            update["seller_geo"] = geo
     elif body.action == "confirm_handover":
         # Seller enters the buyer's 4-digit code at handover → delivered.
         if not order.get("self_delivery"):

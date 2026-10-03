@@ -526,6 +526,11 @@ export interface OrderDetail extends Order {
   handover_code?: string | null;
   // Optional proof-of-handover photo (base64 JPEG) from a self-delivery.
   handover_proof_b64?: string | null;
+  // Approximate seller area (city-centre) for the small delivery map.
+  seller_geo?: { lat: number; lon: number } | null;
+  // Buyer's post-delivery rating of the delivery experience (1-5).
+  delivery_rating?: number | null;
+  delivery_rating_comment?: string | null;
   courier?: {
     status: "open" | "accepted" | "picked_up" | "out_for_delivery" | "delivered";
     rider_name?: string | null;
@@ -1169,6 +1174,8 @@ export const api = {
     }),
   confirmDelivery: (id: string) =>
     request<OrderDetail>(`/orders/${id}/confirm-delivery`, { method: "POST" }),
+  rateDelivery: (id: string, body: { rating: number; comment?: string }) =>
+    request<OrderDetail>(`/orders/${id}/delivery-rating`, { method: "POST", body }),
   reportProblem: (id: string, reason: string) =>
     request<OrderDetail>(`/orders/${id}/report-problem`, {
       method: "POST",

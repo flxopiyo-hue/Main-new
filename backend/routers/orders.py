@@ -14,6 +14,7 @@ from core.config import PLATFORM_FEE_BPS
 from core.db import db
 from core.security import get_current_user
 from models import (
+    DeliveryRatingIn,
     FitFeedbackIn,
     OrderDetailOut,
     OrderOut,
@@ -183,6 +184,9 @@ async def _order_doc_to_detail(
         self_delivery_eta=d.get("self_delivery_eta"),
         handover_code=d.get("handover_code") if include_code else None,
         handover_proof_b64=d.get("handover_proof_b64"),
+        seller_geo=d.get("seller_geo"),
+        delivery_rating=d.get("delivery_rating"),
+        delivery_rating_comment=d.get("delivery_rating_comment"),
         courier=courier_view,
     )
 
@@ -236,6 +240,35 @@ async def submit_fit_feedback(
     fresh = await db.orders.find_one({"id": order_id}, {"_id": 0})
     return await _order_doc_to_detail(fresh, include_code=True)
 
+
+
+@router.post("/orders/{order_id}/delivery-rating", response_model=OrderDetailOut)
+async def rate_delivery(
+    order_id: str,
+    body: DeliveryRatingIn,
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> OrderDetailOut:
+    """Buyer rates the delivery experience (1-5 stars) after the item has
+    been delivered / they've confirmed receipt."""
+    order = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order["buyer_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Not your order")
+    if not order.get("buyer_confirmed_at") and order.get("status") != "delivered":
+        raise HTTPException(
+            status_code=400,
+            detail="You can rate the delivery once the order is delivered",
+        )
+    set_doc: Dict[str, Any] = {
+        "delivery_rating": body.rating,
+        "delivery_rated_at": datetime.now(timezone.utc),
+    }
+    if body.comment is not None and body.comment.strip():
+        set_doc["delivery_rating_comment"] = body.comment.strip()
+    await db.orders.update_one({"id": order_id}, {"$set": set_doc})
+    fresh = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    return await _order_doc_to_detail(fresh, include_code=True)
 
 
 # ---------------------------------------------------------------------------

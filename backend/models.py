@@ -814,6 +814,13 @@ class LookCheckoutIn(BaseModel):
     origin_url: Optional[str] = None
 
 
+class GeoPoint(BaseModel):
+    """Approximate lat/lon (city-centre level) for a small delivery map."""
+
+    lat: float
+    lon: float
+
+
 class OrderOut(BaseModel):
     id: str
     buyer_id: str
@@ -896,12 +903,26 @@ class OrderDetailOut(OrderOut):
     # Optional proof-of-handover photo (base64 JPEG) captured by the
     # seller at a self-delivery handover. Visible to buyer + seller.
     handover_proof_b64: Optional[str] = None
+    # Approximate seller area (city centre, keyless OSM geocode) shown on a
+    # small map while the order is out for delivery. Never a precise address.
+    seller_geo: Optional[GeoPoint] = None
+    # Buyer's post-delivery rating of the delivery experience (1-5).
+    delivery_rating: Optional[int] = None
+    delivery_rating_comment: Optional[str] = None
     # Rider snapshot once a courier job exists.
     courier: Optional[Dict[str, Any]] = None
 
 
 class FitFeedbackIn(BaseModel):
     fit: FitFeedback
+    comment: Optional[str] = Field(default=None, max_length=600)
+
+
+class DeliveryRatingIn(BaseModel):
+    """Body for `POST /orders/{id}/delivery-rating` — buyer rates the
+    delivery experience (1-5 stars) after receiving the item."""
+
+    rating: int = Field(ge=1, le=5)
     comment: Optional[str] = Field(default=None, max_length=600)
 
 
