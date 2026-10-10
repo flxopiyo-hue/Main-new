@@ -60,7 +60,16 @@
       "expo-image",
       "expo-secure-store",
       "expo-sharing",
-      "expo-status-bar"
+      "expo-status-bar",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
