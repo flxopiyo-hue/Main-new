@@ -9,6 +9,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
 
@@ -131,6 +132,23 @@ export default function AdminDashboard() {
           </View>
         </View>
 
+        <TouchableOpacity
+          testID="admin-feedback-link"
+          onPress={() => router.push("/admin/feedback")}
+          activeOpacity={0.85}
+          style={styles.feedbackLink}
+        >
+          <Feather name="message-square" size={22} color={colors.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={tp.caption}>Tester voices</Text>
+            <Text style={[tp.h3, { marginTop: 2 }]}>User feedback</Text>
+            <Text style={[tp.bodyMuted, { marginTop: 2 }]}>
+              Read what testers are reporting during closed testing
+            </Text>
+          </View>
+          <Feather name="chevron-right" size={20} color={colors.mutedFg} />
+        </TouchableOpacity>
+
         <View style={styles.section}>
           <Text style={[tp.caption, { marginBottom: spacing.md }]}>Top sellers</Text>
           {data.top_sellers.length === 0 ? (
@@ -212,6 +230,16 @@ const styles = StyleSheet.create({
   },
   statValue: { fontFamily: fonts.bodySemi, fontSize: 18, color: colors.primaryFg, marginTop: 4 },
   section: { marginTop: spacing.xl },
+  feedbackLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    marginTop: spacing.lg,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
   sellerRow: {
     flexDirection: "row",
     alignItems: "center",

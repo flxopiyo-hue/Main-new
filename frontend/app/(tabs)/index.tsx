@@ -63,6 +63,10 @@ export default function Discover() {
   const toast = useToast();
   const [items, setItems] = useState<Item[]>([]);
   const [collections, setCollections] = useState<Collection[]>([]);
+  // Responsive grid: measure the list width so tablets / unfolded foldables
+  // show 3 columns while phones stay at 2.
+  const [gridW, setGridW] = useState(0);
+  const numColumns = gridW >= 620 ? 3 : 2;
   const [category, setCategory] = useState<string | null>(null);
   const [sizeFilter, setSizeFilter] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
@@ -248,7 +252,7 @@ export default function Discover() {
     };
   }, [items, user?.role]);
 
-  const renderItem = ({ item, index }: { item: Item; index: number }) => {
+  const renderItem = ({ item }: { item: Item }) => {
     const totalQty = itemTotalQty(item);
     const outOfStock = totalQty === 0;
     // Show the low-stock urgency pill when 1–5 units remain so buyers see
@@ -260,7 +264,7 @@ export default function Discover() {
         testID={`item-card-${item.id}`}
         activeOpacity={0.85}
         onPress={() => router.push(`/item/${item.id}`)}
-        style={[styles.card, index % 2 === 0 ? styles.cardLeft : styles.cardRight]}
+        style={styles.card}
       >
         <View style={styles.cardImageWrap}>
           <Image
@@ -565,10 +569,11 @@ export default function Discover() {
           data={items}
           keyExtractor={(i) => i.id}
           renderItem={renderItem}
-          numColumns={2}
-          // numColumns is fixed at 2; key only needs to change if we ever
-          // switched between grid and list. Keep stable to avoid full re-mount.
-          key="discover-grid-2col"
+          onLayout={(e) => setGridW(e.nativeEvent.layout.width)}
+          numColumns={numColumns}
+          // Remount only when the column count actually changes (phone↔tablet).
+          key={`discover-grid-${numColumns}col`}
+          columnWrapperStyle={styles.gridRow}
           contentContainerStyle={
             items.length === 0 ? styles.emptyListContent : styles.listContent
           }
@@ -846,8 +851,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
     backgroundColor: colors.surface,
   },
-  cardLeft: { marginLeft: spacing.lg, marginRight: spacing.sm / 2 },
-  cardRight: { marginLeft: spacing.sm / 2, marginRight: spacing.lg },
+  gridRow: { gap: spacing.md, paddingHorizontal: spacing.lg },
   cardImage: { width: "100%", aspectRatio: 3 / 4, backgroundColor: colors.muted },
   cardImageWrap: { position: "relative" },
   cardHeart: { position: "absolute", top: 8, right: 8 },

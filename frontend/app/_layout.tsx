@@ -125,7 +125,7 @@ const styles = StyleSheet.create({
   frame: {
     flex: 1,
     width: "100%",
-    maxWidth: 560,
+    maxWidth: 760,
     backgroundColor: colors.background,
     alignSelf: "center",
     overflow: "hidden",

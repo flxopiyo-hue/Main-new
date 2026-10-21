@@ -416,3 +416,26 @@ then re-apply.
 Still deferred: KEEP KES 100 "Payment Review" item (bc2e940f-10f0-4daa-a72e-6001bf09bd33) until
 Paystack review confirmed. Do NOT deploy during the closed test; user rebuilds after.
 
+
+---
+
+## Iteration (Oct 2026) — In-app feedback + tablet polish (PREVIEW ONLY)
+1. In-App Feedback — any signed-in user sends feedback from Profile → "Send Feedback" modal.
+   Backend: NEW routers/feedback.py: POST /api/feedback (auth) stores to `feedback` coll + best-effort
+   email to env FEEDBACK_NOTIFY_EMAIL if set; GET /api/admin/feedback (require_admin). Registered in
+   server.py. Frontend: api.sendFeedback + api.adminListFeedback + FeedbackEntry type;
+   app/(tabs)/profile.tsx modal; NEW app/admin/feedback.tsx inbox screen + dashboard quick-link in
+   app/admin/index.tsx (admin bottom bar already full at 6 tabs, so reached via dashboard card).
+   Verified: submit 201, admin list returns it (count=1).
+2. Tablet Polish — app/_layout.tsx letterbox maxWidth 560 → 760 (native large screens). Home grid
+   app/(tabs)/index.tsx now responsive: measures list width via onLayout, numColumns = w>=620 ? 3 : 2,
+   key per column count, columnWrapperStyle gridRow {gap, paddingHorizontal}; removed the old
+   index%2 cardLeft/cardRight margins. Item page needed no change — hero already caps at
+   winHeight*0.55 and the 760 letterbox makes it a clean centered PDP. Verified on web: 3-col grid at
+   800px, 2-col on phone.
+
+Play Console config fixes from previous iteration remain (obfuscation via expo-build-properties,
+orientation "default", native letterbox). All PREVIEW ONLY — user rebuilds after the 14-day closed
+Play test. STILL deferred: KEEP KES 100 "Payment Review" item (bc2e940f-...) until Paystack review
+confirmed.
+

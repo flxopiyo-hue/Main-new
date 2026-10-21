@@ -786,6 +786,18 @@ export interface AdminAnalytics {
   top_sellers: { seller_id: string; name: string; revenue_cents: number; orders: number }[];
 }
 
+export interface FeedbackEntry {
+  id: string;
+  email?: string | null;
+  role?: string | null;
+  full_name?: string | null;
+  message: string;
+  category?: string | null;
+  platform?: string | null;
+  app_version?: string | null;
+  created_at: string;
+}
+
 async function getToken(): Promise<string | null> {
   return storage.secureGet<string>(TOKEN_KEY, "");
 }
@@ -1176,6 +1188,12 @@ export const api = {
     request<OrderDetail>(`/orders/${id}/confirm-delivery`, { method: "POST" }),
   rateDelivery: (id: string, body: { rating: number; comment?: string }) =>
     request<OrderDetail>(`/orders/${id}/delivery-rating`, { method: "POST", body }),
+  sendFeedback: (body: {
+    message: string;
+    category?: string;
+    app_version?: string;
+    platform?: string;
+  }) => request<{ id: string }>(`/feedback`, { method: "POST", body }),
   reportProblem: (id: string, reason: string) =>
     request<OrderDetail>(`/orders/${id}/report-problem`, {
       method: "POST",
@@ -1353,6 +1371,7 @@ export const api = {
 
   // Admin
   adminAnalytics: () => request<AdminAnalytics>("/admin/analytics"),
+  adminListFeedback: () => request<FeedbackEntry[]>("/admin/feedback"),
   adminListUsers: (params: { role?: Role; suspended?: boolean; q?: string } = {}) => {
     const qs = new URLSearchParams();
     if (params.role) qs.append("role", params.role);

@@ -5,10 +5,13 @@ import {
   ActivityIndicator,
   Image,
   Linking,
+  Modal,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -41,6 +44,30 @@ export default function Profile() {
   const [currencyPickerOpen, setCurrencyPickerOpen] = useState(false);
   const [savingCurrency, setSavingCurrency] = useState<CurrencyCode | null>(null);
   const [switching, setSwitching] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackText, setFeedbackText] = useState("");
+  const [feedbackSending, setFeedbackSending] = useState(false);
+
+  const submitAppFeedback = async () => {
+    const message = feedbackText.trim();
+    if (message.length < 3) return;
+    setFeedbackSending(true);
+    try {
+      await api.sendFeedback({
+        message,
+        category: "app",
+        platform: Platform.OS,
+        app_version: "1.0.8",
+      });
+      setFeedbackOpen(false);
+      setFeedbackText("");
+      toast.show("Thanks — your feedback was sent!", "success");
+    } catch (e: any) {
+      toast.show(e?.message ?? "Couldn't send feedback", "error");
+    } finally {
+      setFeedbackSending(false);
+    }
+  };
 
   // Tap "Switch to Seller Mode". If the user has never been a seller we
   // route them through the 1-screen onboarding to capture company + city.
@@ -603,6 +630,21 @@ export default function Profile() {
           style={{ marginHorizontal: spacing.lg, marginTop: spacing.lg }}
         />
         <TouchableOpacity
+          testID="profile-send-feedback-btn"
+          onPress={() => setFeedbackOpen(true)}
+          style={styles.supportRow}
+          accessibilityLabel="Send feedback to Oromona"
+        >
+          <Feather name="message-square" size={16} color={colors.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.supportLabel}>Send Feedback</Text>
+            <Text style={styles.supportHint}>
+              Tell us what you love or what&apos;s broken — it goes straight to the team.
+            </Text>
+          </View>
+          <Feather name="chevron-right" size={18} color={colors.mutedFg} />
+        </TouchableOpacity>
+        <TouchableOpacity
           testID="profile-contact-support-btn"
           onPress={async () => {
             const url =
@@ -649,6 +691,51 @@ export default function Profile() {
         </TouchableOpacity>
         <View style={{ height: spacing.xxl }} />
       </ScrollView>
+
+      <Modal
+        visible={feedbackOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFeedbackOpen(false)}
+      >
+        <Pressable style={styles.fbBackdrop} onPress={() => setFeedbackOpen(false)}>
+          <Pressable style={styles.fbSheet} onPress={() => {}}>
+            <View style={styles.fbHeader}>
+              <Feather name="message-square" size={18} color={colors.primary} />
+              <Text style={[tp.h3, { flex: 1 }]}>Send feedback</Text>
+              <TouchableOpacity
+                testID="profile-feedback-close"
+                onPress={() => setFeedbackOpen(false)}
+                hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+              >
+                <Feather name="x" size={20} color={colors.primary} />
+              </TouchableOpacity>
+            </View>
+            <Text style={[tp.bodyMuted, { marginBottom: spacing.md }]}>
+              Bugs, ideas, or anything that felt off — we read every message.
+            </Text>
+            <TextInput
+              testID="profile-feedback-input"
+              value={feedbackText}
+              onChangeText={setFeedbackText}
+              placeholder="What's on your mind?"
+              placeholderTextColor={colors.mutedFg}
+              style={styles.fbInput}
+              multiline
+              maxLength={2000}
+              autoFocus
+            />
+            <AppButton
+              testID="profile-feedback-submit"
+              label="Send feedback"
+              onPress={submitAppFeedback}
+              loading={feedbackSending}
+              disabled={feedbackText.trim().length < 3 || feedbackSending}
+              style={{ marginTop: spacing.md }}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -673,6 +760,34 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
+  fbBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(10,10,10,0.5)",
+    justifyContent: "center",
+    padding: 24,
+  },
+  fbSheet: {
+    backgroundColor: colors.background,
+    borderRadius: 18,
+    padding: 20,
+  },
+  fbHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 8,
+  },
+  fbInput: {
+    minHeight: 120,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+    fontFamily: fonts.body,
+    fontSize: 14,
+    color: colors.primary,
+    textAlignVertical: "top",
+  },
   deleteAccountBtn: {
     flexDirection: "row",
     alignItems: "center",
