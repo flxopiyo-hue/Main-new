@@ -387,3 +387,32 @@ NOTE: native map uses react-native-webview (works in Expo Go / builds; web uses 
 Still deferred: KEEP KES 100 "Payment Review" item (id bc2e940f-10f0-4daa-a72e-6001bf09bd33) until
 user confirms Paystack review is done. Do NOT deploy during the 14-day closed Play test.
 
+
+---
+
+## Iteration (Oct 2026) — Google Play config fixes + large-screen support (PREVIEW ONLY, next build)
+Play Console flagged items on build 119 (1.0.8). Fixes applied in preview (NOT rebuilt/deployed —
+user is mid closed test):
+- Obfuscation / "DEX code optimisation below threshold" (was 1%): added `expo-build-properties`
+  plugin in app.json with android enableProguardInReleaseBuilds + enableShrinkResourcesInReleaseBuilds
+  (R8). AAB will carry mapping.txt automatically. Effective on NEXT build. Test the obfuscated build
+  for reflection crashes (missing_rules.txt → add -keep if needed).
+- Edge-to-edge deprecated APIs: no code change needed — current config already has
+  android.edgeToEdgeEnabled:true and there are NO deprecated StatusBar.setBackgroundColor/
+  setNavigationBarColor/setStatusBarTranslucent calls in app/src. The warning was from old build 119;
+  clears on next SDK 57 build.
+- Large-screen resizability/orientation (user chose: SUPPORT tablets/foldables):
+  app.json orientation "portrait" → "default" (removes the android:screenOrientation lock Google
+  flags; app is now resizable). app/_layout.tsx adds a NATIVE-ONLY letterbox: when
+  Platform.OS!=="web" && width>=700, the phone-first UI is centred in a maxWidth:560 column over a
+  colors.muted backdrop (styles.letterbox/frame) so nothing stretches on tablets/foldables. Phones
+  (<700dp) and the web build are untouched. Letterbox only visible on a real device/tablet build.
+
+Production-access denial ("More testing required"): PURELY a Google Play process matter (tester
+engagement + iteration), relayed via support_agent — NOT a code issue. Guidance: run closed test a
+full 14 days with 12 real ACTIVE testers, add a feedback loop, ship 1-2 updates during the test,
+then re-apply.
+
+Still deferred: KEEP KES 100 "Payment Review" item (bc2e940f-10f0-4daa-a72e-6001bf09bd33) until
+Paystack review confirmed. Do NOT deploy during the closed test; user rebuilds after.
+

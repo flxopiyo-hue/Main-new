@@ -2,7 +2,7 @@ import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { StyleSheet, View, Platform, useWindowDimensions } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -49,6 +49,11 @@ export default function RootLayout() {
   const [iconsLoaded, iconsError] = useIconFonts();
   const [fontsLoaded, fontsError] = useFonts(FONT_MAP);
   const [timedOut, setTimedOut] = useState(false);
+  // On large NATIVE screens (tablets / unfolded foldables) centre the
+  // phone-first UI in a comfortable column instead of stretching it edge
+  // to edge. Phones (<700dp) and the web build are left untouched.
+  const { width } = useWindowDimensions();
+  const isLargeNative = Platform.OS !== "web" && width >= 700;
 
   useEffect(() => {
     const handle = setTimeout(() => setTimedOut(true), FONT_READY_TIMEOUT_MS);
@@ -91,12 +96,16 @@ export default function RootLayout() {
                   <ToastProvider>
                     <View style={styles.root}>
                       <StatusBar style="dark" />
-                      <Stack
-                        screenOptions={{
-                          headerShown: false,
-                          contentStyle: { backgroundColor: colors.background },
-                        }}
-                      />
+                      <View style={isLargeNative ? styles.letterbox : styles.root}>
+                        <View style={isLargeNative ? styles.frame : styles.root}>
+                          <Stack
+                            screenOptions={{
+                              headerShown: false,
+                              contentStyle: { backgroundColor: colors.background },
+                            }}
+                          />
+                        </View>
+                      </View>
                     </View>
                   </ToastProvider>
                 </OutfitProvider>
@@ -111,4 +120,14 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
+  // Large-screen letterbox: muted backdrop behind the centred app column.
+  letterbox: { flex: 1, backgroundColor: colors.muted, alignItems: "center" },
+  frame: {
+    flex: 1,
+    width: "100%",
+    maxWidth: 560,
+    backgroundColor: colors.background,
+    alignSelf: "center",
+    overflow: "hidden",
+  },
 });
