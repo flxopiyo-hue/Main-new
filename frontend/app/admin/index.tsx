@@ -112,8 +112,8 @@ export default function AdminDashboard() {
         </View>
 
         <View style={styles.revenue}>
-          <Text style={tp.caption}>Gross revenue (paid)</Text>
-          <Text style={[tp.h1, { marginTop: 6 }]} testID="admin-gross-revenue">
+          <Text style={[tp.caption, { color: "#A3A3A3" }]}>Gross revenue (paid)</Text>
+          <Text style={[tp.h1, { marginTop: 6, color: colors.primaryFg }]} testID="admin-gross-revenue">
             {formatPrice(data.total_revenue_cents, displayCurrency)}
           </Text>
           <View style={styles.row}>

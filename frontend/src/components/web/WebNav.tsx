@@ -84,8 +84,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    gap: 16,
   },
-  right: { flexDirection: "row", alignItems: "center", gap: 18 },
+  right: { flexDirection: "row", alignItems: "center", gap: 18, flexShrink: 0 },
   link: {
     fontFamily: fonts.bodyMedium,
     fontSize: 13,

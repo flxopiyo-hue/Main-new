@@ -17,7 +17,14 @@ export function LogoMark({ size = 34, light = false }: { size?: number; light?: 
       >
         <Text style={[styles.markLetter, { color: webColors.accent, fontSize: size * 0.55 }]}>O</Text>
       </View>
-      <Text style={[styles.word, { color: light ? webColors.card : webColors.ink }]}>OROMONA</Text>
+      <Text
+        style={[
+          styles.word,
+          { color: light ? webColors.card : webColors.ink, fontSize: size * 0.52, letterSpacing: size * 0.11 },
+        ]}
+      >
+        OROMONA
+      </Text>
     </View>
   );
 }
@@ -26,5 +33,5 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: 10 },
   mark: { alignItems: "center", justifyContent: "center", borderRadius: 4 },
   markLetter: { fontFamily: fonts.heading },
-  word: { fontFamily: fonts.bodyBold, fontSize: 18, letterSpacing: 4 },
+  word: { fontFamily: fonts.bodyBold },
 });

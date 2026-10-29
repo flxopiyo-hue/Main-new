@@ -80,7 +80,10 @@ export function AdminShell({ title, subtitle, children, trailing }: Props) {
                 size={20}
                 color={active ? colors.primary : colors.mutedFg}
               />
-              <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>
+              <Text
+                style={[styles.tabLabel, active && styles.tabLabelActive]}
+                numberOfLines={1}
+              >
                 {t.label}
               </Text>
             </TouchableOpacity>
@@ -132,11 +135,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 4,
     paddingVertical: 8,
+    paddingHorizontal: 2,
   },
   tabLabel: {
     fontFamily: fonts.bodyMedium,
     fontSize: 10,
-    letterSpacing: 1.2,
+    letterSpacing: 0.3,
     textTransform: "uppercase",
     color: colors.mutedFg,
   },
