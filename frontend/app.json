@@ -15,7 +15,7 @@
         "NSPhotoLibraryUsageDescription": "Pick photos for try-on and listings.",
         "ITSAppUsesNonExemptEncryption": false
       },
-      "bundleIdentifier": "com.oromona.app"
+      "bundleIdentifier": "com.wendobella.oromona"
     },
     "android": {
       "adaptiveIcon": {
