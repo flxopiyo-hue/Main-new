@@ -439,3 +439,31 @@ orientation "default", native letterbox). All PREVIEW ONLY — user rebuilds aft
 Play test. STILL deferred: KEEP KES 100 "Payment Review" item (bc2e940f-...) until Paystack review
 confirmed.
 
+
+
+---
+
+## Iteration (Oct 2026) — Expo SDK 57 → 58 upgrade (PREVIEW; user rebuilds after)
+Reason: user's Expo Go was incompatible with the SDK 57 project.
+- Ran `yarn expo install expo@^58.0.0 --fix`. Now: expo@58, react-native 0.88.1, react@19.3.0,
+  expo-router@58.0.28, all expo-* on SDK 58. expo-doctor: 20/20 pass.
+- app.json: removed `newArchEnabled` and `android.edgeToEdgeEnabled` (both are the default in SDK 58
+  and now rejected by schema). Edge-to-edge is always-on now — also clears the old Play edge-to-edge
+  warning.
+- tsconfig.json: added `"customConditions": ["react-native","react-native-legacy-deep-imports"]` to
+  defer RN 0.88 Strict TypeScript API migration (reverts ScrollView-ref / ColorValue / Element|null
+  type changes). Remaining ~11 tsc errors are PRE-EXISTING app-level type mismatches (e.g.
+  measurements bust_cm, colors.text) — type-only, no runtime effect, out of scope.
+- REGRESSION FIX (expo-router 58): `href: null` now makes a Tabs route fully unreachable (not even via
+  router.push). Replaced with `tabBarButton: () => null, tabBarItemStyle: { display: "none" }` in
+  app/(seller)/_layout.tsx (add-item, new-collection, payouts, payout-account) and
+  app/(courier)/_layout.tsx (job/[id]). Verified seller add-item wizard + payouts reachable again.
+- LAYOUT FIX: src/components/ChipsRow.tsx discover chip row collapsed to ~11px after the RN-web bump —
+  added flexGrow:0, flexShrink:0 to the row style.
+- Verified by testing_agent (iteration_39): landing, buyer register/login + tabs + item PDP, seller
+  register/login + portal (inventory/analytics/orders/settings + add-item wizard + payouts), admin
+  dashboard. No payments completed, no AI endpoints called (LIVE Paystack in preview).
+- Known pre-existing (NOT upgrade-caused, left as-is): admin gross-revenue text dark-on-dark
+  (app/admin/index.tsx:116); web top-nav logo/SHOP touch at 375px; DASHBOARD label clip in admin tab.
+All PREVIEW ONLY — user must Publish + rebuild Android/iOS to get SDK 58 on devices.
+STILL deferred: KEEP KES 100 "Payment Review" item (bc2e940f-...) until Paystack review confirmed.

@@ -7,7 +7,6 @@
     "icon": "./assets/brand/oromona-icon-1024.png",
     "scheme": "oromona",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "usesAppleSignIn": true,
@@ -23,7 +22,6 @@
         "foregroundImage": "./assets/brand/oromona-adaptive-fg.png",
         "backgroundColor": "#2A0F0A"
       },
-      "edgeToEdgeEnabled": true,
       "permissions": [
         "android.permission.CAMERA"
       ],

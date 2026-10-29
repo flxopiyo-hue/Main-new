@@ -72,23 +72,23 @@ export default function SellerTabsLayout() {
       <Tabs.Screen name="settings" options={{ title: "Settings" }} />
 
       {/* Non-tab routes that still belong inside the seller stack so the
-          bottom tab bar shows while they're open. `href: null` keeps them
-          off the visible tab strip. */}
+          bottom tab bar shows while they're open. Hiding the tab button
+          (instead of href: null) keeps them navigable in expo-router 58. */}
       <Tabs.Screen
         name="add-item"
-        options={{ title: "Add Item", href: null }}
+        options={{ title: "Add Item", tabBarButton: () => null, tabBarItemStyle: { display: "none" } }}
       />
       <Tabs.Screen
         name="new-collection"
-        options={{ title: "New Drop", href: null }}
+        options={{ title: "New Drop", tabBarButton: () => null, tabBarItemStyle: { display: "none" } }}
       />
       <Tabs.Screen
         name="payouts"
-        options={{ title: "Payouts", href: null }}
+        options={{ title: "Payouts", tabBarButton: () => null, tabBarItemStyle: { display: "none" } }}
       />
       <Tabs.Screen
         name="payout-account"
-        options={{ title: "Payout account", href: null }}
+        options={{ title: "Payout account", tabBarButton: () => null, tabBarItemStyle: { display: "none" } }}
       />
     </Tabs>
   );

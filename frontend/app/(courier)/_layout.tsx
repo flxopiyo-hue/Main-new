@@ -59,7 +59,7 @@ export default function CourierTabsLayout() {
       <Tabs.Screen name="index" options={{ title: "Jobs" }} />
       <Tabs.Screen name="earnings" options={{ title: "Earnings" }} />
       {/* Job detail lives inside the courier stack but off the tab strip. */}
-      <Tabs.Screen name="job/[id]" options={{ title: "Job", href: null }} />
+      <Tabs.Screen name="job/[id]" options={{ title: "Job", tabBarButton: () => null, tabBarItemStyle: { display: "none" } }} />
     </Tabs>
   );
 }

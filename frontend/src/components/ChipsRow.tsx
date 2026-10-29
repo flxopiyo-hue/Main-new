@@ -48,6 +48,8 @@ export function ChipsRow({ chips, active, onPress, testIDPrefix = "chip" }: Prop
 const styles = StyleSheet.create({
   row: {
     height: 56,
+    flexGrow: 0,
+    flexShrink: 0,
     backgroundColor: colors.background,
   },
   content: {

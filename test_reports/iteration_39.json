@@ -1,0 +1,42 @@
+{
+  "summary": "Expo SDK 58 upgrade regression smoke (frontend only, web preview, 375x667). The upgrade caused one CRITICAL regression: in expo-router 58, Tabs.Screen `href: null` now maps to `hidden: true` (node_modules/expo-router/build/layouts/TabsClient.js:91-98, 'new redirect behavior'). Hidden routes can no longer be opened at all. Before my fix, the seller Add-Item wizard, New Drop, Payouts and Payout account screens could not be reached: router.push and deep links both bounced back to Inventory with no console error. Courier job/[id] uses the same pattern. I applied a small compat fix: `href: null` became `tabBarButton: () => null, tabBarItemStyle: { display: 'none' }` in app/(seller)/_layout.tsx and app/(courier)/_layout.tsx. After the fix, add-item steps 1, 2 and 3 render and the prev/back buttons work, /payouts and /payout-account open, and the seller tab bar still shows exactly 4 tabs. Everything else passed with zero console errors or page errors: the landing page renders the OROMONA hero, buyer registration lands on /onboarding/measurements, buyer logout and re-login with the buyer chip work, the Discover/Try On/Atelier/Profile tabs load, item detail renders for 2 items and its back button returns to Discover, seller registration and login with the Selling chip work, the seller Inventory/Analytics/Orders/Settings tabs load, seller sign-out works, and admin login reaches the /admin dashboard with analytics and all 6 admin tabs. No 'Unmatched Route' was seen anywhere. Deprecated packages detected: none (no expo-av, expo-barcode-scanner or expo-background-fetch).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Discover category ChipsRow", "issue": "The horizontal category chip ScrollView (TOPS/BOTTOMS/OUTERWEAR...) is squashed to about 11px tall even though its style says height:56, because the ScrollView has flexShrink:1. The chip labels get clipped and the 'Set my size' card overlaps them, on both mobile and tablet. This may be caused by the RN 0.88 / react-native-web 0.21.4 bump, but that is not confirmed. Fix: add flexGrow:0 and flexShrink:0 to styles.row in src/components/ChipsRow.tsx.", "testID": "cat-shirts", "priority": "MEDIUM"},
+      {"component": "Admin dashboard revenue card", "issue": "PRE-EXISTING, not caused by the upgrade. The 'Gross revenue (paid)' value uses tp.h1 (color rgb(10,10,10)) on the styles.revenue background colors.primary (rgb(10,10,10)), so the number is invisible. Reference: app/admin/index.tsx:116 and :221. Give the value a light color (for example colors.primaryFg).", "testID": "admin-gross-revenue", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [
+      {"flow": "Seller add-item / new-collection / payouts / payout-account, and courier job/[id]", "issue": "REGRESSION from expo-router 58, now FIXED by the testing agent. `href: null` on Tabs.Screen now sets `hidden: true`, which makes the route impossible to navigate to; it silently redirects to the first tab. Fix applied in app/(seller)/_layout.tsx:79-91 and app/(courier)/_layout.tsx:62.", "affected_testIDs": ["inventory-add-btn", "inventory-empty-add-btn", "seller-settings-payouts", "seller-settings-payout-account", "wizard-stepper"]}
+    ],
+    "design_issues": [
+      {"screen": "Web top nav (landing and item detail at 375px)", "issues": ["The 'OROMONA' wordmark and the 'SHOP' link touch each other with no gap"]},
+      {"screen": "Admin bottom tabs (375px)", "issues": ["Six tabs do not fit: the 'DASHBOARD' label is clipped on the left edge"]},
+      {"screen": "Seller tabs", "issues": ["Browser back from /payouts goes to Inventory (/) instead of Settings, because the Tabs backBehavior is firstRoute. Minor."]}
+    ],
+    "react_native_issues": [
+      {"component": "expo-router 58 Tabs href:null", "issue": "In expo-router 58, href:null makes a route hidden and impossible to navigate to. Reference: app/(seller)/_layout.tsx:79, app/(courier)/_layout.tsx:62. Patched to tabBarButton: () => null."},
+      {"component": "shadow* style props", "issue": "Metro web warns '\"shadow*\" style props are deprecated. Use \"boxShadow\"', and also 'props.pointerEvents is deprecated'. These do not break anything at runtime."}
+    ]
+  },
+  "test_report_links": [".screenshots/ (browser automation runs)", "/app/test_reports/iteration_39.json"],
+  "action_items": [
+    "Review and keep the expo-router 58 hidden-tab fix in app/(seller)/_layout.tsx and app/(courier)/_layout.tsx (tabBarButton: () => null + tabBarItemStyle display none). Do not reintroduce href: null for routes that must stay navigable.",
+    "Courier job/[id] was not exercised end-to-end, because no rider has been approved. Please smoke test /(courier)/job/[id] navigation once a rider exists.",
+    "Fix the ChipsRow squash: add flexGrow:0 and flexShrink:0 to the ScrollView style in src/components/ChipsRow.tsx.",
+    "Fix the invisible admin gross-revenue value: dark text on a dark card (pre-existing).",
+    "Optional: migrate shadow* style props to boxShadow and props.pointerEvents to style.pointerEvents."
+  ],
+  "critical_code_review_comments": [
+    "app/(seller)/add-item.tsx is 3128 lines and register.tsx is 792 lines. They should be split into smaller modules.",
+    "The legacy top-level redirects (app/add-item.tsx, app/payouts.tsx, app/inventory.tsx) resolve to the same URL as the (seller) group routes (/add-item, /payouts). These duplicate URL paths are fragile under expo-router route resolution.",
+    "colors.text is referenced in app/admin/feedback.tsx:126 and app/order/[id].tsx:1139 but is not in the theme (known TS error). At runtime the color is undefined."
+  ],
+  "updated_files": ["/app/frontend/app/(seller)/_layout.tsx", "/app/frontend/app/(courier)/_layout.tsx"],
+  "success_rate": {"backend": "not tested (frontend only)", "frontend": "~92% of smoke steps passed before the fix (add-item and the hidden seller routes failed); 100% of the requested flows pass after the testing-agent fix"},
+  "seed_data_creation": "Created via the UI: buyer test_buyer_1793273488@oromona.com / Passw0rd!23 (female, DOB 2013) and seller test_seller_1793273648@oromona.com / Passw0rd!23 (company 'TEST Atelier SDK58', Nairobi, Kenya). No items, orders or payments were created.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "SDK 58 / expo-router 58: Tabs `href: null` means hidden, and hidden routes cannot be navigated to. Use tabBarButton: () => null instead. Seller login needs the login-intent-seller chip. After the upgrade, Tab screens stay mounted in the DOM, so body innerText includes content from inactive tabs. Use testIDs, not body text. Image upload in the add-item wizard works with page.expect_file_chooser on wizard-photo-add-library.",
+  "rca_of_issue": "Repro before the fix: log in as a seller, tap inventory-add-btn, and the URL stays at '/'. Navigating directly to /add-item, /new-collection or /payouts also redirects to '/'. Root cause: expo-router 58.0.28 TabsClient.processScreens turns href===null into options.hidden=true (comment: 'Update the hiding-a-tab guide for the new redirect behavior'), so the navigator refuses to focus hidden routes. Mitigation: hide the tab button with tabBarButton: () => null (and tabBarItemStyle display:none) so the route stays navigable. Verified: the wizard opens at /add-item and steps 1→2→3 work."
+}
