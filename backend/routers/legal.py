@@ -158,12 +158,30 @@ async function doDelete() {{
 </div></body></html>"""
 
 
-@router.get("/legal/privacy", response_class=HTMLResponse, include_in_schema=False)
+# Google Play / App Store URL validators may probe these links with a HEAD
+# request (not just GET) and may append a trailing slash. We therefore answer
+# GET *and* HEAD, and register the trailing-slash variant explicitly so the URL
+# returns 200 directly instead of a 307 redirect that some validators reject.
+@router.api_route(
+    "/legal/privacy", methods=["GET", "HEAD"],
+    response_class=HTMLResponse, include_in_schema=False,
+)
+@router.api_route(
+    "/legal/privacy/", methods=["GET", "HEAD"],
+    response_class=HTMLResponse, include_in_schema=False,
+)
 async def privacy_policy() -> str:
     return _PRIVACY_HTML
 
 
-@router.get("/legal/delete-account", response_class=HTMLResponse, include_in_schema=False)
+@router.api_route(
+    "/legal/delete-account", methods=["GET", "HEAD"],
+    response_class=HTMLResponse, include_in_schema=False,
+)
+@router.api_route(
+    "/legal/delete-account/", methods=["GET", "HEAD"],
+    response_class=HTMLResponse, include_in_schema=False,
+)
 async def delete_account_page() -> str:
     return _DELETE_HTML
 
