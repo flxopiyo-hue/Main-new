@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Oromona",
+    "name": "Oromona: Sized to You",
     "slug": "oromona",
     "version": "1.0.0",
     "orientation": "default",
@@ -11,6 +11,7 @@
       "supportsTablet": true,
       "usesAppleSignIn": true,
       "infoPlist": {
+        "CFBundleDisplayName": "Oromona",
         "NSCameraUsageDescription": "Capture body and clothing photos for try-on.",
         "NSPhotoLibraryUsageDescription": "Pick photos for try-on and listings.",
         "ITSAppUsesNonExemptEncryption": false
